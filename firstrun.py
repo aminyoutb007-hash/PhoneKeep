@@ -223,9 +223,12 @@ class FirstRunGuide(tk.Frame):
         right.pack(side="left", fill="both", expand=True)
         ui.RoundButton(right, "Open iPhone  ›", self.do_open, "primary", 180, 42, bg=CARD).pack(anchor="w", pady=(6, 14))
         self.choices = {}
-        q = [("auto_daily", "Back up automatically every day?"),
-             ("wifi", "Back up over Wi-Fi from now on?")]
-        if sys.platform == "darwin" and not getattr(self.app, "has_touch_id", lambda: False)():
+        # Only questions whose feature exists in this build are shown (agreed 11 Nov): the daily-backup
+        # question appears with B2 (the scheduler), the app-lock question with S2.
+        q = [("wifi", "Back up over Wi-Fi from now on?")]
+        if self.app.has_feature("scheduler"):
+            q.insert(0, ("auto_daily", "Back up automatically every day?"))
+        if self.app.has_feature("app_lock") and sys.platform == "darwin" and not getattr(self.app, "has_touch_id", lambda: False)():
             q.append(("app_lock", "Lock PhoneKeep with your computer password?"))
         for key, text in q:
             fr = tk.Frame(right, bg=CARD)

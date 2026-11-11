@@ -542,6 +542,11 @@ class App(tk.Tk):
             w.pack(fill="x", pady=(0, 0) if w is self.main_cards[0] else (14, 0))
         self.detect(silent=True)
 
+    FEATURES = {"scheduler": False, "app_lock": False}   # flipped on by the PR that ships each feature
+
+    def has_feature(self, name: str) -> bool:
+        return bool(self.FEATURES.get(name))
+
     def has_touch_id(self) -> bool:
         """Best effort: Macs with Touch ID report a biometric sensor; used only to word a question."""
         if sys.platform != "darwin":

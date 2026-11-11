@@ -152,14 +152,12 @@ clicks.append("Back up now"); a.guide.do_backup()
 check(pump(lambda: a.guide.step == 4, 60, "done step"), "backup runs and the done step appears")
 check((W / "Backups" / "00008030-E1TEST" / "Manifest.db").exists(), "a backup exists")
 check(any("safely backed up" in t for t in labels()), "done screen says 'Your iPhone is safely backed up'")
-check(any("automatically every day" in t for t in labels()) and any("over Wi-Fi" in t for t in labels()),
-      "done screen asks about daily backups and Wi-Fi")
+check(not any("automatically every day" in t for t in labels()) and any("over Wi-Fi" in t for t in labels()),
+      "done screen asks about Wi-Fi only: the daily-backup question appears with B2")
 check(len(clicks) == 2, f"reached Back up now in {len(clicks)} clicks plus the password (target: 3 + password)")
 
 # the questions
-lab = a.guide.choices["auto_daily"]
-a.guide.answer("auto_daily", True, lab)
-check(a.s["auto_backup"] == "daily", "'Yes' to daily backups is remembered for B2")
+check("auto_daily" not in a.guide.choices and "app_lock" not in a.guide.choices, "questions for features not in this build are hidden")
 from tkinter import messagebox as mb
 mb.askokcancel = lambda *x, **k: True
 a.guide.answer("wifi", True, a.guide.choices["wifi"])
