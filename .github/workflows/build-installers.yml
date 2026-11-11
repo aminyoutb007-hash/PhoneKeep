@@ -1,0 +1,99 @@
+# Builds the one-file installers on GitHub's own Mac and Windows machines (free for public repos,
+# and within the free monthly minutes for private ones).
+#   Run it: GitHub repo -> Actions -> "Build installers" -> Run workflow.
+#   Get the files: open the finished run -> "Artifacts" at the bottom.
+#   Pushing a tag like v2.0.0 also publishes them on the repo's Releases page.
+name: Build installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    name: Mac (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15          # Apple Silicon (M1/M2/M3/M4...)
+            arch: AppleSilicon
+          - runner: macos-15-intel    # Intel Macs
+            arch: Intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+      - name: Build PhoneKeep.app
+        run: |
+          python packaging/make_icons.py
+          pyinstaller packaging/PhoneKeep.spec --noconfirm
+      - name: Sign (ad-hoc) so macOS will run it
+        run: codesign --force --deep --sign - dist/PhoneKeep.app
+      - name: Smoke test
+        run: |
+          dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli -m pymobiledevice3 version
+          dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --help
+      - name: Make the .dmg (drag-to-Applications)
+        run: |
+          mkdir dmg
+          cp -R dist/PhoneKeep.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname "PhoneKeep" -srcfolder dmg -ov -format UDZO "PhoneKeep-Mac-${{ matrix.arch }}.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhoneKeep-Mac-${{ matrix.arch }}
+          path: "*.dmg"
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+      - name: Build PhoneKeep.exe
+        run: |
+          python packaging/make_icons.py
+          pyinstaller packaging/PhoneKeep.spec --noconfirm
+      - name: Smoke test
+        run: |
+          dist\PhoneKeep\phonekeep-cli.exe -m pymobiledevice3 version
+          dist\PhoneKeep\phonekeep-cli.exe --help
+      - name: Make PhoneKeep-Setup.exe
+        run: |
+          choco install innosetup -y --no-progress
+          iscc packaging\PhoneKeep.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhoneKeep-Windows
+          path: Output/PhoneKeep-Setup.exe
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
