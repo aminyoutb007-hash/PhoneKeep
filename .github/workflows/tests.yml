@@ -4,7 +4,7 @@ name: Tests
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]      # branches with a pull request run through pull_request (once, not twice)
   pull_request:
   workflow_dispatch:
 
