@@ -784,11 +784,12 @@ class PhotoPanel(tk.Frame):
             c.create_rectangle(4, 4, 36, 20, fill="#000000", outline="")
             c.create_text(20, 12, text="LIVE", fill="white", font=font(8, "bold"))
         on = item.id in self.selected
+        # (no see-through "stipple" overlay: macOS draws it solid and hides the photo)
         if on:
-            c.create_rectangle(1, 1, T - 1, T - 1, outline=GREEN, width=3)
-        else:
-            c.create_rectangle(0, 0, T, T, fill="#ffffff", stipple="gray25", outline="")
-        c.create_oval(T - 28, 6, T - 6, 28, fill=GREEN if on else "#ffffff", outline="white", width=2)
+            c.create_rectangle(2, 2, T - 2, T - 2, outline=GREEN, width=4)
+        c.create_oval(T - 28, 6, T - 6, 28, fill=GREEN if on else "", outline="white" if on else "#ffffff", width=2)
+        if not on:
+            c.create_oval(T - 27, 7, T - 7, 27, fill="", outline="#5f6b72", width=1)
         if on:
             c.create_text(T - 17, 17, text="✓", fill="white", font=font(12, "bold"))
 
@@ -831,8 +832,9 @@ class PhotoPanel(tk.Frame):
         chosen = [i for i in self.items if i.id in self.selected]
         size = sum(i.size for i in chosen)
         nv = sum(1 for i in chosen if i.video)
-        self.count.configure(text=f"{len(chosen) - nv:,} photos and {nv:,} videos selected "
-                                  f"of {len(self.items):,} · about {self.human_size(size)}")
+        n_p = len(chosen) - nv
+        self.count.configure(text=f"{n_p:,} photo{'s' if n_p != 1 else ''} and {nv:,} video{'s' if nv != 1 else ''} "
+                                  f"selected of {len(self.items):,} · about {self.human_size(size)}")
 
 
 class PhotoPicker(tk.Toplevel):
