@@ -39,8 +39,8 @@ coll = COLLECT(exe, exe_cli, a.binaries, a.datas, name="PhoneKeep")
 if sys.platform == "darwin":
     app = BUNDLE(coll, name="PhoneKeep.app", icon=ICON, bundle_identifier="app.phonekeep.PhoneKeep",
                  info_plist={
-                     "CFBundleShortVersionString": "3.0.0",
-                     "CFBundleVersion": "3.0.0",
+                     "CFBundleShortVersionString": "3.1.0",
+                     "CFBundleVersion": "3.1.0",
                      "NSHighResolutionCapable": True,
                      "LSMinimumSystemVersion": "11.0",
                      "NSHumanReadableCopyright": "Open source. Runs locally; nothing is uploaded.",
