@@ -18,7 +18,7 @@ for pkg in ("typer", "rich", "click", "construct", "asn1", "srptools", "pycrashr
         hiddenimports += collect_submodules(pkg)
     except Exception:
         pass
-hiddenimports += ["sections", "phonekeep", "app", "ui", "photos", "tables", "tkinter",
+hiddenimports += ["sections", "phonekeep", "app", "ui", "photos", "tables", "phone", "device", "tkinter",
                   "PIL.ImageOps", "PIL.ImageTk", "PIL._tkinter_finder"]
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))  # project folder
@@ -39,8 +39,8 @@ coll = COLLECT(exe, exe_cli, a.binaries, a.datas, name="PhoneKeep")
 if sys.platform == "darwin":
     app = BUNDLE(coll, name="PhoneKeep.app", icon=ICON, bundle_identifier="app.phonekeep.PhoneKeep",
                  info_plist={
-                     "CFBundleShortVersionString": "3.1.0",
-                     "CFBundleVersion": "3.1.0",
+                     "CFBundleShortVersionString": "4.0.0",
+                     "CFBundleVersion": "4.0.0",
                      "NSHighResolutionCapable": True,
                      "LSMinimumSystemVersion": "11.0",
                      "NSHumanReadableCopyright": "Open source. Runs locally; nothing is uploaded.",
