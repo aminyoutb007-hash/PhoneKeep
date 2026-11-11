@@ -5,7 +5,7 @@ import sys
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas, binaries, hiddenimports = [], [], []
-for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt"):
+for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl"):
     try:
         d, b, h = collect_all(pkg)
         datas += d; binaries += b; hiddenimports += h
@@ -18,7 +18,8 @@ for pkg in ("typer", "rich", "click", "construct", "asn1", "srptools", "pycrashr
         hiddenimports += collect_submodules(pkg)
     except Exception:
         pass
-hiddenimports += ["sections", "phonekeep", "app", "tkinter", "PIL.ImageOps"]
+hiddenimports += ["sections", "phonekeep", "app", "ui", "photos", "tables", "tkinter",
+                  "PIL.ImageOps", "PIL.ImageTk", "PIL._tkinter_finder"]
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))  # project folder
 ICON = os.path.join(SPECPATH, "icon.ico" if sys.platform == "win32" else "icon.png")
@@ -38,8 +39,8 @@ coll = COLLECT(exe, exe_cli, a.binaries, a.datas, name="PhoneKeep")
 if sys.platform == "darwin":
     app = BUNDLE(coll, name="PhoneKeep.app", icon=ICON, bundle_identifier="app.phonekeep.PhoneKeep",
                  info_plist={
-                     "CFBundleShortVersionString": "2.0.0",
-                     "CFBundleVersion": "2.0.0",
+                     "CFBundleShortVersionString": "3.0.0",
+                     "CFBundleVersion": "3.0.0",
                      "NSHighResolutionCapable": True,
                      "LSMinimumSystemVersion": "11.0",
                      "NSHumanReadableCopyright": "Open source. Runs locally; nothing is uploaded.",
