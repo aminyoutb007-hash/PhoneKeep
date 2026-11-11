@@ -353,6 +353,18 @@ def change_backup_password(old: str, new: str, udid: Optional[str] = None, log: 
     log("Backup password changed.")
 
 
+def set_wifi_sync(on: bool, udid: Optional[str] = None, log: Log = _print) -> None:
+    """Turn the iPhone's Wi-Fi sync on or off (writes to the phone: only phone_write.py may call this)."""
+    check_pmd3()
+    cmd = _launcher_cmd() + ["--pk-wifi", "on" if on else "off"] + (["--udid", udid] if udid else [])
+    env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+    r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace", **_NOWIN)
+    out = (r.stdout + r.stderr).strip()
+    if r.returncode != 0 or "PKDONE" not in out:
+        raise PhoneKeepError.from_problem(out)
+    log(f"Wi-Fi backups turned {'on' if on else 'off'} on the iPhone.")
+
+
 RESET_PASSWORD_HELP = (
     "If you don't know the backup password, your iPhone can remove it without losing anything:\n\n"
     "1. On the iPhone open Settings → General → Transfer or Reset iPhone → Reset.\n"

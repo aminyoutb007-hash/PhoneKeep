@@ -58,7 +58,7 @@ Photos, Music, Books, App Files and the wallpaper are read **live from the iPhon
 1. Plug in your iPhone (or use Wi-Fi sync), unlock it and tap **Trust This Computer**. PhoneKeep shows the phone's name and when it was last backed up.
 2. Choose **what to keep**: **Chats** (WhatsApp, WhatsApp Business and Messages), **Chats & photos**, **Everything**, or **Custom** to pick exactly.
 3. Choose how to **save chats**: **Web pages** (a WhatsApp-style browsable archive), **Excel** (one workbook, one sheet per chat, plus a summary sheet) and/or **CSV** (one file per chat, plus all chats in one file).
-4. Click **Back up now**. The first time, choose a **backup password**: your iPhone encrypts every backup with it, and PhoneKeep keeps the password in your Mac Keychain or Windows Credential Manager so you never type it again. Keep the phone unlocked. If it asks for its passcode, enter it on the phone.
+4. The first time you open PhoneKeep, a short guide walks you through it in five steps: connect, tap Trust, choose a password, back up, done. Afterwards, click **Back up now**. The first time, choose a **backup password**: your iPhone encrypts every backup with it, and PhoneKeep keeps the password in your Mac Keychain or Windows Credential Manager so you never type it again. Keep the phone unlocked. If it asks for its passcode, enter it on the phone.
 5. **Choose your chats.** A window lists every chat from WhatsApp, WhatsApp Business and Messages. Click one to **preview** its latest messages and photos, and tick the ones you want to keep.
 6. **Choose your photos.** Browse them month by month as thumbnails, click to select, or use **Select all** or **Select this month**. Only the photos you pick are copied.
 7. When it's done, click **Open my archive**.
