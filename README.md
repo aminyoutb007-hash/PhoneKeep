@@ -58,14 +58,14 @@ Photos, Music, Books, App Files and the wallpaper are read **live from the iPhon
 1. Plug in your iPhone (or use Wi-Fi sync), unlock it and tap **Trust This Computer**. PhoneKeep shows the phone's name and when it was last backed up.
 2. Choose **what to keep**: **Chats** (WhatsApp, WhatsApp Business and Messages), **Chats & photos**, **Everything**, or **Custom** to pick exactly.
 3. Choose how to **save chats**: **Web pages** (a WhatsApp-style browsable archive), **Excel** (one workbook, one sheet per chat, plus a summary sheet) and/or **CSV** (one file per chat, plus all chats in one file).
-4. Click **Back up now**. Keep the phone unlocked. If it asks for its passcode, enter it on the phone.
+4. Click **Back up now**. The first time, choose a **backup password**: your iPhone encrypts every backup with it, and PhoneKeep keeps the password in your Mac Keychain or Windows Credential Manager so you never type it again. Keep the phone unlocked. If it asks for its passcode, enter it on the phone.
 5. **Choose your chats.** A window lists every chat from WhatsApp, WhatsApp Business and Messages. Click one to **preview** its latest messages and photos, and tick the ones you want to keep.
 6. **Choose your photos.** Browse them month by month as thumbnails, click to select, or use **Select all** or **Select this month**. Only the photos you pick are copied.
 7. When it's done, click **Open my archive**.
 
 To skip the pickers and keep everything, turn off **which chats** and **which photos** next to "Let me choose". PhoneKeep remembers your choices for next time.
 
-⚙ **Settings** holds the rest: folders, backup encryption (**recommended**, because encrypted backups are the only ones that include call history and Safari history), the Custom list, and **Use an existing backup**, which builds an archive from a backup already on this computer.
+⚙ **Settings** holds the rest: folders, **Security** (change the backup password, or turn encryption off after a warning about what unencrypted backups leave out), the Custom list, and **Use an existing backup**, which builds an archive from a backup already on this computer. A "🔒 Encrypted · on this computer" badge on the phone card and in the phone window shows your backups are protected.
 
 The first backup copies the whole phone and can take an hour or more. Apple only allows whole-phone backups; PhoneKeep then keeps just what you chose. Later backups only copy what has changed.
 
@@ -81,7 +81,8 @@ If **iCloud Photos** is on, iOS leaves the photo library out of backups. Keep **
 
 ```
 python phonekeep.py devices                  # is the iPhone connected?
-python phonekeep.py encryption on            # protect backups with a password
+python phonekeep.py encryption on            # protect backups with a password (asked at the prompt, never on the command line)
+python phonekeep.py encryption change-password
 python phonekeep.py run --photos             # back up + copy photos + build full archive
 python phonekeep.py backup                   # back up only
 python phonekeep.py photos                   # copy photos straight off the phone

@@ -313,6 +313,56 @@ def set_backup_encryption(on: bool, password: str, udid: Optional[str] = None, l
         + ("Keep this password safe; Apple cannot recover it." if on else ""))
 
 
+def backup_will_encrypt(udid: Optional[str] = None) -> Optional[bool]:
+    """Does this iPhone encrypt its backups? True/False, or None if it couldn't be asked
+    (no phone, locked, not trusted). Never raises: the backup flow carries on either way."""
+    try:
+        check_pmd3()
+        cmd = _launcher_cmd() + ["--pk-will-encrypt"] + (["--udid", udid] if udid else [])
+        env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+        r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8",
+                           errors="replace", timeout=60, **_NOWIN)
+        for line in (r.stdout or "").splitlines():
+            if line.startswith("PKWILLENCRYPT "):
+                return line.split()[1] == "1"
+    except Exception:
+        pass
+    return None
+
+
+def change_backup_password(old: str, new: str, udid: Optional[str] = None, log: Log = _print) -> None:
+    """Change the iPhone's backup password (done by the phone itself). Both passwords travel
+    through a pipe, never on the command line. Only phone_write.py may call this."""
+    check_pmd3()
+    cmd = _launcher_cmd() + ["--pk-change-password"] + (["--udid", udid] if udid else [])
+    env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+    r = subprocess.run(cmd, input=old + "\n" + new + "\n", capture_output=True, text=True, env=env,
+                       encoding="utf-8", errors="replace", **_NOWIN)
+    out = (r.stdout + r.stderr).strip()
+    if r.returncode != 0 or "PKDONE" not in out:
+        raise PhoneKeepError("Could not change the backup password: " + _explain(out))
+    log("Backup password changed.")
+
+
+RESET_PASSWORD_HELP = (
+    "If you don't know the backup password, your iPhone can remove it without losing anything:\n\n"
+    "1. On the iPhone open Settings → General → Transfer or Reset iPhone → Reset.\n"
+    "2. Tap Reset All Settings and enter your passcode.\n"
+    "   (This keeps your photos, messages and apps. It only resets settings such as wallpaper,\n"
+    "   Wi-Fi passwords and the backup password.)\n"
+    "3. Come back to PhoneKeep and choose a new backup password."
+)
+
+
+def password_for_backup(path: Path) -> Optional[str]:
+    """The stored password for a backup folder, if its phone has one in the keychain."""
+    try:
+        import keychain
+        return keychain.get_password(Path(path).name)
+    except Exception:
+        return None
+
+
 async def _sync_photos_async(dest: Path, udid: Optional[str], log: Log,
                              progress: Optional[Callable[[float], None]]) -> int:
     import posixpath
@@ -1226,10 +1276,52 @@ def _pick_backup(arg: Optional[str]) -> Path:
 
 
 def _password_for(backup: Path, a) -> Optional[str]:
-    pw = getattr(a, "password", None) or os.environ.get("PHONEKEEP_PASSWORD")
-    if backup_info(backup)["encrypted"] and not pw:
+    """The password for an encrypted backup: from the keychain, else PHONEKEEP_PASSWORD, else asked
+    at the prompt. Never from a command-line option (it would show in the process list)."""
+    if not backup_info(backup)["encrypted"]:
+        return None
+    pw = password_for_backup(backup) or os.environ.get("PHONEKEEP_PASSWORD")
+    if not pw:
         pw = getpass.getpass("Backup password: ")
     return pw
+
+
+def _encryption_cli(a) -> None:
+    """Writes to the phone: confirmed by typing the phone's name, then done through phone_write."""
+    import keychain
+    import phone_write
+    devs = [d for d in list_devices() if not a.udid or (d.get("UniqueDeviceID") or d.get("Identifier")) == a.udid]
+    if not devs:
+        raise PhoneKeepError("No iPhone connected (plug it in, unlock it, tap Trust).")
+    d = devs[0]
+    udid, name = d.get("UniqueDeviceID") or d.get("Identifier"), d.get("DeviceName") or "iPhone"
+    if a.mode == "on":
+        what = "Turn on backup encryption"
+    elif a.mode == "off":
+        what = "Turn off backup encryption (unencrypted backups leave out saved passwords, Health, Wi-Fi networks and call history, and anyone with this computer can read them)"
+    else:
+        what = "Change the backup password"
+    print(f"{what} on {name}.\nType the iPhone's name to confirm: ", end="", flush=True)
+    if sys.stdin.readline().strip() != name:
+        raise PhoneKeepError("Cancelled: the name didn't match. Nothing was changed.")
+    if a.mode == "on":
+        pw = getpass.getpass("New backup password: ")
+        if not pw or pw != getpass.getpass("Repeat password: "):
+            raise PhoneKeepError("Passwords don't match.")
+        phone_write.turn_on_encryption(udid, name, pw, confirmed=True)
+        keychain.set_password(udid, pw)
+    elif a.mode == "off":
+        pw = keychain.get_password(udid) or getpass.getpass("Current backup password: ")
+        phone_write.turn_off_encryption(udid, name, pw, confirmed=True)
+        keychain.delete_password(udid)
+    else:
+        old = keychain.get_password(udid) or getpass.getpass("Current backup password: ")
+        new = getpass.getpass("New backup password: ")
+        if not new or new != getpass.getpass("Repeat new password: "):
+            raise PhoneKeepError("Passwords don't match.")
+        phone_write.change_password(udid, name, old, new, confirmed=True)
+        keychain.set_password(udid, new)
+    print("Done." if keychain.available() else "Done. (No keychain on this computer: you'll be asked for the password when needed.)")
 
 
 def _export_cli(backup: Path, a) -> None:
@@ -1275,7 +1367,8 @@ def main(argv=None) -> int:
     wa.add_argument("--business", action="store_true", help="prefer WhatsApp Business")
     for x in (run, exp, wa):
         x.add_argument("--out", default=str(DEFAULT_ARCHIVE_DIR), help="archive folder")
-        x.add_argument("--password", help="backup password (or set PHONEKEEP_PASSWORD)")
+        # No --password option on purpose: it would show in the process list. The password comes
+        # from the keychain, the PHONEKEEP_PASSWORD variable, or a prompt.
         x.add_argument("--no-media", action="store_true", help="skip photos/videos/attachments")
     for x in (run, exp):
         x.add_argument("--only", help=f"comma-separated sections: {keys}")
@@ -1287,8 +1380,9 @@ def main(argv=None) -> int:
         x.add_argument("--to", dest="date_to", help="chats: keep messages up to this date (inclusive)")
     ph = sub.add_parser("photos", help="copy photos & videos straight off the iPhone")
     ph.add_argument("--out", default=str(DEFAULT_ARCHIVE_DIR), help="archive folder")
-    enc = sub.add_parser("encryption", help="turn backup encryption on/off")
-    enc.add_argument("mode", choices=["on", "off"])
+    enc = sub.add_parser("encryption", help="turn backup encryption on/off, or change the password")
+    enc.add_argument("mode", choices=["on", "off", "change-password"])
+    enc.add_argument("--udid", help="which iPhone, if several are connected")
     a = p.parse_args(argv)
 
     try:
@@ -1323,10 +1417,7 @@ def main(argv=None) -> int:
             sync_photos(Path(a.out) / "Photos" / "Originals")
             print("Run 'export --only photos' to rebuild the photo gallery.")
         elif a.cmd == "encryption":
-            pw = getpass.getpass("New backup password: " if a.mode == "on" else "Current backup password: ")
-            if a.mode == "on" and pw != getpass.getpass("Repeat password: "):
-                raise PhoneKeepError("Passwords don't match.")
-            set_backup_encryption(a.mode == "on", pw)
+            _encryption_cli(a)
     except PhoneKeepError as e:
         print(f"\nError: {e}", file=sys.stderr)
         return 1

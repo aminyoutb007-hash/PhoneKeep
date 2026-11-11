@@ -73,11 +73,61 @@ def _crash_log() -> None:
     sys.excepthook = hook
 
 
+def _lockdown_run(udid, coro_fn) -> None:
+    """Internal: connect to the phone's backup service and run `coro_fn(service)`.
+    Prints PKERR <message> and exits 1 on failure; exit 3 if this pymobiledevice3 lacks the API."""
+    import asyncio
+    try:
+        from pymobiledevice3.lockdown import create_using_usbmux
+        from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
+    except ImportError as e:
+        print(f"PKAPI {e}", flush=True)
+        sys.exit(3)
+
+    async def run():
+        async with await create_using_usbmux(serial=udid) as lockdown:
+            async with Mobilebackup2Service(lockdown) as svc:
+                await coro_fn(svc)
+    try:
+        asyncio.run(run())
+    except Exception as e:
+        print(f"PKERR {type(e).__name__}: {e}", flush=True)
+        sys.exit(1)
+
+
+def _pk_will_encrypt(args: list) -> None:
+    """Internal: print whether the phone's backups are encrypted: PKWILLENCRYPT 1 or 0."""
+    udid = args[args.index("--udid") + 1] if "--udid" in args else None
+
+    async def go(svc):
+        print(f"PKWILLENCRYPT {1 if await svc.get_will_encrypt() else 0}", flush=True)
+    _lockdown_run(udid, go)
+
+
+def _pk_change_password(args: list) -> None:
+    """Internal: change the backup password. The old and new passwords arrive on stdin, one per
+    line, never on the command line."""
+    udid = args[args.index("--udid") + 1] if "--udid" in args else None
+    old = sys.stdin.readline().rstrip("\r\n")
+    new = sys.stdin.readline().rstrip("\r\n")
+
+    async def go(svc):
+        await svc.change_password(".", old, new)
+        print("PKDONE", flush=True)
+    _lockdown_run(udid, go)
+
+
 def main() -> None:
     _crash_log()
     args = sys.argv[1:]
     if len(args) >= 2 and args[0] == "--pk-backup":
         _pk_backup(args[1:])
+        return
+    if args and args[0] == "--pk-will-encrypt":
+        _pk_will_encrypt(args[1:])
+        return
+    if args and args[0] == "--pk-change-password":
+        _pk_change_password(args[1:])
         return
     if len(args) >= 2 and args[0] == "--pk-encryption":
         # Internal: change backup encryption. The password arrives on stdin, never on the

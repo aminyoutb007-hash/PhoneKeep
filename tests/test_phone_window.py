@@ -31,7 +31,10 @@ import sections as sx
 import device as devmod
 import photos as ph
 import phone
+import keychain
 from ui import RED
+
+keychain.use_memory()   # never touch the real keychain from a test
 
 # ---------------------------------------------------------------------------
 # the simulated iPhone: same methods as device.LiveDevice, data from memory
