@@ -118,8 +118,6 @@ try:
     m, t, b = shown()
     check(t.startswith("Something went wrong") and "boom" not in t and "boom" in a.bar_details_text,
           "a raw exception from a job shows the plain sentence; the text is behind Show details")
-    for job in a.tk.call("after", "info"):
-        a.after_cancel(job)
     a.destroy()
 
     # phone window: an app screen failing shows the sentence and a button, not the exception

@@ -134,6 +134,8 @@ jobs:
           fi
           codesign --verify --deep --strict dist/PhoneKeep.app
       - name: Launch check (the packaged app opens its window and quits)
+        env:
+          PHONEKEEP_NO_HELPER: "1"   # don't leave a menu bar helper running on the build machine
         run: |
           dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --version
           dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli -m pymobiledevice3 version
@@ -220,6 +222,8 @@ jobs:
           }
       - name: Launch check (the packaged app opens its window and quits)
         shell: pwsh
+        env:
+          PHONEKEEP_NO_HELPER: "1"
         run: |
           dist\PhoneKeep\phonekeep-cli.exe --version
           dist\PhoneKeep\phonekeep-cli.exe -m pymobiledevice3 version

@@ -20,6 +20,7 @@ STEPS = [
     ("S3: no network during backup + export + phone window", "test_s3_no_network.py", True),
     ("E3: plain-language errors, each situation reproduced", "test_e3_errors.py", True),
     ("E1: first-run guide walked end to end with a stub iPhone", "test_e1_first_run.py", True),
+    ("E2: menu bar / tray helper backs up and notifies with no window open", "test_e2_helper.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)

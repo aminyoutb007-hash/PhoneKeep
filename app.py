@@ -72,6 +72,8 @@ class Settings:
         "auto_backup": "off",        # E1 step 5 / B2: "daily" | "weekly" | "off"
         "wifi_sync": False,          # E1 step 5: the owner turned on Wi-Fi backups
         "app_lock": None,            # E1 step 5 / S2: None = decide by hardware
+        "start_at_login": False,     # E2: the helper starts at login (asked once in E1 step 5)
+        "auto_backup_paused": False, # E2: Pause automatic backups
     }
 
     def __init__(self):
@@ -220,14 +222,17 @@ class App(tk.Tk):
         self.last_index: Path | None = None
         self.notes: list[str] = []
         self._build()
-        self.after(100, self._pump)
-        self.after(120, self._spin)
+        self._timers = {}
+        self._timers["pump"] = self.after(100, self._pump)
+        self._timers["spin"] = self.after(120, self._spin)
         self.guide = None
         import firstrun
         if firstrun.wanted(self):
             self.start_first_run()
-        self.after(300, self.detect)
+        self._timers["first"] = self.after(300, self.detect)
         self.after(15000, self._auto_detect)
+        self._start_listener()
+        self.after(1500, self.start_helper)
 
     # ------------------------------------------------------------------ layout
     def _build(self):
@@ -410,12 +415,20 @@ class App(tk.Tk):
                     val()
         except queue.Empty:
             pass
-        self.after(80, self._pump)
+        self._timers["pump"] = self.after(80, self._pump)
+
+    def destroy(self):
+        for job in list(getattr(self, "_timers", {}).values()):
+            try:
+                self.after_cancel(job)
+            except Exception:
+                pass
+        super().destroy()
 
     def _spin(self):
         for r in getattr(self, "steps", {}).values():
             r.tick()
-        self.after(60, self._spin)
+        self._timers["spin"] = self.after(60, self._spin)
 
     def _friendly(self, msg: str):
         """Show the latest meaningful log line under the active step."""
@@ -520,7 +533,7 @@ class App(tk.Tk):
         if not self.busy:
             self.detect(silent=True)
         # the first-run guide waits for the phone, so look more often while it is up
-        self.after(3000 if self.guide is not None else 15000, self._auto_detect)
+        self._timers["detect"] = self.after(3000 if self.guide is not None else 15000, self._auto_detect)
 
     # ------------------------------------------------------------------ first run (E1)
     def start_first_run(self):
@@ -645,6 +658,84 @@ class App(tk.Tk):
         self.log(f"You selected {n:,} photos & videos." if n else "Photos skipped.")
         self.notes.append(f"{n:,} photos & videos" if n else "no photos")
         return box.get("v")
+
+    # ------------------------------------------------------------------ the helper (E2)
+    def set_start_at_login(self, on: bool):
+        import login_item
+        import phone_write
+        self.s["start_at_login"] = bool(on)
+        try:
+            if on:
+                login_item.install()
+                phone_write.log_activity("Helper set to start at login", kind="settings")
+            else:
+                login_item.remove()
+                phone_write.log_activity("Helper no longer starts at login", kind="settings")
+        except Exception as e:
+            self.show_problem(self.problem_of(e))
+
+    def start_helper(self):
+        """Make sure the menu bar / tray helper is running (it keeps going after this window closes)."""
+        import helper_core as hc
+        import login_item
+        if hc.helper_running() or os.environ.get("PHONEKEEP_NO_HELPER"):
+            return
+        try:
+            subprocess.Popen(login_item.helper_command(), close_fds=True, **wv._NOWIN)
+        except OSError:
+            pass
+
+    def _start_listener(self):
+        """A loopback port the helper uses to say "open the window" / "open the phone" (netguard allows it)."""
+        import helper_core as hc
+        import socket
+        try:
+            srv = socket.socket()
+            srv.bind(("127.0.0.1", 0))
+            srv.listen(2)
+            hc.PORT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            hc.PORT_FILE.write_text(str(srv.getsockname()[1]))
+        except OSError:
+            return
+        self.listener = srv
+
+        def serve():
+            while True:
+                try:
+                    conn, _ = srv.accept()
+                    with conn:
+                        what = conn.recv(64).decode(errors="replace").strip()
+                        if what == "phone":
+                            self.call(self.open_phone_when_ready)
+                        else:
+                            self.call(lambda: (self.deiconify(), self.lift(), self.focus_force()))
+                        conn.sendall(b"ok\n")
+                except OSError:
+                    return
+        threading.Thread(target=serve, daemon=True).start()
+        self.bind("<Destroy>", lambda e: e.widget is self and self._stop_listener(), add="+")
+
+    def _stop_listener(self):
+        import helper_core as hc
+        try:
+            self.listener.close()
+            if hc.PORT_FILE.exists():
+                hc.PORT_FILE.unlink()
+        except Exception:
+            pass
+
+    def open_phone_when_ready(self, tries: int = 10):
+        """Open the phone window as soon as the phone has been detected (used by the helper's Open iPhone)."""
+        self.deiconify()
+        self.lift()
+        if self.device is not None:
+            self.open_phone()
+        elif tries > 0:
+            if not getattr(self, "detecting", False):
+                self.detect(silent=True)
+            self.after(800, lambda: self.open_phone_when_ready(tries - 1))
+        else:
+            self.open_phone()
 
     # ------------------------------------------------------------------ phone window
     def open_phone(self):
@@ -1015,6 +1106,15 @@ class SettingsWindow(tk.Toplevel):
         self.update_line = tk.Label(net, text="", bg=CARD, fg=MUTED, font=font(12), anchor="w", wraplength=560, justify="left")
         ui.RoundButton(nrow, "Check for updates…", lambda: app.check_updates(self), "secondary", 190, 38, 13, bg=CARD).pack(side="left")
         self.update_line.pack(fill="x", pady=(6, 0))
+
+        # the helper (E2)
+        import login_item
+        hp = section("Menu bar helper" if sys.platform == "darwin" else "System tray helper",
+                     "A small PhoneKeep icon that shows your last backup, backs up with one click and keeps "
+                     "running when this window is closed.")
+        self.login_var = tk.BooleanVar(value=bool(self.s["start_at_login"]))
+        ui.Chip(hp, "Start at login", self.login_var, lambda: app.set_start_at_login(self.login_var.get()),
+                size=12, bg=CARD).pack(anchor="w", pady=3)
 
         # folders
         fo = section("Folders")
