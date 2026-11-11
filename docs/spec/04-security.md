@@ -12,6 +12,8 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 - If the phone already has a backup password the user doesn't know: explain the iPhone's own "Reset All Settings" path in plain steps (it keeps data, removes the backup password).
 - Change password: old + new, done on the phone through the backup service.
 - The password never appears on a command line, in logs or in crash reports.
+- The "if you forget it" warning is shown once more at the moments when the keychain and the backup may part ways: when the backup location changes, when backups are moved (B4), and when a backup is opened on another computer (B5).
+- Turning encryption on, and changing the password, write to the phone and go through `phone_write.py` ([12-engineering.md](12-engineering.md#architecture-rules)). In the first-run guide, clicking **Turn on encryption** is itself the confirmation; no second dialog. Changing the password later gets a named confirmation ("Change the backup password on *Amin's iPhone*?").
 
 **Done when**
 - [ ] A new phone's first backup is encrypted with no extra click beyond choosing the password.
@@ -20,7 +22,7 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 
 ## S2. App lock
 
-**What the user sees and does:** Settings → Security → "Lock PhoneKeep" (on by default when the computer supports Touch ID / Windows Hello). Opening the phone window or a backup asks for Touch ID or the computer password. After 10 idle minutes (choosable) the window blurs and shows **Unlock**.
+**What the user sees and does:** Settings → Security → "Lock PhoneKeep". On by default where the computer has Touch ID or Windows Hello. On a Mac without Touch ID it is off by default, and the first-run guide (E1) offers to turn it on using the computer password. Opening the phone window or a backup asks for Touch ID or the computer password. After 10 idle minutes (choosable) the window blurs and shows **Unlock**.
 
 **Requirements**
 - Uses the system authentication (LocalAuthentication on Mac, Windows Hello); no PhoneKeep-specific password.
@@ -32,14 +34,14 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 
 ## S3. No network
 
-**What the user sees and does:** Settings → Security shows "PhoneKeep never sends your data anywhere. Internet use: **Off**" (only switchable for "Check for updates").
+**What the user sees and does:** Settings → Security shows "PhoneKeep never sends your data anywhere. Internet use: **Off**". Two things, and only two, can switch it on, each only when the user clicks: "Check for updates" and, if the spyware check (S5) ships, "Update indicators".
 
 **Requirements**
-- The app makes no internet connections. The only exception is the opt-in update check (one HTTPS request to the release page, no identifiers).
-- A test runs the app with network monitoring and fails if any connection is made (other than to the phone over USB / local Wi-Fi).
+- The app makes no internet connections. The only exceptions are the two opt-in actions above: the update check (one HTTPS request to the release page, no identifiers) and the indicator download for S5 (one HTTPS request to the indicator files, no identifiers), each made only when the user clicks its button.
+- An automated test (in `tests/`, run in CI) guards every socket connection made while running a full backup, an export and a phone-window session, and fails if any goes anywhere other than the phone over USB / local Wi-Fi. An OS-level check on a real Mac is part of each release ([docs/release.md](../release.md)).
 
 **Done when**
-- [ ] A full backup + export + phone-window session shows zero outbound internet connections.
+- [ ] A full backup + export + phone-window session shows zero outbound internet connections (socket guard in CI; OS-level monitor at release).
 
 ## S4. Signed and notarised installers
 
@@ -49,6 +51,7 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 - Mac: Developer ID signed, hardened runtime, notarised and stapled, for both Apple Silicon and Intel builds, in the GitHub Actions workflow (secrets for the certificate and notary credentials).
 - Windows: installer and app signed with a code-signing certificate.
 - Release notes list the checksum (SHA-256) of each installer.
+- The workflow signs when the certificate secrets exist and falls back to an ad-hoc (Mac) / unsigned (Windows) build when they don't, so test builds keep working before the certificates arrive. The run summary says which it did. S4 is the last P1 feature because it waits for the certificates.
 
 **Done when**
 - [ ] A fresh Mac opens the downloaded app with no Gatekeeper warning.
@@ -56,11 +59,13 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 
 ## S5. Spyware check
 
+**P2 (moved from P1 until the MVT licence has been checked).**
+
 **What the user sees and does:** in the phone window, a **Security check** icon. Click **Check now** → progress → a result card: green "No signs of known spyware found (checked against 2,340 indicators, updated 1 Nov 2026)" or amber with what was found, in plain words, and what to do next (with a link to help organisations).
 
 **Requirements**
 - Uses Amnesty International's open-source Mobile Verification Toolkit (MVT) checks on the latest (encrypted) backup, run locally.
-- Indicator files are downloaded only when the user clicks **Update indicators** (consistent with S3), and can be imported from a file.
+- Indicator files are downloaded only when the user clicks **Update indicators** (the second allowed network use in S3), and can be imported from a file.
 - Never says "your phone is safe": only "no signs of known spyware found".
 
 **Done when**
@@ -94,6 +99,17 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 ## S9. Secure delete
 
 **P3.** Deleting a backup offers "Erase securely" (overwrite before removal where the disk allows; on SSDs, explain that encryption is what protects deleted data).
+
+## What is stored unencrypted
+
+Everything from inside a backup is encrypted. Two small things next to it are not, so the app can draw its cards and timeline instantly without a password:
+
+| File | Fields | Why |
+| --- | --- | --- |
+| `snapshot.json` per snapshot (B3) | snapshot date, size, iOS version, phone name, phone model | The timeline, phone cards and menu bar need them before any decryption |
+| `format.json` per phone folder (B3) | format version number | So an older or newer PhoneKeep knows whether it can open the folder |
+
+Nothing else: no phone number, no contact names, no thumbnails, no file names, nothing from inside the backup. Adding a field to either file needs written agreement.
 
 ## Existing guards (keep them)
 

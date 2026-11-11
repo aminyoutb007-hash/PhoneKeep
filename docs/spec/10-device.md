@@ -9,7 +9,7 @@
 
 ## V2. Battery health
 
-**What the user sees and does:** a battery card: health % with a short explanation ("Good: holds 91% of its original charge"), charge cycles, current charge, temperature. **Save details** saves the diagnostics as JSON.
+**What the user sees and does:** a battery card: health % with a short explanation ("Good: holds 91% of its original charge"), charge cycles, current charge, and temperature when the iPhone reports it (the row is hidden when it doesn't). **Save details** saves the diagnostics as JSON.
 
 **Done when**
 - [ ] Health % matches Settings → Battery on the phone (within 1%).
@@ -18,8 +18,13 @@
 
 **What the user sees and does:** a ring or bar showing space used by Photos, Apps, Messages, System and Free, and a list of the 20 largest apps with sizes. Clicking Photos or Messages opens those screens sorted by size, with tips ("Large videos: 12 GB, save them to your computer to free space").
 
+**Requirements**
+- Total, used and free come from the phone itself and are exact.
+- The per-category figures (Photos, Apps, Messages, System) are PhoneKeep's own sums from the backup and the app list; the phone doesn't share its own accounting. They are labelled "about" ("Photos · about 48 GB").
+
 **Done when**
-- [ ] Totals are within 5% of Settings → General → iPhone Storage.
+- [ ] Total, used and free are within 1% of Settings → General → iPhone Storage.
+- [ ] Each category is shown with "about" and the 20 largest apps match the phone's list in order.
 
 ## V4. Move to a new iPhone
 

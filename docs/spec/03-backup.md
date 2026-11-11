@@ -27,27 +27,38 @@
 - Never runs two backups of the same phone at once.
 - Notifications: success ("iPhone backed up · 2 min · 140 MB of changes"); failure only after 3 failed days in a row, with the reason and the fix.
 - Survives a computer restart (helper starts at login if the user agreed during setup).
+- **Backup health on the phone card** (home window and E2 menu): "Last backup: 2 hours ago · next tonight around 9 pm". After one missed day the card turns amber and explains itself in one line with the fix, e.g. "Last backup 2 days ago. Connect your iPhone to the same Wi-Fi, or plug it in." A colour change alone is never the whole message.
 
 **Done when**
 - [ ] With "Daily, 9 pm", a backup starts by itself after 9 pm when the phone joins the Wi-Fi.
 - [ ] Closing the main window does not stop scheduled backups.
 - [ ] After restarting the computer, the next scheduled backup still runs.
 - [ ] A second backup the same day is skipped.
+- [ ] The phone card shows the next backup time, and after a missed day shows the amber line with its fix.
 
 ## B3. Snapshots over time
 
 **What the user sees and does:** in the phone window, a **timeline** under the phone picture: "Today · Yesterday · 3 Nov · 27 Oct …". Picking a date shows the phone as it was then. Right-click a snapshot: **Keep forever** (lock), **Rename**, **Delete**.
 
 **Requirements**
-- Each backup creates a snapshot; unchanged files are shared between snapshots (hard links or a content store) so 10 snapshots don't take 10× the space.
+- Each backup creates a snapshot; unchanged files are shared between snapshots through a **content store** (see below) so 10 snapshots don't take 10× the space.
 - Keeps the last 10 by default (Settings: 3 to 100, or "keep everything until the disk is 90% full").
 - Locked snapshots are never deleted automatically; the oldest unlocked one goes first.
 - Each snapshot shows date, size, iOS version and whether it's encrypted.
+- **Upgrading:** on first launch, the single existing backup of each phone becomes snapshot 1. It is converted into the store, verified (file count and checksums), and only then is the old copy removed. If anything fails, the old backup is left exactly as it was.
+
+**The content store (on-disk format)**
+- Every backup file is stored once, named by the SHA-256 of its content, under `store/` in the phone's backup folder. A snapshot is a small list mapping the backup's file IDs to those hashes, plus the backup's own `Manifest.db`, `Manifest.plist`, `Info.plist` and `Status.plist`. Deleting a snapshot removes its list; files no one references any more are removed afterwards.
+- Hashes, not hard links, so the store works the same on an internal disk, an external drive, exFAT and network drives (B4). **FAT32 is refused** with a plain message: "This drive uses an old format (FAT32) that can't hold files over 4 GB. Format it as exFAT or APFS, or choose another drive."
+- The folder carries a **format version** (`format.json`: `{"format": 1}`). PhoneKeep refuses to touch a folder with a newer format than it knows, and migrates an older one in place after verifying, the same way as the upgrade above. Any change to the layout raises the number and adds a migration.
+- Next to each snapshot sits a small unencrypted **sidecar** (`snapshot.json`) with exactly five fields: snapshot date, size, iOS version, phone name and model. Nothing else, so the timeline and phone cards draw instantly without decrypting anything (see [04-security.md](04-security.md#what-is-stored-unencrypted)).
 
 **Done when**
 - [ ] 5 backups on different days → 5 snapshots, total size well under 5 full copies.
 - [ ] Opening an older snapshot shows a message deleted on the phone since then.
 - [ ] A locked snapshot survives automatic clean-up.
+- [ ] An existing 4.x backup becomes snapshot 1, opens, and the old copy is gone only after verification; a simulated failure leaves it untouched.
+- [ ] A FAT32 drive is refused with the message above; an exFAT drive works.
 
 ## B4. Backup location and moving backups
 
@@ -57,10 +68,14 @@
 - Moving copies everything, verifies it (file count and checksums), then removes the old copy; the old copy is kept if anything fails.
 - Before a backup, warns if free space is below the estimated need: "Not enough space on *Backup Drive*: 12 GB needed, 4 GB free."
 - If the location is unavailable (drive unplugged), backups wait and say so: "Connect *Backup Drive* to back up."
+- FAT32 drives are refused (see B3); exFAT, APFS, NTFS and network drives are fine.
+- The Location screen also answers "where is my data?": the folder, a **Show in Finder** / **Show folder** button, and the line "Encrypted · stays on this computer" (or "on *Backup Drive*").
+- When the location changes, or backups are moved, the password warning from S1 is shown once more: the password lives in this computer's keychain; on another computer the backup needs the password typed.
 
 **Done when**
 - [ ] Backups move to an external drive and still open afterwards.
 - [ ] Unplugging the drive gives the "Connect…" message, not an error.
+- [ ] The Location screen shows the folder, the Show button and the "where is my data" line.
 
 ## B5. Open any backup and browse its files
 

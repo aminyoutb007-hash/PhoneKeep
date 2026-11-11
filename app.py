@@ -226,6 +226,9 @@ class App(tk.Tk):
         tk.Label(head, text="Back up your iPhone to this computer", bg=GREEN, fg="#d7efe9",
                  font=font(13)).pack(side="left", pady=14)
         ui.RoundButton(head, "⚙  Settings", self.open_settings, "ghost", 130, 34, 13).pack(side="right", padx=16)
+        ver = tk.Label(head, text=f"v{wv.full_version()}", bg=GREEN, fg="#d7efe9", font=font(11), cursor="hand2")
+        ver.pack(side="right", padx=(0, 4))
+        ver.bind("<Button-1>", lambda e: self.open_about())
 
         self.body = tk.Frame(self, bg=BG)
         self.body.pack(fill="both", expand=True, padx=22, pady=16)
@@ -659,6 +662,14 @@ class App(tk.Tk):
             webbrowser.open(index.resolve().as_uri())
         else:
             messagebox.showinfo(wv.APP_NAME, "There's no archive yet. Click “Back up now” first.")
+
+    def open_about(self):
+        """About box: name, version and (on a test build) the build label, so you know which build this is."""
+        lines = [f"{wv.APP_NAME} {wv.VERSION}"]
+        if wv.BUILD_LABEL:
+            lines.append(f"Test build {wv.BUILD_LABEL}")
+        lines += ["", "Backs up your iPhone to this computer.", "Encrypted · stays on this computer."]
+        messagebox.showinfo(f"About {wv.APP_NAME}", "\n".join(lines), parent=self)
 
     def open_settings(self, focus: str = None):
         SettingsWindow(self, focus)

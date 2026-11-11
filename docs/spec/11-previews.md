@@ -8,7 +8,8 @@ These make PhoneKeep pleasant. They never come before security or ease of use, a
 
 **Requirements**
 - On Mac use Quick Look where possible; elsewhere a built-in viewer for images, video, audio, PDF and text.
-- Files are copied to a private temporary folder for preview and deleted when PhoneKeep closes.
+- Images, text and PDFs are previewed from memory; nothing decrypted is written to disk for them.
+- Video and audio need a file to play: they are copied to a private temporary folder (readable only by the user) and deleted when PhoneKeep closes, and again at the next launch in case it crashed.
 
 **Done when**
 - [ ] Space previews every kind of item listed above on Mac and Windows.

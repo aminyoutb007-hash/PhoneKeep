@@ -27,7 +27,8 @@ Previews and nice touches come third. A feature that weakens either priority doe
 | [09-files-apps.md](09-files-apps.md) | App documents, drag-and-drop transfer, file search, app data |
 | [10-device.md](10-device.md) | Device overview, battery, storage, moving to a new iPhone, screenshots |
 | [11-previews.md](11-previews.md) | Previews and nice touches |
-| [12-engineering.md](12-engineering.md) | Code map, architecture, tests, build and release, what is out of scope |
+| [12-engineering.md](12-engineering.md) | Code map, architecture, tests, pull requests, build and release, what is out of scope |
+| [../release.md](../release.md) | The release checklist (copied into each release pull request) |
 
 ## How to work
 
@@ -40,13 +41,14 @@ Previews and nice touches come third. A feature that weakens either priority doe
 
 A feature is done only when **all** of these are true:
 
-- Every point under its **Done when** passes on a real iPhone running the current iOS, connected **by cable and by Wi-Fi**.
+- Every point under its **Done when** passes on a real iPhone running the current iOS, connected **by cable and by Wi-Fi**. On Mac, Wi-Fi is required. On Windows, Wi-Fi must either work or show the plain-language error from E3 saying why and what to do ("Connect once with a cable first", "Install the Apple Devices app"); a Wi-Fi failure on Windows doesn't block a feature, but a silent failure or an unexplained error does.
 - It works on **macOS (Apple Silicon and Intel) and Windows**, unless the feature says one platform only.
 - It has **automated tests** in the repository (see [12-engineering.md](12-engineering.md)), and all existing tests still pass.
 - It follows every rule in [01-principles.md](01-principles.md) and the interaction patterns in [00-user-experience.md](00-user-experience.md).
 - None of the five journeys in [00-user-experience.md](00-user-experience.md) got slower or longer.
-- The installers build on GitHub Actions without errors.
+- The installers build on GitHub Actions without errors, and the pull request links to that run and quotes the installer sizes.
 - The README's user section describes it in one or two plain sentences.
+- The pull request follows the layout in [12-engineering.md](12-engineering.md#pull-requests) (hardware it needs, on-device checklist, status block).
 
 ## Not to build
 

@@ -72,6 +72,15 @@ def main() -> None:
         runpy.run_module("pymobiledevice3", run_name="__main__", alter_sys=True)
         return
     args = [a for a in args if not a.startswith("-psn_")]  # macOS Finder launch arg
+    if args == ["--pk-launch-check"]:
+        # Internal, used by the installer build: open the real window, prove it drew, then quit.
+        # Prints "PKLAUNCH ok <version>" so the build can check the packaged app actually starts.
+        import app
+        import phonekeep
+        win = app.App()
+        win.after(2500, lambda: (print(f"PKLAUNCH ok {phonekeep.full_version()}", flush=True), win.destroy()))
+        win.mainloop()
+        return
     if args:
         import phonekeep
         sys.exit(phonekeep.main(args))

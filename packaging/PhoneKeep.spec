@@ -18,7 +18,7 @@ for pkg in ("typer", "rich", "click", "construct", "asn1", "srptools", "pycrashr
         hiddenimports += collect_submodules(pkg)
     except Exception:
         pass
-hiddenimports += ["sections", "phonekeep", "app", "ui", "photos", "tables", "phone", "device", "tkinter",
+hiddenimports += ["sections", "phonekeep", "app", "ui", "photos", "tables", "phone", "device", "build_label", "tkinter",
                   "PIL.ImageOps", "PIL.ImageTk", "PIL._tkinter_finder"]
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))  # project folder
