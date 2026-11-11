@@ -52,7 +52,13 @@
 - Hashes, not hard links, so the store works the same on an internal disk, an external drive, exFAT and network drives (B4). **FAT32 is refused** with a plain message: "This drive uses an old format (FAT32) that can't hold files over 4 GB. Format it as exFAT or APFS, or choose another drive."
 - The folder carries a **format version** (`format.json`: `{"format": 1}`). PhoneKeep refuses to touch a folder with a newer format than it knows, and migrates an older one in place after verifying, the same way as the upgrade above. Any change to the layout raises the number and adds a migration.
 - Next to each snapshot sits a small unencrypted **sidecar** (`snapshot.json`) with exactly five fields: snapshot date, size, iOS version, phone name and model. Nothing else, so the timeline and phone cards draw instantly without decrypting anything (see [04-security.md](04-security.md#what-is-stored-unencrypted)).
-- The owner's own choices about snapshots ("Keep forever", a name given with Rename) live in one small `snapshots.json` in the phone folder. They are the owner's words, not data from the phone, and nothing from inside a backup goes there.
+- The owner's own choices about snapshots live in one small `snapshots.json` in the phone folder (agreed 11 Nov). Format, which later features may rely on:
+
+  ```json
+  {"20261103-210000": {"locked": true, "label": "Before the holiday"}}
+  ```
+
+  One entry per snapshot id, each with `locked` (bool, "Keep forever"; default false) and `label` (string, the name given with Rename, at most 80 characters; default "" = unnamed, shown by date). A snapshot with no entry is unnamed and not kept. These are the owner's words, not data from the phone; nothing from inside a backup goes there.
 - The live backup the phone updates incrementally sits in `current/`; the snapshots share their files through the store. The newest backup therefore exists twice (live copy + store); every older snapshot costs only what changed.
 
 **Done when**
