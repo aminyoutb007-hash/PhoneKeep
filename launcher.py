@@ -148,6 +148,30 @@ def _pk_battery(args: list) -> None:
         sys.exit(1)
 
 
+def _pk_storage(args: list) -> None:
+    """Internal: print PKSTORAGE total=<bytes> used=<bytes> free=<bytes> from the phone's disk-usage domain."""
+    import asyncio
+    udid = args[args.index("--udid") + 1] if "--udid" in args else None
+    try:
+        from pymobiledevice3.lockdown import create_using_usbmux
+    except ImportError as e:
+        print(f"PKAPI {e}", flush=True)
+        sys.exit(3)
+
+    async def run():
+        async with await create_using_usbmux(serial=udid) as lockdown:
+            v = (await lockdown.get_value(domain="com.apple.disk_usage")) or {}
+            total = int(v.get("TotalDiskCapacity") or v.get("TotalDataCapacity") or 0)
+            free = int(v.get("TotalDataAvailable") or 0)
+            cap = int(v.get("TotalDataCapacity") or total)
+            print(f"PKSTORAGE total={total} used={max(0, cap - free)} free={free}", flush=True)
+    try:
+        asyncio.run(run())
+    except Exception as e:
+        print(f"PKERR {type(e).__name__}: {e}", flush=True)
+        sys.exit(1)
+
+
 def _pk_change_password(args: list) -> None:
     """Internal: change the backup password. The old and new passwords arrive on stdin, one per
     line, never on the command line."""
@@ -175,6 +199,9 @@ def main() -> None:
         return
     if args and args[0] == "--pk-change-password":
         _pk_change_password(args[1:])
+        return
+    if args and args[0] == "--pk-storage":
+        _pk_storage(args[1:])
         return
     if args and args[0] == "--pk-battery":
         _pk_battery(args[1:])

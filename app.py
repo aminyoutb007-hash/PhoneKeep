@@ -496,7 +496,8 @@ class App(tk.Tk):
     def problem_of(err) -> errors.Problem:
         """Every error shown in this window comes through the one table in errors.py."""
         if isinstance(err, wv.PhoneKeepError) and err.button:
-            return errors.Problem(err.key, str(err), err.button, err.action, err.details)
+            return errors.Problem(err.key, str(err), err.button, err.action, err.details,
+                                  failure=err.key not in ("drive_unavailable",))
         if isinstance(err, wv.PhoneKeepError):
             return errors.Problem("plain", str(err), "Try again", errors.TRY_AGAIN, err.details, failure=True)
         return errors.explain(err)
@@ -668,6 +669,59 @@ class App(tk.Tk):
         self.log(f"You selected {n:,} photos & videos." if n else "Photos skipped.")
         self.notes.append(f"{n:,} photos & videos" if n else "no photos")
         return box.get("v")
+
+    # ------------------------------------------------------------------ location (B4)
+    def change_location(self, settings):
+        """Settings → Location → Change…: pick a folder; offer to move the existing backups there."""
+        import location as loc
+        import snapshots as _snaps
+        old = Path(self.s["backup_dir"])
+        d = filedialog.askdirectory(title="Where should backups be kept?", initialdir=str(old if old.exists() else Path.home()), parent=settings)
+        if not d:
+            return
+        new = Path(d)
+        if new.resolve() == old.resolve():
+            return
+        try:
+            _snaps.check_filesystem(new)
+        except _snaps.FileSystemRefused as e:
+            self.show_problem(errors.Problem("fat32", str(e), "Choose another", errors.TRY_AGAIN), retry=lambda: self.change_location(settings))
+            return
+        u = loc.usage(old)
+        has_backups = u["used"] > 0
+        move = False
+        if has_backups:
+            move = messagebox.askyesno(f"Move my existing backups to {loc.drive_name(new) if loc.drive_name(new) != 'this disk' else new.name}?",
+                                       f"Your backups use {loc.human(u['used'])}. Move them to the new folder? "
+                                       "They are copied and checked first; the old copy is removed only when everything matches.\n\n"
+                                       "No = start fresh in the new folder (the old backups stay where they are).", parent=settings)
+        messagebox.showinfo("Your backup password", "Your backup password lives in this computer's keychain. If you ever open these "
+                            "backups on another computer, you'll need to type it there. If you forget it, the backup can't be opened.",
+                            parent=settings)
+        if not move:
+            self.s["backup_dir"] = str(new)
+            phone_write.log_activity(f"Backup location changed to {new}", kind="settings")
+            settings.refresh_location()
+            self.detect(silent=True)
+            return
+
+        def work():
+            return loc.move_backups(old, new, log=self.log, progress=self._progress_backup_simple)
+
+        def done(r):
+            if r is not None:
+                self.s["backup_dir"] = str(new)
+                phone_write.log_activity(f"Backups moved to {new} ({r['files']:,} files)", kind="settings")
+                if settings.winfo_exists():
+                    settings.refresh_location()
+                messagebox.showinfo(wv.APP_NAME, f"Moved {r['files']:,} files ({loc.human(r['bytes'])}) to {new}.", parent=self)
+                self.detect(silent=True)
+        self._reset_progress(False)
+        self.steps["backup"].set("active", detail=f"Moving backups to {new}…")
+        self._run(work, done)
+
+    def _progress_backup_simple(self, pct):
+        self.call(lambda: (self.bar.set(pct), self.steps["backup"].set("active", right=f"{pct:.0f}%")))
 
     # ------------------------------------------------------------------ automatic backups (B2)
     def set_schedule(self, mode: str, hour_text: str, day_text: str):
@@ -1210,9 +1264,27 @@ class SettingsWindow(tk.Toplevel):
         ui.Chip(hp, "Start at login", self.login_var, lambda: app.set_start_at_login(self.login_var.get()),
                 size=12, bg=CARD).pack(anchor="w", pady=3)
 
+        # location (B4)
+        import location as loc
+        lo = section("Location", "Where your backups are kept. Any disk, external drive or network drive will do (not FAT32).")
+        self.loc_line = tk.Label(lo, text="", bg=CARD, fg=INK, font=font(12), anchor="w", justify="left", wraplength=560)
+        self.loc_line.pack(fill="x")
+        self.loc_space = tk.Label(lo, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w")
+        self.loc_space.pack(fill="x", pady=(2, 6))
+        lrow = tk.Frame(lo, bg=CARD)
+        lrow.pack(anchor="w")
+        ui.RoundButton(lrow, "Change…", lambda: app.change_location(self), "secondary", 110, 34, 12, bg=CARD).pack(side="left")
+        ui.RoundButton(lrow, "Show in Finder" if sys.platform == "darwin" else "Show folder",
+                       lambda: (Path(self.s["backup_dir"]).mkdir(parents=True, exist_ok=True), reveal(Path(self.s["backup_dir"]))),
+                       "secondary", 130, 34, 12, bg=CARD).pack(side="left", padx=8)
+        tk.Label(lo, text="🔒 Encrypted · stays on this computer" + ("" if loc.drive_name(Path(self.s["backup_dir"])) == "this disk"
+                                                                       else f" (on {loc.drive_name(Path(self.s['backup_dir']))})"),
+                 bg=CARD, fg=GREEN, font=font(12, "bold"), anchor="w").pack(fill="x", pady=(8, 0))
+        self.refresh_location()
+
         # folders
         fo = section("Folders")
-        for key, label in (("backup_dir", "Backups"), ("archive_dir", "Archive")):
+        for key, label in (("archive_dir", "Archive"),):
             row = tk.Frame(fo, bg=CARD)
             row.pack(fill="x", pady=3)
             tk.Label(row, text=label, bg=CARD, fg=INK, font=font(12), width=8, anchor="w").pack(side="left")
@@ -1248,6 +1320,22 @@ class SettingsWindow(tk.Toplevel):
         d = filedialog.askdirectory(initialdir=var.get() or str(Path.home()), parent=self)
         if d:
             var.set(d)
+
+    def refresh_location(self):
+        import location as loc
+        p = Path(self.s["backup_dir"])
+        self.loc_line.configure(text=str(p).replace(str(Path.home()), "~", 1))
+        if not loc.is_available(p):
+            self.loc_space.configure(text=loc.connect_message(p), fg=AMBER)
+            return
+
+        def work():
+            return loc.usage(p)
+
+        def show(u):
+            if self.winfo_exists():
+                self.loc_space.configure(text=f"Backups use {loc.human(u['used'])} · {loc.human(u['free'])} free on {u['drive']}", fg=MUTED)
+        threading.Thread(target=lambda: self.app.call(lambda u=work(): show(u)), daemon=True).start()
 
     def _refresh_backups(self):
         msgs = []
