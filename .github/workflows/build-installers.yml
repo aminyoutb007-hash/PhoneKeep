@@ -49,7 +49,12 @@ jobs:
           mkdir dmg
           cp -R dist/PhoneKeep.app dmg/
           ln -s /Applications dmg/Applications
-          hdiutil create -volname "PhoneKeep" -srcfolder dmg -ov -format UDZO "PhoneKeep-Mac-${{ matrix.arch }}.dmg"
+          # hdiutil sometimes fails with "Resource busy" on CI machines; retry a few times
+          for i in 1 2 3 4 5; do
+            hdiutil create -volname "PhoneKeep" -srcfolder dmg -ov -format UDZO "PhoneKeep-Mac-${{ matrix.arch }}.dmg" && break
+            echo "hdiutil failed (attempt $i), retrying..."; sleep 10
+          done
+          test -f "PhoneKeep-Mac-${{ matrix.arch }}.dmg"
       - uses: actions/upload-artifact@v4
         with:
           name: PhoneKeep-Mac-${{ matrix.arch }}
