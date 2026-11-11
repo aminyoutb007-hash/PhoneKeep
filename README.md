@@ -8,7 +8,7 @@ Open `index.html` in the archive folder and you get a home page for your iPhone 
 
 | Section | What you get |
 |---|---|
-| **WhatsApp** | Every chat with photos, videos, voice notes, locations, group sender names, starred messages; search across all chats; media gallery per chat |
+| **WhatsApp** and **WhatsApp Business** | Each app in its own folder. Every chat with photos, videos, voice notes, locations, group sender names, starred messages; search across all chats; media gallery per chat |
 | **Messages** | iMessage, SMS and RCS conversations in the same chat view, with attachments (HEIC photos converted so browsers show them). iMessage and SMS threads with the same person are merged |
 | **Photos & videos** | Full-size originals in `Photos/Originals`, plus a gallery by year and month with thumbnails. Live Photos are recognised |
 | **Contacts** | Searchable list, plus a **.vcf** file you can import into a new iPhone, Android, Google or Outlook, plus CSV |
@@ -75,7 +75,7 @@ python phonekeep.py export --only messages,contacts,notes
 python phonekeep.py export --all-files       # also dump every raw file
 python phonekeep.py whatsapp                 # WhatsApp-only archive
 ```
-Sections: `whatsapp, messages, photos, contacts, calls, notes, calendar, voicemail, voicememos, safari, apps, files`.
+Sections: `whatsapp, whatsappbusiness, messages, photos, contacts, calls, notes, calendar, voicemail, voicememos, safari, apps, files`.
 
 ## Good to know
 

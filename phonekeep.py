@@ -336,8 +336,10 @@ def find_backups(log: Log = _print) -> list[dict]:
                     found.append(backup_info(d))
         except PermissionError:
             if sys.platform == "darwin":
-                log(f"No permission to read {root}. Give your Terminal (or Python) 'Full Disk "
-                    "Access' in System Settings > Privacy & Security, then try again.")
+                who = "PhoneKeep" if getattr(sys, "frozen", False) else "your Terminal (or Python)"
+                log(f"Skipped older Finder backups in {root} (no permission). That's fine: PhoneKeep "
+                    f"makes its own backups. To include Finder backups, give {who} 'Full Disk Access' "
+                    "in System Settings > Privacy & Security.")
             else:
                 log(f"No permission to read {root}.")
     found.sort(key=lambda b: b["date"] or "", reverse=True)
@@ -601,13 +603,63 @@ def _media_candidates(src: str) -> list[str]:
     return c
 
 
+def _extract_wa_db(reader: "BackupReader", domain: str, log: Log = _print) -> tuple[Path, dict]:
+    """Copy one WhatsApp app's ChatStorage.sqlite (+ journal files) out of the backup, once."""
+    files = reader.list_files(domain)
+    work = Path(reader._tmp.name) / ("wa-business" if domain == WA_BUSINESS_DOMAIN else "whatsapp")
+    work.mkdir(exist_ok=True)
+    db_local = work / WA_DB
+    if not db_local.exists():
+        log("Extracting WhatsApp" + (" Business" if domain == WA_BUSINESS_DOMAIN else "") + " database...")
+        if WA_DB not in files or not reader.extract(domain, WA_DB, files[WA_DB], db_local):
+            raise PhoneKeepError("Could not extract ChatStorage.sqlite from the backup.")
+        for extra in (WA_DB + "-wal", WA_DB + "-shm"):
+            if extra in files:
+                reader.extract(domain, extra, files[extra], work / extra)
+    return db_local, files
+
+
+def list_whatsapp_chats(reader: "BackupReader", business: bool = False, name_for=None,
+                        log: Log = _print) -> list[dict]:
+    """Quick overview of the chats in one WhatsApp app: id, name, group, messages, last date.
+    Returns [] when that app isn't in the backup."""
+    domain = WA_BUSINESS_DOMAIN if business else WA_DOMAIN
+    if not reader.has_file(domain, WA_DB):
+        return []
+    db_local, _ = _extract_wa_db(reader, domain, log)
+    name_for = name_for or (lambda _x: None)
+    con = sqlite3.connect(str(db_local))
+    con.row_factory = sqlite3.Row
+    stats = {r[0]: (r[1], r[2]) for r in con.execute(
+        "SELECT ZCHATSESSION, COUNT(*), MAX(ZMESSAGEDATE) FROM ZWAMESSAGE GROUP BY ZCHATSESSION")}
+    out = []
+    for s in _select(con, "ZWACHATSESSION", ["Z_PK", "ZCONTACTJID", "ZPARTNERNAME", "ZSESSIONTYPE"]):
+        jid = s["ZCONTACTJID"] or ""
+        n, last = stats.get(s["Z_PK"], (0, None))
+        if jid == "status@broadcast" or not n:
+            continue
+        when = apple_time(last)
+        out.append({"id": s["Z_PK"], "name": s["ZPARTNERNAME"] or name_for(jid_label(jid)) or jid_label(jid),
+                    "group": s["ZSESSIONTYPE"] == 1 or jid.endswith("@g.us"), "messages": n,
+                    "last": when.strftime("%Y-%m-%d") if when else ""})
+    con.close()
+    out.sort(key=lambda c: c["last"], reverse=True)
+    return out
+
+
 def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = True,
                     business: bool = False, log: Log = _print,
                     progress: Optional[Callable[[float], None]] = None,
-                    binfo: Optional[dict] = None, name_for=None, hub: bool = False) -> dict:
-    """Build the WhatsApp archive in `out` from an open backup. Returns a summary dict."""
+                    binfo: Optional[dict] = None, name_for=None, hub: bool = False,
+                    strict: bool = False, only_chats: Optional[set] = None) -> dict:
+    """Build the WhatsApp (or WhatsApp Business) archive in `out` from an open backup.
+    strict=True exports only the app asked for; otherwise it falls back to the other one."""
     out = Path(out)
     domain = WA_BUSINESS_DOMAIN if business else WA_DOMAIN
+    if strict and not reader.has_file(domain, WA_DB):
+        raise PhoneKeepError(
+            ("No WhatsApp Business" if business else "No WhatsApp") + " data in this backup. If "
+            "the app's end-to-end encrypted chat backup is on, iOS may leave chats out of device backups.")
     if not reader.has_file(domain, WA_DB):
         other = WA_DOMAIN if business else WA_BUSINESS_DOMAIN
         if reader.has_file(other, WA_DB):
@@ -618,18 +670,13 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
                 "No WhatsApp data in this backup. If WhatsApp's end-to-end encrypted chat "
                 "backup is on, iOS may leave chats out of device backups.")
 
-    files = reader.list_files(domain)
-    work = Path(reader._tmp.name) / "whatsapp"
-    work.mkdir(exist_ok=True)
-    db_local = work / WA_DB
-    log("Extracting WhatsApp database...")
-    if not reader.extract(domain, WA_DB, files[WA_DB], db_local):
-        raise PhoneKeepError("Could not extract ChatStorage.sqlite from the backup.")
-    for extra in (WA_DB + "-wal", WA_DB + "-shm"):
-        if extra in files:
-            reader.extract(domain, extra, files[extra], work / extra)
-
+    db_local, files = _extract_wa_db(reader, domain, log)
     chats = parse_whatsapp(db_local, log, name_for)
+    if only_chats is not None:
+        chats = [c for c in chats if c["id"] in only_chats]
+        log(f"Exporting the {len(chats)} chat{'s' if len(chats) != 1 else ''} you selected.")
+        if not chats:
+            raise PhoneKeepError("No chats selected for this app.")
 
     media_dir = out / "media"
     copied = missing = skipped = 0
@@ -1001,7 +1048,8 @@ def _export_cli(backup: Path, a) -> None:
             raise PhoneKeepError("Unknown section(s): " + ", ".join(bad))
     if a.all_files:
         only = (only or list(sx.DEFAULT_SECTIONS)) + ["files"]
-    index = sx.export_all(backup, a.out, pw, only, include_media=not a.no_media)
+    names = [x for x in (a.chats or "").split(",") if x.strip()] or None
+    index = sx.export_all(backup, a.out, pw, only, include_media=not a.no_media, chat_names=names)
     print(f"\nOpen this file in your browser:\n  {index}")
 
 
@@ -1030,6 +1078,8 @@ def main(argv=None) -> int:
     for x in (run, exp):
         x.add_argument("--only", help=f"comma-separated sections: {keys}")
         x.add_argument("--all-files", action="store_true", help="also export every raw file in the backup")
+        x.add_argument("--chats", help='WhatsApp: export only chats whose name contains one of these, '
+                                         'comma-separated, e.g. --chats "Acme,Mum"')
     ph = sub.add_parser("photos", help="copy photos & videos straight off the iPhone")
     ph.add_argument("--out", default=str(DEFAULT_ARCHIVE_DIR), help="archive folder")
     enc = sub.add_parser("encryption", help="turn backup encryption on/off")

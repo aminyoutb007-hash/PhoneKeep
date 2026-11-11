@@ -113,7 +113,7 @@ PAGE_CSS = r"""
 .card span{color:var(--muted);font-size:13px}.card.off{opacity:.55}
 table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:10px;overflow:hidden;font-size:14px}
 th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-th{position:sticky;top:58px;background:var(--panel);font-size:12.5px;color:var(--muted)}
+th{background:var(--panel);font-size:12.5px;color:var(--muted)}
 td a{word-break:break-all}.tw{overflow-x:auto}
 .note{background:var(--panel);border-radius:10px;padding:14px 16px;margin-bottom:10px}
 .note h3{margin:0 0 4px;font-size:16px}.note pre{white-space:pre-wrap;font:inherit;margin:8px 0 0}
@@ -174,6 +174,7 @@ class Ctx:
         self.include_media, self.binfo = include_media, binfo
         self.progress = progress
         self.names: dict[str, str] = {}
+        self.chat_filter: dict[str, set] = {}  # section key -> chat ids to export (absent = all)
         self._files: dict[str, dict[str, str]] = {}
         self.tmp = Path(reader._tmp.name)
 
@@ -468,8 +469,17 @@ def sec_messages(ctx: Ctx) -> dict:
 
 def sec_whatsapp(ctx: Ctx) -> dict:
     r = wv.export_whatsapp(ctx.reader, ctx.out / "WhatsApp", ctx.include_media, False, ctx.log,
-                           None, ctx.binfo, ctx.name_for, hub=True)
+                           None, ctx.binfo, ctx.name_for, hub=True, strict=True,
+                           only_chats=ctx.chat_filter.get("whatsapp"))
     r["link"] = "WhatsApp/index.html"
+    return r
+
+
+def sec_whatsapp_business(ctx: Ctx) -> dict:
+    r = wv.export_whatsapp(ctx.reader, ctx.out / "WhatsApp Business", ctx.include_media, True, ctx.log,
+                           None, ctx.binfo, ctx.name_for, hub=True, strict=True,
+                           only_chats=ctx.chat_filter.get("whatsappbusiness"))
+    r["link"] = "WhatsApp Business/index.html"
     return r
 
 
@@ -962,6 +972,7 @@ def sec_rawfiles(ctx: Ctx) -> dict:
 
 SECTIONS = [
     ("whatsapp", "WhatsApp", "&#128172;", sec_whatsapp),
+    ("whatsappbusiness", "WhatsApp Business", "&#128188;", sec_whatsapp_business),
     ("messages", "Messages", "&#128488;", sec_messages),
     ("photos", "Photos & videos", "&#128247;", sec_photos),
     ("contacts", "Contacts", "&#128100;", None),  # handled specially
@@ -979,7 +990,12 @@ DEFAULT_SECTIONS = [k for k, *_ in SECTIONS if k != "files"]
 
 def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[str] = None,
                sections: Optional[list[str]] = None, include_media: bool = True,
-               log: Log = wv._print, progress: Optional[Callable[[float], None]] = None) -> Path:
+               log: Log = wv._print, progress: Optional[Callable[[float], None]] = None,
+               chooser: Optional[Callable[[dict], Optional[dict]]] = None,
+               chat_names: Optional[list[str]] = None) -> Path:
+    """chooser: called with {section: (label, [chat, ...])} for WhatsApp / WhatsApp Business and
+    returns {section: set(chat ids)} to export only those chats (None = cancel).
+    chat_names: alternatively, export only chats whose name contains one of these words."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     sections = sections or DEFAULT_SECTIONS
@@ -992,6 +1008,24 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
             people = load_contacts(ctx)
         except Exception as e:
             log(f"Contacts could not be read ({e}).")
+        wa = [(k, lab) for k, lab in (("whatsapp", "WhatsApp"), ("whatsappbusiness", "WhatsApp Business"))
+              if k in sections]
+        if wa and (chooser or chat_names):
+            lists = {k: (lab, wv.list_whatsapp_chats(reader, k == "whatsappbusiness", ctx.name_for, log))
+                     for k, lab in wa}
+            if chat_names:
+                pats = [p.strip().lower() for p in chat_names if p.strip()]
+                sel = {k: {c["id"] for c in chats if any(p in c["name"].lower() for p in pats)}
+                       for k, (_lab, chats) in lists.items()}
+            else:
+                sel = chooser(lists)
+                if sel is None:
+                    raise PhoneKeepError("Cancelled: no chats were exported.")
+            ctx.chat_filter = sel
+            skipped = [k for k, ids in sel.items() if not ids]
+            sections = [s for s in sections if s not in skipped]
+            for k in skipped:
+                log(f"{dict(wa)[k]}: no chats selected, skipping.")
         todo = [s for s in SECTIONS if s[0] in sections]
         for i, (key, label, icon, fn) in enumerate(todo):
             log(f"\n== {label} ==")

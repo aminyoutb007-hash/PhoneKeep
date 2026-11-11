@@ -14,6 +14,110 @@ import sections as sx
 import phonekeep as wv
 
 
+class ChatPicker(tk.Toplevel):
+    """Lists the WhatsApp / WhatsApp Business chats; the person ticks which ones to export."""
+
+    def __init__(self, parent, lists: dict):
+        super().__init__(parent)
+        self.title("Choose chats to export")
+        self.geometry("720x560")
+        self.minsize(560, 400)
+        self.transient(parent)
+        self.result = None
+        self.rows = []  # (key, app label, chat)
+        for key, (label, chats) in lists.items():
+            for c in chats:
+                self.rows.append((key, label, c))
+        self.selected = {(k, c["id"]) for k, _l, c in self.rows}
+        multi = len(lists) > 1
+
+        top = ttk.Frame(self)
+        top.pack(fill="x", padx=12, pady=(12, 6))
+        ttk.Label(top, text="Tick the chats you want to keep. Click a chat to tick or untick it.").pack(anchor="w")
+        row = ttk.Frame(top)
+        row.pack(fill="x", pady=(8, 0))
+        ttk.Label(row, text="Search:").pack(side="left")
+        self.q = tk.StringVar()
+        self.q.trace_add("write", lambda *_: self._fill())
+        ent = ttk.Entry(row, textvariable=self.q)
+        ent.pack(side="left", fill="x", expand=True, padx=6)
+        ttk.Button(row, text="Select all", command=lambda: self._set_all(True)).pack(side="left")
+        ttk.Button(row, text="Select none", command=lambda: self._set_all(False)).pack(side="left", padx=(6, 0))
+
+        cols = ("tick", "name") + (("app",) if multi else ()) + ("messages", "last")
+        frame = ttk.Frame(self)
+        frame.pack(fill="both", expand=True, padx=12)
+        self.tree = ttk.Treeview(frame, columns=cols, show="headings", selectmode="none")
+        heads = {"tick": ("", 34), "name": ("Chat", 300), "app": ("App", 140),
+                 "messages": ("Messages", 90), "last": ("Last message", 110)}
+        for c in cols:
+            self.tree.heading(c, text=heads[c][0])
+            self.tree.column(c, width=heads[c][1], stretch=(c == "name"),
+                             anchor="center" if c in ("tick", "messages") else "w")
+        sb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.tree.bind("<Button-1>", self._click)
+        self.tree.bind("<space>", lambda e: self._toggle(self.tree.focus()))
+
+        bottom = ttk.Frame(self)
+        bottom.pack(fill="x", padx=12, pady=12)
+        self.count = ttk.Label(bottom)
+        self.count.pack(side="left")
+        ttk.Button(bottom, text="Export selected chats", command=self._ok).pack(side="right")
+        ttk.Button(bottom, text="Cancel", command=self.destroy).pack(side="right", padx=8)
+        self.multi = multi
+        self._fill()
+        ent.focus_set()
+        self.grab_set()
+
+    def _fill(self):
+        q = self.q.get().strip().lower()
+        self.tree.delete(*self.tree.get_children())
+        for i, (key, label, c) in enumerate(self.rows):
+            if q and q not in c["name"].lower():
+                continue
+            tick = "☑" if (key, c["id"]) in self.selected else "☐"
+            name = ("👥 " if c["group"] else "") + c["name"]
+            vals = (tick, name) + ((label,) if self.multi else ()) + (f"{c['messages']:,}", c["last"])
+            self.tree.insert("", "end", iid=str(i), values=vals)
+        self._update_count()
+
+    def _toggle(self, iid):
+        if not iid:
+            return
+        key, _label, c = self.rows[int(iid)]
+        k = (key, c["id"])
+        self.selected.symmetric_difference_update({k})
+        self.tree.set(iid, "tick", "☑" if k in self.selected else "☐")
+        self._update_count()
+
+    def _click(self, event):
+        if self.tree.identify_region(event.x, event.y) == "cell":
+            self._toggle(self.tree.identify_row(event.y))
+            return "break"
+
+    def _set_all(self, on: bool):
+        visible = [self.rows[int(i)] for i in self.tree.get_children()]
+        for key, _l, c in visible:
+            (self.selected.add if on else self.selected.discard)((key, c["id"]))
+        self._fill()
+
+    def _update_count(self):
+        self.count.configure(text=f"{len(self.selected):,} of {len(self.rows):,} chats selected")
+
+    def _ok(self):
+        if not self.selected:
+            messagebox.showinfo(wv.APP_NAME, "Tick at least one chat.", parent=self)
+            return
+        out = {key: set() for key, _l, _c in self.rows}
+        for key, cid in self.selected:
+            out[key].add(cid)
+        self.result = out
+        self.destroy()
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -27,6 +131,7 @@ class App(tk.Tk):
         self.archive_dir = tk.StringVar(value=str(wv.DEFAULT_ARCHIVE_DIR))
         self.media = tk.BooleanVar(value=True)
         self.direct_photos = tk.BooleanVar(value=True)
+        self.pick_chats = tk.BooleanVar(value=True)
         self.device_text = tk.StringVar(value="Looking for iPhone…")
         self.udid: str | None = None
         self.picks = {k: tk.BooleanVar(value=(k in sx.DEFAULT_SECTIONS)) for k, *_ in sx.SECTIONS}
@@ -59,6 +164,10 @@ class App(tk.Tk):
         ttk.Checkbutton(opt, text="Include attachments & media files", variable=self.media).pack(side="left")
         ttk.Checkbutton(opt, text="Copy photos directly from the phone (works with iCloud Photos)",
                         variable=self.direct_photos).pack(side="left", padx=14)
+        opt2 = ttk.Frame(f2)
+        opt2.pack(fill="x", padx=10, pady=(0, 6))
+        ttk.Checkbutton(opt2, text="Let me choose which WhatsApp chats to export",
+                        variable=self.pick_chats).pack(side="left")
 
         f3 = ttk.LabelFrame(self, text="3. Back up & build the archive")
         f3.pack(fill="x", **pad)
@@ -168,6 +277,24 @@ class App(tk.Tk):
         ev.wait()
         return box.get("v")
 
+    def _choose_chats(self, lists: dict):
+        """Show the chat picker on the UI thread; the worker waits for the answer."""
+        if not any(chats for _label, chats in lists.values()):
+            return {}  # nothing to pick from: export normally and let each section report it
+        box, ev = {}, threading.Event()
+
+        def show():
+            picker = ChatPicker(self, lists)
+            self.wait_window(picker)
+            box["v"] = picker.result
+            ev.set()
+        self.q.put(("call", show))
+        ev.wait()
+        if box.get("v") is not None:
+            n = sum(len(v) for v in box["v"].values())
+            self.log(f"You selected {n} chat{'s' if n != 1 else ''} to export.")
+        return box.get("v")
+
     def _selected(self) -> list[str]:
         return [k for k, v in self.picks.items() if v.get()]
 
@@ -182,8 +309,10 @@ class App(tk.Tk):
         if not chosen:
             raise wv.PhoneKeepError("Tick at least one thing to include.")
         self.log(f"Building archive from backup of {info['name']} ({info['date']})")
+        wants_pick = self.pick_chats.get() and ({"whatsapp", "whatsappbusiness"} & set(chosen))
         return sx.export_all(path, Path(self.archive_dir.get()), pw, chosen,
-                             include_media=self.media.get(), log=self.log, progress=self.progress)
+                             include_media=self.media.get(), log=self.log, progress=self.progress,
+                             chooser=self._choose_chats if wants_pick else None)
 
     # ---------- actions ----------
     def detect(self):
