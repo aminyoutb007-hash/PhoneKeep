@@ -1,0 +1,10 @@
+.venv/
+.build-venv/
+build/
+dist/
+Output/
+dmg/
+*.dmg
+__pycache__/
+packaging/icon.png
+packaging/icon.ico

@@ -1,0 +1,4 @@
+pymobiledevice3>=4.0
+iphone_backup_decrypt>=0.9
+Pillow>=10
+pillow-heif>=0.16
