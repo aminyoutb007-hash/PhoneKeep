@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")/.."
 python3 -m venv .build-venv
 .build-venv/bin/python -m pip install -q --upgrade pip
-.build-venv/bin/python -m pip install -q -r requirements.txt pyinstaller
+.build-venv/bin/python -m pip install -q --only-binary=cryptography -r requirements.txt pyinstaller
 .build-venv/bin/python packaging/make_icons.py
 .build-venv/bin/pyinstaller packaging/PhoneKeep.spec --noconfirm
 codesign --force --deep --sign - dist/PhoneKeep.app
