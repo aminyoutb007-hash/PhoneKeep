@@ -15,7 +15,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | X0 | Tests in CI, test builds from every pull request, agreed spec changes | Tests not in the repo; installers built by hand | Done | [12-engineering.md](12-engineering.md#tests) |
 | S1 | Encrypted backups by default, password in the keychain | Encrypted by default; password in the keychain, never typed twice | Done | [04-security.md](04-security.md#s1-encryption-by-default-and-the-keychain) |
 | S3 | No network connections | Refused by the app itself; shown in Settings; opt-in update check only | Done | [04-security.md](04-security.md#s3-no-network) |
-| E3 | Plain-language errors | Partly | Partial | [05-ease-of-use.md](05-ease-of-use.md#e3-plain-language-errors) |
+| E3 | Plain-language errors | One table; inline banner with a button; Show details | Done | [05-ease-of-use.md](05-ease-of-use.md#e3-plain-language-errors) |
 | E1 | First-run guide | Not available | To build | [05-ease-of-use.md](05-ease-of-use.md#e1-first-run-guide) |
 | B1 | Back up by cable and Wi-Fi | Works; only changes after the first run | Done | [03-backup.md](03-backup.md#b1-back-up-by-cable-and-wi-fi) |
 | E2 | Menu bar / system tray helper | Not available | To build | [05-ease-of-use.md](05-ease-of-use.md#e2-menu-bar-and-system-tray-helper) |

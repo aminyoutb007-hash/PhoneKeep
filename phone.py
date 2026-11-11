@@ -149,13 +149,12 @@ class Runner:
 
 
 def describe_error(e: Exception) -> str:
+    """The one-sentence message for an error (E3): PhoneKeep's own are already plain; anything else goes
+    through the errors table. Never a raw exception."""
+    import errors
     if isinstance(e, wv.PhoneKeepError):
         return str(e)
-    name = type(e).__name__
-    low = f"{name} {e}".lower()
-    if "usbmux" in low or "connection" in low or "notpaired" in low or "nodevice" in low:
-        return "Can't reach the iPhone right now. Unlock it, keep it nearby (or plug in the cable) and try again."
-    return f"{name}: {e}"
+    return errors.explain(e).message
 
 
 # ---------------------------------------------------------------------------
@@ -544,12 +543,44 @@ class PhoneWindow(tk.Toplevel):
         tk.Label(f, text=text, bg=BG, fg=MUTED, font=font(14)).pack(pady=80)
         return f
 
-    def failed(self, holder, msg, retry=None):
+    def failed(self, holder, msg, retry=None, details: str = ""):
+        """Inline error (E3): one sentence, one button, and "Show details" for the technical text."""
+        if isinstance(msg, BaseException):
+            msg, retry, details = self._problem_parts(msg, retry)
         for w in holder.winfo_children():
             w.destroy()
         tk.Label(holder, text=msg, bg=BG, fg=RED, font=font(13), wraplength=640, justify="center").pack(pady=(70, 12))
         if retry:
             RoundButton(holder, retry[0], retry[1], "primary", 200, 38).pack()
+        if details:
+            lk = tk.Label(holder, text="Show details", bg=BG, fg=MUTED, font=font(11), cursor="hand2")
+            lk.pack(pady=(10, 0))
+            lk.bind("<Button-1>", lambda e, d=details: messagebox.showinfo("Details for support", d, parent=self))
+
+    def _problem_parts(self, e: BaseException, retry=None):
+        """From an exception: (message, (button label, command), details) using the one errors table."""
+        import errors
+        if isinstance(e, wv.PhoneKeepError) and e.button:
+            pr = errors.Problem(e.key, str(e), e.button, e.action, e.details)
+        elif isinstance(e, wv.PhoneKeepError):
+            pr = errors.Problem("plain", str(e), retry[0] if retry else "", errors.TRY_AGAIN if retry else "", e.details)
+        else:
+            pr = errors.explain(e)
+        button = None
+        if pr.action == errors.TRY_AGAIN and retry:
+            button = (pr.button or retry[0], retry[1])
+        elif pr.action == errors.ENTER_PASSWORD:
+            button = (pr.button, self._open_backup)
+        elif pr.action == errors.CHANGE_LOCATION:
+            button = (pr.button, lambda: self.app.open_settings("backup_dir"))
+        elif pr.action == errors.INSTALL_APPLE_DEVICES:
+            button = (pr.button, lambda: __import__("webbrowser").open("https://apps.microsoft.com/detail/9NP83LWLPZ9K"))
+        elif pr.action == errors.SHOW_DETAILS and pr.details:
+            button = (pr.button, lambda d=pr.details: messagebox.showinfo("Details for support", d, parent=self))
+            return pr.message, button, ""
+        elif retry:
+            button = retry
+        return pr.message, button, pr.details
 
     def open_app(self, key: str):
         self.current = key
@@ -569,7 +600,7 @@ class PhoneWindow(tk.Toplevel):
             holder = self.loading()
             data = self.data
             self.backup_runner.submit(lambda: data.get(key), lambda v: self._show(key, holder, v),
-                                      lambda e: self.failed(holder, describe_error(e)))
+                                      lambda e: self.failed(holder, e))
             return
         # live apps
         holder = self.loading("Reading from the iPhone…")
@@ -583,7 +614,7 @@ class PhoneWindow(tk.Toplevel):
         live = self.live
         fn = {"music": live.music, "books": live.books, "files": live.apps}[key]
         self.live_runner.submit(fn, lambda v: self._show(key, holder, v),
-                                lambda e: self.failed(holder, describe_error(e), ("Try again", lambda: self.open_app(key))))
+                                lambda e: self.failed(holder, e, ("Try again", lambda: self.open_app(key))))
 
     def _show(self, key, holder, value):
         if self.current != key:
@@ -673,9 +704,9 @@ class PhoneWindow(tk.Toplevel):
 
         def dev_err(e):
             if self.data is not None:
-                self.backup_runner.submit(from_backup, ok, lambda e2: self.failed(holder, describe_error(e2)))
+                self.backup_runner.submit(from_backup, ok, lambda e2: self.failed(holder, e2))
             else:
-                self.failed(holder, describe_error(e), ("Try again", lambda: self.open_app("photos")))
+                self.failed(holder, e, ("Try again", lambda: self.open_app("photos")))
         if self.udid and self.live is not None:
             self.live_runner.submit(from_device, ok, dev_err)
         else:
