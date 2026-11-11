@@ -33,7 +33,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install --only-binary=cryptography -r requirements.txt pyinstaller
       - name: Build PhoneKeep.app
         run: |
           python packaging/make_icons.py
@@ -66,7 +66,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install --only-binary=cryptography -r requirements.txt pyinstaller
       - name: Build PhoneKeep.exe
         run: |
           python packaging/make_icons.py
