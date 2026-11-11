@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sqlite3
+import threading
 import traceback
 import zlib
 from pathlib import Path
@@ -156,11 +157,8 @@ def table(headers: list[str], rows: list[list[str]], raw_cols: set[int] = frozen
 
 
 def write_csv(path: Path, headers: list[str], rows: list[list]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f)
-        w.writerow(headers)
-        w.writerows(rows)
+    import tables
+    tables.write_csv_rows(path, headers, rows)  # formula-safe
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +173,10 @@ class Ctx:
         self.progress = progress
         self.names: dict[str, str] = {}
         self.chat_filter: dict[str, set] = {}  # section key -> chat ids to export (absent = all)
+        self.formats: set = {"web"}            # chat exports: web, excel, csv
+        self.cache: dict = {}                  # section key -> chats already read (for the picker)
+        self.photo_source = None               # photos.PhotoSource; None = the backup's camera roll
+        self.photo_selection: Optional[set] = None  # photo ids to copy (None = all)
         self._files: dict[str, dict[str, str]] = {}
         self.tmp = Path(reader._tmp.name)
 
@@ -358,7 +360,8 @@ def decode_attributed_body(b: Optional[bytes]) -> str:
     return b[i:i + n].decode("utf-8", "replace")
 
 
-def sec_messages(ctx: Ctx) -> dict:
+def load_messages(ctx: Ctx) -> list[dict]:
+    """Read every iMessage/SMS conversation (attachments are only located, not copied yet)."""
     con = ctx.db(HOME, "Library/SMS/sms.db")
     if con is None:
         raise PhoneKeepError("No Messages database in this backup.")
@@ -387,8 +390,6 @@ def sec_messages(ctx: Ctx) -> dict:
                 atts.setdefault(mid, []).append(arows[aid])
 
     media_files = ctx.files(MEDIA)
-    mdir = ctx.out / "Messages" / "media"
-    n_media = 0
     rows = select(con, "message", ["ROWID", "text", "attributedBody", "handle_id", "date", "is_from_me",
                                    "item_type", "associated_message_type", "group_title", "service"],
                   "ORDER BY date, ROWID")
@@ -410,28 +411,14 @@ def sec_messages(ctx: Ctx) -> dict:
         text = (r["text"] or decode_attributed_body(r["attributedBody"]) or "").replace("\ufffc", "").strip()
         parts = []
         for k, a in enumerate(atts.get(r["ROWID"], [])):
-            fn = (a["filename"] or "")
-            rel = re.sub(r"^(~/|/var/mobile/|/private/var/mobile/)", "", fn)
+            rel = re.sub(r"^(~/|/var/mobile/|/private/var/mobile/)", "", a["filename"] or "")
             mime = a["mime_type"] or ""
             typ = ("image" if mime.startswith("image/") else "video" if mime.startswith("video/")
                    else "audio" if mime.startswith("audio/") else "document")
             m = {**base, "id": f"{r['ROWID']}-{k}", "type": typ, "text": "",
                  "caption": a["transfer_name"] or Path(rel).name}
-            if rel in media_files and ctx.include_media:
-                sub = rel.split("Attachments/", 1)[-1]
-                dest = wv.safe_join(mdir, sub)
-                if dest is not None and ctx.copy(MEDIA, rel, dest):
-                    n_media += 1
-                    shown = dest
-                    if dest.suffix.lower() in (".heic", ".heif", ".tif", ".tiff"):
-                        jpg = dest.with_suffix(".jpg")
-                        if ctx.web_image(dest, jpg):
-                            shown = jpg
-                    m["media"] = "media/" + shown.relative_to(mdir).as_posix()
-                    if typ == "image":
-                        m.pop("caption", None)
-                else:
-                    m["media_missing"] = True
+            if rel in media_files:
+                m["media_rel"] = rel
             else:
                 m["media_missing"] = True
             parts.append(m)
@@ -454,13 +441,58 @@ def sec_messages(ctx: Ctx) -> dict:
     for c in result:
         c["messages"].sort(key=lambda m: m["time"] or "")
     result.sort(key=lambda c: c["messages"][-1]["time"] or "", reverse=True)
-    n = sum(len(c["messages"]) for c in result)
-    ctx.log(f"Messages: {len(result):,} conversations, {n:,} messages, {n_media:,} attachments.")
     if not result:
         raise PhoneKeepError("No messages found.")
-    wv.write_archive(result, ctx.out / "Messages", ctx.binfo, ctx.log, title="Messages", hub=True)
-    return {"count": n, "detail": f"{len(result):,} conversations · {n:,} messages",
-            "link": "Messages/index.html"}
+    return result
+
+
+def sec_messages(ctx: Ctx) -> dict:
+    loaded = ctx.cache.get("messages") or load_messages(ctx)
+    chats = [dict(c, messages=[dict(m) for m in c["messages"]]) for c in loaded]
+    only = ctx.chat_filter.get("messages")
+    if only is not None:
+        chats = [c for c in chats if c["id"] in only]
+        ctx.log(f"Exporting the {len(chats)} conversation{'s' if len(chats) != 1 else ''} you selected.")
+    out = ctx.out / "Messages"
+    mdir = out / "media"
+    n_media = 0
+    for c in chats:
+        for m in c["messages"]:
+            rel = m.pop("media_rel", None)
+            if not rel:
+                continue
+            if not ctx.include_media:
+                continue
+            dest = wv.safe_join(mdir, rel.split("Attachments/", 1)[-1])
+            if dest is not None and ctx.copy(MEDIA, rel, dest):
+                n_media += 1
+                shown = dest
+                if dest.suffix.lower() in (".heic", ".heif", ".tif", ".tiff"):
+                    jpg = dest.with_suffix(".jpg")
+                    if ctx.web_image(dest, jpg):
+                        shown = jpg
+                m["media"] = "media/" + shown.relative_to(mdir).as_posix()
+                if m["type"] == "image":
+                    m.pop("caption", None)
+            else:
+                m["media_missing"] = True
+    n = sum(len(c["messages"]) for c in chats)
+    ctx.log(f"Messages: {len(chats):,} conversations, {n:,} messages, {n_media:,} attachments.")
+    main = None
+    if "web" in ctx.formats:
+        wv.write_archive(chats, out, ctx.binfo, ctx.log, title="Messages", hub=True)
+        main = "index.html"
+    if "excel" in ctx.formats:
+        import tables as tb
+        tb.write_chats_xlsx(chats, out / "Messages chats.xlsx", "Messages", ctx.log)
+        main = main or "Messages chats.xlsx"
+    if "csv" in ctx.formats:
+        import tables as tb
+        tb.write_chats_csv(chats, out / "CSV", ctx.log)
+        main = main or "CSV/_All chats.csv"
+    extra = [f for f, on in (("Excel", "excel" in ctx.formats), ("CSV", "csv" in ctx.formats)) if on]
+    return {"count": n, "link": "Messages/" + main,
+            "detail": f"{len(chats):,} conversations · {n:,} messages" + (f" · {' + '.join(extra)}" if extra else "")}
 
 
 # ---------------------------------------------------------------------------
@@ -470,16 +502,18 @@ def sec_messages(ctx: Ctx) -> dict:
 def sec_whatsapp(ctx: Ctx) -> dict:
     r = wv.export_whatsapp(ctx.reader, ctx.out / "WhatsApp", ctx.include_media, False, ctx.log,
                            None, ctx.binfo, ctx.name_for, hub=True, strict=True,
-                           only_chats=ctx.chat_filter.get("whatsapp"))
-    r["link"] = "WhatsApp/index.html"
+                           only_chats=ctx.chat_filter.get("whatsapp"), formats=ctx.formats,
+                           loaded=ctx.cache.get("whatsapp"))
+    r["link"] = "WhatsApp/" + r.pop("main")
     return r
 
 
 def sec_whatsapp_business(ctx: Ctx) -> dict:
     r = wv.export_whatsapp(ctx.reader, ctx.out / "WhatsApp Business", ctx.include_media, True, ctx.log,
                            None, ctx.binfo, ctx.name_for, hub=True, strict=True,
-                           only_chats=ctx.chat_filter.get("whatsappbusiness"))
-    r["link"] = "WhatsApp Business/index.html"
+                           only_chats=ctx.chat_filter.get("whatsappbusiness"), formats=ctx.formats,
+                           loaded=ctx.cache.get("whatsappbusiness"))
+    r["link"] = "WhatsApp Business/" + r.pop("main")
     return r
 
 
@@ -503,16 +537,27 @@ def _photo_date(p: Path) -> dt.datetime:
 def sec_photos(ctx: Ctx) -> dict:
     d = ctx.out / "Photos"
     orig = d / "Originals"
-    files = ctx.files(CAMERA)
-    from_backup = {rel: fid for rel, fid in files.items() if rel.startswith("Media/DCIM/")}
-    if from_backup and ctx.include_media:
-        ctx.log(f"Copying {len(from_backup):,} camera-roll files from the backup...")
-        for i, rel in enumerate(from_backup, 1):
-            dest = wv.safe_join(orig, rel[len("Media/"):])
+    source = ctx.photo_source
+    if source is None:
+        import photos as ph
+        source = ph.BackupPhotoSource(ctx.reader, ctx.tmp / "photos")
+    available = ctx.cache.get("photos") or source.items()
+    chosen = available
+    if ctx.photo_selection is not None:
+        chosen = [p for p in available if p.id in ctx.photo_selection]
+        ctx.log(f"Copying the {len(chosen):,} photos & videos you selected from {source.label}.")
+    elif available:
+        ctx.log(f"Copying {len(available):,} photos & videos from {source.label} (already-copied ones are skipped).")
+    if ctx.include_media:
+        ids = [p.id for p in chosen] + [p.live_video for p in chosen if p.live_video]
+        for i, pid in enumerate(ids, 1):
+            dest = wv.safe_join(orig, pid)
             if dest is not None:
-                ctx.copy(CAMERA, rel, dest)
+                source.copy(pid, dest)
+            if ctx.progress and i % 20 == 0:
+                ctx.progress(80.0 * i / len(ids))
             if i % 500 == 0:
-                ctx.log(f"  {i:,}/{len(from_backup):,}")
+                ctx.log(f"  {i:,}/{len(ids):,}")
     items = [p for p in orig.rglob("*") if p.is_file() and p.suffix.lower() in IMG_EXT | VID_EXT] \
         if orig.exists() else []
     if not items:
@@ -988,44 +1033,140 @@ SECTIONS = [
 DEFAULT_SECTIONS = [k for k, *_ in SECTIONS if k != "files"]
 
 
+class ChatPreview:
+    """What the chat picker shows when you click a chat: its latest messages and photo thumbnails."""
+
+    def __init__(self, ctx: Ctx):
+        self.ctx = ctx
+        self.lock = threading.Lock()
+
+    def _chats(self, key):
+        loaded = self.ctx.cache.get(key)
+        return loaded if key == "messages" else (loaded or {}).get("chats", [])
+
+    def messages(self, key: str, chat_id, limit: int = 80) -> tuple[list[dict], int]:
+        for c in self._chats(key):
+            if c["id"] == chat_id:
+                return c["messages"][-limit:], len(c["messages"])
+        return [], 0
+
+    def thumbnail(self, key: str, m: dict) -> Optional[Path]:
+        """Small JPEG of a message's photo, or None."""
+        if Image is None or m.get("type") not in ("image", "sticker", "gif"):
+            return None
+        if key == "messages":
+            domain, rel = MEDIA, m.get("media_rel")
+        else:
+            loaded = self.ctx.cache.get(key) or {}
+            domain, rel = loaded.get("domain"), wv.whatsapp_media_rel(loaded, m) if loaded else None
+        if not rel:
+            return None
+        h = hashlib.sha1(f"{domain}/{rel}".encode(), usedforsecurity=False).hexdigest()[:20]
+        thumb = self.ctx.tmp / "preview" / (h + ".jpg")
+        if thumb.exists():
+            return thumb
+        src = self.ctx.tmp / "preview" / (h + Path(rel).suffix)
+        with self.lock:
+            if not self.ctx.copy(domain, rel, src, keep_time=False):
+                return None
+        return thumb if self.ctx.web_image(src, thumb, 260) else None
+
+
+def _chat_summary(c: dict) -> dict:
+    times = [m["time"] for m in c["messages"] if m.get("time")]
+    return {"id": c["id"], "name": c["name"], "group": c.get("group", False),
+            "messages": len(c["messages"]), "last": times[-1][:10] if times else "",
+            "first": times[0][:10] if times else ""}
+
+
+CHAT_SECTIONS = [("whatsapp", "WhatsApp"), ("whatsappbusiness", "WhatsApp Business"), ("messages", "Messages")]
+
+
 def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[str] = None,
                sections: Optional[list[str]] = None, include_media: bool = True,
                log: Log = wv._print, progress: Optional[Callable[[float], None]] = None,
-               chooser: Optional[Callable[[dict], Optional[dict]]] = None,
-               chat_names: Optional[list[str]] = None) -> Path:
-    """chooser: called with {section: (label, [chat, ...])} for WhatsApp / WhatsApp Business and
-    returns {section: set(chat ids)} to export only those chats (None = cancel).
-    chat_names: alternatively, export only chats whose name contains one of these words."""
+               chooser: Optional[Callable] = None, chat_names: Optional[list[str]] = None,
+               formats: Optional[set] = None, photo_source: Optional[str] = None,
+               udid: Optional[str] = None, photo_chooser: Optional[Callable] = None) -> Path:
+    """Build the archive.
+    chooser(lists, preview): lists = {section: (label, [chat summary])} for WhatsApp, WhatsApp
+        Business and Messages; returns {section: set(chat ids)}, or None to cancel.
+    chat_names: instead of a chooser, keep chats whose name contains one of these words.
+    formats: chat exports to write - any of "web", "excel", "csv" (default: web).
+    photo_source: "device" copies photos straight off the iPhone (works with iCloud Photos);
+        otherwise they come from the backup.
+    photo_chooser(source, items): returns the set of photo ids to copy (None or empty = skip photos)."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    sections = sections or DEFAULT_SECTIONS
+    sections = list(sections or DEFAULT_SECTIONS)
     binfo = wv.backup_info(Path(backup_path))
     results = []
     with wv.BackupReader(backup_path, password, log) as reader:
         ctx = Ctx(reader, out, log, include_media, binfo, None)
+        ctx.formats = set(formats or {"web"})
         people = []
         try:
             people = load_contacts(ctx)
         except Exception as e:
             log(f"Contacts could not be read ({e}).")
-        wa = [(k, lab) for k, lab in (("whatsapp", "WhatsApp"), ("whatsappbusiness", "WhatsApp Business"))
-              if k in sections]
-        if wa and (chooser or chat_names):
-            lists = {k: (lab, wv.list_whatsapp_chats(reader, k == "whatsappbusiness", ctx.name_for, log))
-                     for k, lab in wa}
-            if chat_names:
-                pats = [p.strip().lower() for p in chat_names if p.strip()]
-                sel = {k: {c["id"] for c in chats if any(p in c["name"].lower() for p in pats)}
-                       for k, (_lab, chats) in lists.items()}
-            else:
-                sel = chooser(lists)
-                if sel is None:
-                    raise PhoneKeepError("Cancelled: no chats were exported.")
-            ctx.chat_filter = sel
-            skipped = [k for k, ids in sel.items() if not ids]
-            sections = [s for s in sections if s not in skipped]
-            for k in skipped:
-                log(f"{dict(wa)[k]}: no chats selected, skipping.")
+
+        # --- choose chats -------------------------------------------------------------
+        chat_secs = [(k, lab) for k, lab in CHAT_SECTIONS if k in sections]
+        if chat_secs and (chooser or chat_names):
+            lists = {}
+            for k, lab in chat_secs:
+                try:
+                    if k == "messages":
+                        loaded = load_messages(ctx)
+                        chats = loaded
+                    else:
+                        loaded = wv.load_whatsapp(reader, k == "whatsappbusiness", True, ctx.name_for, log)
+                        chats = loaded["chats"]
+                except PhoneKeepError as e:
+                    log(f"{lab}: {e}")
+                    continue
+                ctx.cache[k] = loaded
+                lists[k] = (lab, [_chat_summary(c) for c in chats])
+            if lists:
+                if chat_names:
+                    pats = [p.strip().lower() for p in chat_names if p.strip()]
+                    sel = {k: {c["id"] for c in chats if any(p in c["name"].lower() for p in pats)}
+                           for k, (_lab, chats) in lists.items()}
+                else:
+                    sel = chooser(lists, ChatPreview(ctx))
+                    if sel is None:
+                        raise PhoneKeepError("Cancelled: nothing was exported.")
+                ctx.chat_filter = sel
+                labels = dict(CHAT_SECTIONS)
+                for k, ids in sel.items():
+                    if not ids:
+                        sections.remove(k)
+                        log(f"{labels[k]}: no chats selected, skipping.")
+
+        # --- choose photos ------------------------------------------------------------
+        if "photos" in sections:
+            import photos as ph
+            if photo_source == "device":
+                try:
+                    log("Connecting to the iPhone to read its photos...")
+                    ctx.photo_source = ph.DevicePhotoSource(udid, ctx.tmp / "photos")
+                except Exception as e:
+                    log(f"Couldn't read photos from the iPhone directly ({type(e).__name__}); "
+                        "using the photos in the backup instead.")
+            if photo_chooser:
+                src = ctx.photo_source or ph.BackupPhotoSource(reader, ctx.tmp / "photos")
+                ctx.photo_source = src
+                log(f"Listing photos & videos on {src.label}...")
+                items = src.items()
+                ctx.cache["photos"] = items
+                if items:
+                    sel = photo_chooser(src, items)
+                    if not sel:
+                        sections.remove("photos")
+                        log("Photos: none selected, skipping.")
+                    else:
+                        ctx.photo_selection = set(sel)
+
         todo = [s for s in SECTIONS if s[0] in sections]
         for i, (key, label, icon, fn) in enumerate(todo):
             log(f"\n== {label} ==")
@@ -1044,6 +1185,8 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
                 log(f"{label}: failed — {type(e).__name__}: {e}")
                 log(traceback.format_exc(limit=3))
             results.append((key, label, icon, r))
+        if ctx.photo_source is not None:
+            ctx.photo_source.close()
     write_hub(out, binfo, results, reader_info(Path(backup_path)))
     if progress:
         progress(100.0)

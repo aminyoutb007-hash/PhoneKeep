@@ -37,8 +37,10 @@ import tempfile
 from pathlib import Path
 from typing import Callable, Optional
 
+from tables import csv_safe as _csv_safe
+
 APP_NAME = "PhoneKeep"
-VERSION = "1.0.0"
+VERSION = "3.0.0"
 
 WA_DOMAIN = "AppDomainGroup-group.net.whatsapp.WhatsApp.shared"
 WA_BUSINESS_DOMAIN = "AppDomainGroup-group.net.whatsapp.WhatsAppSMB.shared"
@@ -387,7 +389,9 @@ class BackupReader:
             self.manifest = manifest
         else:
             self.manifest = self.path / "Manifest.db"
-        self.db = sqlite3.connect(self.manifest.resolve().as_uri() + "?mode=ro", uri=True)
+        # the pickers read previews from the window's thread while the worker waits
+        self.db = sqlite3.connect(self.manifest.resolve().as_uri() + "?mode=ro", uri=True,
+                                  check_same_thread=False)
 
     def close(self) -> None:
         try:
@@ -425,6 +429,24 @@ class BackupReader:
         except Exception:
             pass
         return None
+
+    def file_meta(self, domain: str, prefix: str = "") -> dict[str, tuple]:
+        """relativePath -> (fileID, mtime, size) for regular files under prefix, in one query."""
+        out = {}
+        for rel, fid, blob in self.db.execute(
+                "SELECT relativePath, fileID, file FROM Files WHERE domain=? AND flags=1 AND relativePath LIKE ?",
+                (domain, prefix.replace("%", r"\%") + "%")):
+            mtime = size = None
+            if blob:
+                try:
+                    for o in plistlib.loads(blob).get("$objects", []):
+                        if isinstance(o, dict) and "LastModified" in o:
+                            mtime, size = float(o["LastModified"]), int(o.get("Size") or 0)
+                            break
+                except Exception:
+                    pass
+            out[rel] = (fid, mtime, size)
+        return out
 
     def domains(self, like: str = "%") -> list[str]:
         return [r[0] for r in self.db.execute(
@@ -647,14 +669,10 @@ def list_whatsapp_chats(reader: "BackupReader", business: bool = False, name_for
     return out
 
 
-def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = True,
-                    business: bool = False, log: Log = _print,
-                    progress: Optional[Callable[[float], None]] = None,
-                    binfo: Optional[dict] = None, name_for=None, hub: bool = False,
-                    strict: bool = False, only_chats: Optional[set] = None) -> dict:
-    """Build the WhatsApp (or WhatsApp Business) archive in `out` from an open backup.
-    strict=True exports only the app asked for; otherwise it falls back to the other one."""
-    out = Path(out)
+def load_whatsapp(reader: "BackupReader", business: bool = False, strict: bool = False,
+                  name_for=None, log: Log = _print) -> dict:
+    """Read every chat of one WhatsApp app: {"domain", "files", "chats"}.
+    strict=True only accepts the app asked for; otherwise falls back to the other one."""
     domain = WA_BUSINESS_DOMAIN if business else WA_DOMAIN
     if strict and not reader.has_file(domain, WA_DB):
         raise PhoneKeepError(
@@ -669,9 +687,30 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
             raise PhoneKeepError(
                 "No WhatsApp data in this backup. If WhatsApp's end-to-end encrypted chat "
                 "backup is on, iOS may leave chats out of device backups.")
-
     db_local, files = _extract_wa_db(reader, domain, log)
-    chats = parse_whatsapp(db_local, log, name_for)
+    return {"domain": domain, "files": files, "chats": parse_whatsapp(db_local, log, name_for)}
+
+
+def whatsapp_media_rel(loaded: dict, m: dict) -> Optional[str]:
+    """Backup path of a message's photo/video/document, if the backup has it."""
+    src = m.get("media_src")
+    if not src:
+        return None
+    return next((p for p in _media_candidates(src) if p in loaded["files"]), None)
+
+
+def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = True,
+                    business: bool = False, log: Log = _print,
+                    progress: Optional[Callable[[float], None]] = None,
+                    binfo: Optional[dict] = None, name_for=None, hub: bool = False,
+                    strict: bool = False, only_chats: Optional[set] = None,
+                    formats: Optional[set] = None, loaded: Optional[dict] = None) -> dict:
+    """Build the WhatsApp (or WhatsApp Business) archive in `out` from an open backup.
+    loaded: the result of load_whatsapp(), when the chats were already read (e.g. for the picker)."""
+    out = Path(out)
+    loaded = loaded or load_whatsapp(reader, business, strict, name_for, log)
+    domain, files = loaded["domain"], loaded["files"]
+    chats = [dict(c, messages=[dict(m) for m in c["messages"]]) for c in loaded["chats"]]
     if only_chats is not None:
         chats = [c for c in chats if c["id"] in only_chats]
         log(f"Exporting the {len(chats)} chat{'s' if len(chats) != 1 else ''} you selected.")
@@ -685,7 +724,7 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
         for m in c["messages"]:
             if "media_src" not in m:
                 continue
-            rel = next((p for p in _media_candidates(m["media_src"]) if p in files), None)
+            rel = whatsapp_media_rel(loaded, m)
             if rel is None:
                 m["media_missing"] = True
                 missing += 1
@@ -717,10 +756,27 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
             for m in c["messages"]:
                 m.pop("media", None)
     log(f"Media: {copied:,} new, {skipped:,} already in archive, {missing:,} not in backup.")
-    write_archive(chats, out, binfo or backup_info(reader.path), log,
-                  title="WhatsApp" + (" Business" if domain == WA_BUSINESS_DOMAIN else ""), hub=hub)
+    title = "WhatsApp" + (" Business" if domain == WA_BUSINESS_DOMAIN else "")
+    formats = set(formats or {"web"})
+    main = None
+    if "web" in formats:
+        write_archive(chats, out, binfo or backup_info(reader.path), log, title=title, hub=hub)
+        main = "index.html"
+    if "excel" in formats:
+        import tables
+        try:
+            tables.write_chats_xlsx(chats, out / f"{title} chats.xlsx", title, log)
+        except RuntimeError as e:
+            raise PhoneKeepError(str(e))
+        main = main or f"{title} chats.xlsx"
+    if "csv" in formats:
+        import tables
+        tables.write_chats_csv(chats, out / "CSV", log)
+        main = main or "CSV/_All chats.csv"
     n = sum(len(c["messages"]) for c in chats)
-    return {"count": n, "detail": f"{len(chats):,} chats · {n:,} messages"}
+    extra = [f for f, on in (("Excel", "excel" in formats), ("CSV", "csv" in formats)) if on]
+    return {"count": n, "main": main,
+            "detail": f"{len(chats):,} chats · {n:,} messages" + (f" · {' + '.join(extra)}" if extra else "")}
 
 
 def export_backup(backup_path: Path | str, out_dir: Path | str = DEFAULT_ARCHIVE_DIR,
@@ -951,9 +1007,9 @@ def write_archive(chats: list[dict], out: Path, binfo: dict, log: Log = _print,
                              if os.path.splitext(m["media"])[1].lower() in IMG_EXT
                              else '<div class="av" style="width:100%;height:100%;border-radius:0">&#9654;</div>')
                     gallery.append(f'<a href="#m{m["id"]}" onclick="document.querySelector(\'.tabs button\').click()">{inner}</a>')
-                w.writerow([c["name"], t.strftime("%Y-%m-%d") if t else "", t.strftime("%H:%M:%S") if t else "",
+                w.writerow([_csv_safe(x) for x in [c["name"], t.strftime("%Y-%m-%d") if t else "", t.strftime("%H:%M:%S") if t else "",
                             m["sender"], m["type"], m["text"] or m.get("caption", ""),
-                            m.get("media", ""), "yes" if m.get("starred") else ""])
+                            m.get("media", ""), "yes" if m.get("starred") else ""]])
                 txt = m["text"] or m.get("caption") or ""
                 if txt:
                     search_m.append([ci, t.strftime("%d %b %Y %H:%M") if t else "", m["sender"], txt, m["id"]])
@@ -1049,7 +1105,11 @@ def _export_cli(backup: Path, a) -> None:
     if a.all_files:
         only = (only or list(sx.DEFAULT_SECTIONS)) + ["files"]
     names = [x for x in (a.chats or "").split(",") if x.strip()] or None
-    index = sx.export_all(backup, a.out, pw, only, include_media=not a.no_media, chat_names=names)
+    formats = {f.strip().lower() for f in (a.formats or "web").split(",") if f.strip()}
+    if formats - {"web", "excel", "csv"}:
+        raise PhoneKeepError("--formats takes web, excel and/or csv")
+    index = sx.export_all(backup, a.out, pw, only, include_media=not a.no_media, chat_names=names,
+                          formats=formats)
     print(f"\nOpen this file in your browser:\n  {index}")
 
 
@@ -1080,6 +1140,7 @@ def main(argv=None) -> int:
         x.add_argument("--all-files", action="store_true", help="also export every raw file in the backup")
         x.add_argument("--chats", help='WhatsApp: export only chats whose name contains one of these, '
                                          'comma-separated, e.g. --chats "Acme,Mum"')
+        x.add_argument("--formats", help="chat exports: web, excel and/or csv, comma-separated (default web)")
     ph = sub.add_parser("photos", help="copy photos & videos straight off the iPhone")
     ph.add_argument("--out", default=str(DEFAULT_ARCHIVE_DIR), help="archive folder")
     enc = sub.add_parser("encryption", help="turn backup encryption on/off")

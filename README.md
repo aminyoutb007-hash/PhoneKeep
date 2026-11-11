@@ -41,21 +41,23 @@ No Python needed. See "Making the installers" below for how to get these files.
 
 ## Use it
 
-1. Plug in your iPhone, unlock it and tap **Trust This Computer**.
-2. Start the app:
-   - Windows: double-click `start-windows.bat`
-   - Mac: double-click `start-mac.command` (the first time, right-click it and choose Open)
-3. **Recommended:** click **🔒 Backup encryption…** and turn it on. Encrypted backups are the only ones that include call history, Safari history, Health and saved Wi-Fi networks. Write the password down: Apple cannot recover it.
-4. Tick what you want, then click **Back up iPhone & build archive**. Keep the phone unlocked; if it asks for its passcode, enter it on the phone.
-5. When it's done, click **Open archive**.
+1. Plug in your iPhone (or use Wi-Fi sync), unlock it and tap **Trust This Computer**. PhoneKeep shows the phone's name and when it was last backed up.
+2. Choose **what to keep**: **Chats** (WhatsApp, WhatsApp Business and Messages), **Chats & photos**, **Everything**, or **Custom** to pick exactly.
+3. Choose how to **save chats**: **Web pages** (a WhatsApp-style browsable archive), **Excel** (one workbook, one sheet per chat, plus a summary sheet) and/or **CSV** (one file per chat, plus all chats in one file).
+4. Click **Back up now**. Keep the phone unlocked. If it asks for its passcode, enter it on the phone.
+5. **Choose your chats.** A window lists every chat from WhatsApp, WhatsApp Business and Messages. Click one to **preview** its latest messages and photos, and tick the ones you want to keep.
+6. **Choose your photos.** Browse them month by month as thumbnails, click to select, or use **Select all** or **Select this month**. Only the photos you pick are copied.
+7. When it's done, click **Open my archive**.
 
-The first backup copies the whole phone and can take an hour or more. Later backups only copy what has changed, and the archive only copies new photos and attachments, so updates are much faster.
+To skip the pickers and keep everything, turn off **which chats** and **which photos** next to "Let me choose". PhoneKeep remembers your choices for next time.
+
+⚙ **Settings** holds the rest: folders, backup encryption (**recommended**, because encrypted backups are the only ones that include call history and Safari history), the Custom list, and **Use an existing backup**, which builds an archive from a backup already on this computer.
+
+The first backup copies the whole phone and can take an hour or more. Apple only allows whole-phone backups; PhoneKeep then keeps just what you chose. Later backups only copy what has changed.
 
 Default locations (in your home folder):
 - Backups: `PhoneKeep/Backups`
 - Archive: `PhoneKeep/Archive`
-
-You can also build an archive from a backup you made earlier with iTunes or Finder. Pick it at the bottom of the window.
 
 ### About photos and iCloud Photos
 
@@ -73,6 +75,7 @@ python phonekeep.py backups                  # list backups on this computer
 python phonekeep.py export                   # build full archive from a backup
 python phonekeep.py export --only messages,contacts,notes
 python phonekeep.py export --all-files       # also dump every raw file
+python phonekeep.py export --only whatsappbusiness --chats "Acme,Supplier" --formats excel,csv
 python phonekeep.py whatsapp                 # WhatsApp-only archive
 ```
 Sections: `whatsapp, whatsappbusiness, messages, photos, contacts, calls, notes, calendar, voicemail, voicememos, safari, apps, files`.
@@ -81,6 +84,7 @@ Sections: `whatsapp, whatsappbusiness, messages, photos, contacts, calls, notes,
 
 - **Not included:** saved passwords (Keychain), Health data and Screen Time. These need extra decryption that PhoneKeep doesn't do; they are still inside your encrypted backup and come back if you restore it to an iPhone.
 - **Locked notes** show as locked; their content stays encrypted.
+- **Excel and CSV files are safe to open:** a message that looks like a spreadsheet formula (for example one starting with `=`) is always kept as plain text, never run.
 - **"No WhatsApp data"**: if WhatsApp's own *end-to-end encrypted chat backup* is on, iOS may keep chats out of device backups.
 - **Mac: can't see iTunes/Finder backups**: give Terminal *Full Disk Access* (System Settings → Privacy & Security).
 - **"No iPhone found"**: use a data cable, unlock the phone and accept the Trust prompt. On Windows, make sure iTunes or Apple Devices is installed.
