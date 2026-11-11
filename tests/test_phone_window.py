@@ -21,7 +21,7 @@ if not (BACKUPS / UDID / "Manifest.db").exists():
     subprocess.run([sys.executable, str(HERE / "test_full_backup.py")], cwd=HERE.parent, check=True)
 
 import faulthandler
-faulthandler.dump_traceback_later(240, repeat=True)   # if this ever stalls in CI, show where
+faulthandler.dump_traceback_later(120, repeat=True)   # if this ever stalls in CI, show where
 
 import tkinter as tk
 from PIL import Image
@@ -166,7 +166,8 @@ app = FakeApp()
 root = app
 info = wv.backup_info(BACKUPS / UDID)
 win = phone.PhoneWindow(app, {"DeviceName": info.get("name") or "Test iPhone"}, UDID)
-win.withdraw()                       # keep it off-screen; everything still runs
+# the window stays mapped: a withdrawn Toplevel behaves differently on macOS (geometry events), and the
+# CI machines have a display
 
 # window basics
 check(info["name"] in win.title(), f"window title names the phone: {win.title()!r}")

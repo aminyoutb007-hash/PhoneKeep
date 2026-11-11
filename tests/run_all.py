@@ -20,7 +20,7 @@ STEPS = [
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
 # A script that hangs fails after this long (and faulthandler prints where it was stuck).
-TIMEOUT = int(os.environ.get("PHONEKEEP_TEST_TIMEOUT", "900"))
+TIMEOUT = int(os.environ.get("PHONEKEEP_TEST_TIMEOUT", "420"))
 failed = []
 for name, script, needs_display in STEPS:
     print(f"\n=== {name} ({script})", flush=True)
