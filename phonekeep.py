@@ -203,12 +203,17 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
 
 
 def set_backup_encryption(on: bool, password: str, udid: Optional[str] = None, log: Log = _print) -> None:
-    """Turn the iPhone's local-backup encryption on (new password) or off (current password)."""
+    """Turn the iPhone's local-backup encryption on (new password) or off (current password).
+    The password is passed through a pipe, never as a command-line argument."""
     check_pmd3()
-    args = ["backup2", "encryption", "on" if on else "off", password]
-    if udid:
-        args += ["--udid", udid]
-    r = _pmd3(args)
+    if getattr(sys, "frozen", False):
+        cmd = _helper()[:1]
+    else:
+        cmd = [sys.executable, str(Path(__file__).resolve().with_name("launcher.py"))]
+    cmd += ["--pk-encryption", "on" if on else "off"] + (["--udid", udid] if udid else [])
+    env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+    r = subprocess.run(cmd, input=password + "\n", capture_output=True, text=True, env=env,
+                       encoding="utf-8", errors="replace", **_NOWIN)
     out = (r.stdout + r.stderr).strip()
     if r.returncode != 0:
         raise PhoneKeepError("Could not change backup encryption: " + _explain(out))
@@ -343,6 +348,16 @@ def find_backups(log: Log = _print) -> list[dict]:
 # Reading files out of a backup (plain or encrypted)
 # ---------------------------------------------------------------------------
 
+def safe_join(base: Path, rel: str) -> Optional[Path]:
+    """base/rel, or None when rel would land outside base (absolute path, '..', drive letter).
+    Paths come from the backup's own database, so a tampered backup must not be able to
+    write files anywhere else on the computer."""
+    parts = [p for p in re.split(r"[\\/]+", rel or "") if p not in ("", ".")]
+    if not parts or any(p == ".." or ":" in p or "\0" in p for p in parts):
+        return None
+    return Path(base).joinpath(*parts)
+
+
 class BackupReader:
     def __init__(self, path: Path | str, password: Optional[str] = None, log: Log = _print):
         self.path = Path(path)
@@ -414,6 +429,8 @@ class BackupReader:
             "SELECT DISTINCT domain FROM Files WHERE domain LIKE ?", (like,))]
 
     def extract(self, domain: str, rel: str, file_id: str, dest: Path) -> bool:
+        if ".." in Path(dest).parts or not re.fullmatch(r"[0-9a-fA-F]{40}", file_id or ""):
+            return False  # refuse anything that could step outside the target folder
         dest.parent.mkdir(parents=True, exist_ok=True)
         if self._enc is not None:
             try:
@@ -627,8 +644,13 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
                 missing += 1
                 continue
             local = rel[len("Message/"):] if rel.startswith("Message/") else rel
-            m["media"] = "media/" + local.replace("\\", "/")
-            jobs.append((rel, files[rel], media_dir / local))
+            dest = safe_join(media_dir, local)
+            if dest is None:
+                m["media_missing"] = True
+                missing += 1
+                continue
+            m["media"] = "media/" + dest.relative_to(media_dir).as_posix()
+            jobs.append((rel, files[rel], dest))
 
     if include_media and jobs:
         log(f"Copying {len(jobs):,} media files (already-copied files are skipped)...")

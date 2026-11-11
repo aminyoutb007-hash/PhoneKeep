@@ -11,6 +11,14 @@ import sys
 
 def main() -> None:
     args = sys.argv[1:]
+    if len(args) >= 2 and args[0] == "--pk-encryption":
+        # Internal: change backup encryption. The password arrives on stdin, never on the
+        # command line, so other programs on this computer can't read it from the process list.
+        import runpy
+        password = sys.stdin.readline().rstrip("\r\n")
+        sys.argv = ["pymobiledevice3", "backup2", "encryption", *args[2:], args[1], password]
+        runpy.run_module("pymobiledevice3", run_name="__main__", alter_sys=True)
+        return
     if len(args) >= 2 and args[0] == "-m" and args[1] == "pymobiledevice3":
         import runpy
         sys.argv = ["pymobiledevice3"] + args[2:]

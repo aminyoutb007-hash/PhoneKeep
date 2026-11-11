@@ -418,8 +418,8 @@ def sec_messages(ctx: Ctx) -> dict:
                  "caption": a["transfer_name"] or Path(rel).name}
             if rel in media_files and ctx.include_media:
                 sub = rel.split("Attachments/", 1)[-1]
-                dest = mdir / sub
-                if ctx.copy(MEDIA, rel, dest):
+                dest = wv.safe_join(mdir, sub)
+                if dest is not None and ctx.copy(MEDIA, rel, dest):
                     n_media += 1
                     shown = dest
                     if dest.suffix.lower() in (".heic", ".heif", ".tif", ".tiff"):
@@ -498,7 +498,9 @@ def sec_photos(ctx: Ctx) -> dict:
     if from_backup and ctx.include_media:
         ctx.log(f"Copying {len(from_backup):,} camera-roll files from the backup...")
         for i, rel in enumerate(from_backup, 1):
-            ctx.copy(CAMERA, rel, orig / rel[len("Media/"):])
+            dest = wv.safe_join(orig, rel[len("Media/"):])
+            if dest is not None:
+                ctx.copy(CAMERA, rel, dest)
             if i % 500 == 0:
                 ctx.log(f"  {i:,}/{len(from_backup):,}")
     items = [p for p in orig.rglob("*") if p.is_file() and p.suffix.lower() in IMG_EXT | VID_EXT] \
@@ -835,8 +837,8 @@ def sec_voicememos(ctx: Ctx) -> dict:
     items = []
     for dom, rel in found:
         name = Path(rel).name
-        dest = d / name
-        if not ctx.copy(dom, rel, dest):
+        dest = wv.safe_join(d, name)
+        if dest is None or not ctx.copy(dom, rel, dest):
             continue
         title, when, length = titles.get(name, ("", None, 0))
         when = when or dt.datetime.fromtimestamp(dest.stat().st_mtime)
