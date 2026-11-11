@@ -65,7 +65,7 @@ Photos, Music, Books, App Files and the wallpaper are read **live from the iPhon
 
 To skip the pickers and keep everything, turn off **which chats** and **which photos** next to "Let me choose". PhoneKeep remembers your choices for next time.
 
-⚙ **Settings** holds the rest: folders, **Security** (change the backup password, or turn encryption off after a warning about what unencrypted backups leave out), the Custom list, and **Use an existing backup**, which builds an archive from a backup already on this computer. A "🔒 Encrypted · on this computer" badge on the phone card and in the phone window shows your backups are protected.
+⚙ **Settings** holds the rest: folders, **Security** (change the backup password, or turn encryption off after a warning about what unencrypted backups leave out), the Custom list, and **Use an existing backup**, which builds an archive from a backup already on this computer. A "🔒 Encrypted · on this computer" badge on the phone card and in the phone window shows your backups are protected. PhoneKeep never connects to the internet: it refuses to, by design, except for **Check for updates** in Settings, which fetches the release page once when you click it and sends nothing about you.
 
 The first backup copies the whole phone and can take an hour or more. Apple only allows whole-phone backups; PhoneKeep then keeps just what you chose. Later backups only copy what has changed.
 

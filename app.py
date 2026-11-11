@@ -672,6 +672,26 @@ class App(tk.Tk):
         else:
             messagebox.showinfo(wv.APP_NAME, "There's no archive yet. Click “Back up now” first.")
 
+    def check_updates(self, settings):
+        """Opt-in (S3): one request to the release page, only when this button is clicked."""
+        settings.update_line.configure(text="Checking the release page…", fg=MUTED)
+
+        def work():
+            return wv.check_for_updates()
+
+        def done(r):
+            if not settings.winfo_exists():
+                return
+            if r["error"]:
+                settings.update_line.configure(text=r["error"], fg=RED)
+            elif r["newer"]:
+                settings.update_line.configure(text=f"Version {r['latest']} is available (you have {r['current']}).", fg=INK)
+                if messagebox.askyesno(wv.APP_NAME, f"Version {r['latest']} is available. Open the download page?", parent=settings):
+                    webbrowser.open(r["page"])
+            else:
+                settings.update_line.configure(text=f"You have the latest version ({r['current']}).", fg=GREEN)
+        threading.Thread(target=lambda: self.call(lambda r=work(): done(r)), daemon=True).start()
+
     def open_about(self):
         """About box: name, version and (on a test build) the build label, so you know which build this is."""
         lines = [f"{wv.APP_NAME} {wv.VERSION}"]
@@ -878,6 +898,20 @@ class SettingsWindow(tk.Toplevel):
                            180, 38, 13, bg=CARD).pack(side="left")
             ui.RoundButton(row, "Turn encryption off…", lambda: app.encryption_off(self), "secondary",
                            200, 38, 13, bg=CARD).pack(side="left", padx=8)
+
+        # no network (S3)
+        import netguard
+        net = section("Internet",
+                      "PhoneKeep never sends your data anywhere. It makes no internet connections"
+                      + (" (refused by the app itself)" if netguard.installed() else "")
+                      + ". The only exception is the button below, which fetches the release page once when you click it, "
+                        "with no information about you or your iPhone.")
+        nrow = tk.Frame(net, bg=CARD)
+        nrow.pack(anchor="w")
+        tk.Label(nrow, text="Internet use: Off", bg=CARD, fg=GREEN, font=font(12, "bold")).pack(side="left", padx=(0, 14))
+        self.update_line = tk.Label(net, text="", bg=CARD, fg=MUTED, font=font(12), anchor="w", wraplength=560, justify="left")
+        ui.RoundButton(nrow, "Check for updates…", lambda: app.check_updates(self), "secondary", 190, 38, 13, bg=CARD).pack(side="left")
+        self.update_line.pack(fill="x", pady=(6, 0))
 
         # folders
         fo = section("Folders")
