@@ -178,3 +178,37 @@ def write_chats_xlsx(chats: list[dict], path: Path, title: str = "WhatsApp",
     wb.save(path)
     log(f"Excel: {path.name} ({len(chats)} chat sheet{'s' if len(chats) != 1 else ''} + summary)")
     return path
+
+
+def write_table_xlsx(path: Path, title: str, headers: list[str], rows: list[list[str]]) -> Path:
+    """One plain-text sheet: a styled header, frozen top row, filters, sensible column widths."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    wb = Workbook()
+    ws = wb.active
+    ws.title = (_SHEET_BAD.sub("_", title).strip("' ") or "Sheet")[:31]
+    widths = [len(h) for h in headers]
+    for i, h in enumerate(headers, 1):
+        c = ws.cell(row=1, column=i, value=h)
+        c.data_type = "s"
+        c.font = Font(bold=True, color="FFFFFF")
+        c.fill = PatternFill("solid", fgColor="008069")
+    wrap = Alignment(wrap_text=True, vertical="top")
+    for r, row in enumerate(rows, 2):
+        for i, v in enumerate(row, 1):
+            v = _CTRL.sub("", "" if v is None else str(v))[:32000]
+            c = ws.cell(row=r, column=i, value=v)
+            c.data_type = "s"      # plain text, never a formula
+            c.alignment = wrap
+            if i <= len(widths):
+                widths[i - 1] = max(widths[i - 1], min(60, max((len(x) for x in v.split("\n")), default=0)))
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = max(8, w + 2)
+    ws.freeze_panes = "A2"
+    if rows:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{len(rows) + 1}"
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+    return path

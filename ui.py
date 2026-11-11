@@ -276,31 +276,22 @@ def count_in_range(days: list, lo: Optional[dt.date], hi: Optional[dt.date]) -> 
     return max(0, b - a)
 
 
-class ChatPicker(tk.Toplevel):
-    """Pick chats from WhatsApp, WhatsApp Business and Messages, with a live preview."""
+class ChatPanel(tk.Frame):
+    """Chats from WhatsApp, WhatsApp Business and/or Messages: search, dates, tick boxes and a
+    conversation preview. Used by the export picker and by the phone window."""
 
-    def __init__(self, parent, lists: dict, preview=None):
+    def __init__(self, parent, lists: dict, preview=None, select_all: bool = True, preview_limit: int = 80):
         super().__init__(parent, bg=BG)
-        self.title("Choose chats to export")
-        self.geometry("1040x660")
-        self.minsize(820, 480)
-        self.transient(parent)
         self.preview = preview
-        self.result = None
+        self.preview_limit = preview_limit
         self.rows = [(k, label, c) for k, (label, chats) in lists.items() for c in chats]
-        self.selected = {(k, c["id"]) for k, _l, c in self.rows}
+        self.selected = {(k, c["id"]) for k, _l, c in self.rows} if select_all else set()
         self.apps = [label for _k, (label, _c) in lists.items()]
         self.images = []
         self.worker = BgWorker(self)
+        self.bind("<Destroy>", lambda e: self.worker.stop() if e.widget is self else None)
         self.current = None
         self.lo = self.hi = None   # date range (None = open)
-
-        head = tk.Frame(self, bg=GREEN)
-        head.pack(fill="x")
-        tk.Label(head, text="Choose the chats to export", bg=GREEN, fg="white",
-                 font=font(17, "bold")).pack(side="left", padx=18, pady=12)
-        tk.Label(head, text="Click a chat to preview it · tick the box to keep it", bg=GREEN, fg="#d7efe9",
-                 font=font(12)).pack(side="left", pady=12)
 
         bar = tk.Frame(self, bg=BG)
         bar.pack(fill="x", padx=16, pady=(12, 6))
@@ -328,19 +319,19 @@ class ChatPicker(tk.Toplevel):
         tk.Label(dbar, text="From", bg=BG, fg=MUTED, font=font(12)).pack(side="left")
         self.d_from = tk.StringVar()
         self.d_to = tk.StringVar()
-        e1 = ttk.Entry(dbar, textvariable=self.d_from, width=12)
+        e1 = ttk.Entry(dbar, textvariable=self.d_from, width=11)
         e1.pack(side="left", padx=(4, 8))
         tk.Label(dbar, text="to", bg=BG, fg=MUTED, font=font(12)).pack(side="left")
-        e2 = ttk.Entry(dbar, textvariable=self.d_to, width=12)
+        e2 = ttk.Entry(dbar, textvariable=self.d_to, width=11)
         e2.pack(side="left", padx=(4, 8))
         for e in (e1, e2):
             e.bind("<Return>", lambda ev: self._typed_dates())
             e.bind("<FocusOut>", lambda ev: self._typed_dates())
-        self.date_hint = tk.Label(dbar, text="e.g. 2024-01-31 · empty = no limit", bg=BG, fg=MUTED,
+        self.date_hint = tk.Label(dbar, text="e.g. 2024-01-31", bg=BG, fg=MUTED,
                                   font=font(11))
         self.date_hint.pack(side="left", padx=6)
         self.hide_empty = tk.BooleanVar(value=True)
-        ttk.Checkbutton(dbar, text="Hide empty chats", variable=self.hide_empty,
+        ttk.Checkbutton(dbar, text="Hide empty", variable=self.hide_empty,
                         command=self._fill).pack(side="right")
 
         body = tk.PanedWindow(self, orient="horizontal", sashwidth=6, bg=BG, bd=0)
@@ -388,20 +379,16 @@ class ChatPicker(tk.Toplevel):
         self.text.tag_configure("sys", justify="center", foreground=AMBER, font=font(11), spacing1=6)
         body.add(right, minsize=300)
 
-        foot = tk.Frame(self, bg=BG)
-        foot.pack(side="bottom", fill="x", padx=16, pady=12, before=body)
-        self.count = tk.Label(foot, bg=BG, fg=INK, font=font(13))
+        self.foot = tk.Frame(self, bg=BG)
+        self.foot.pack(side="bottom", fill="x", padx=16, pady=12, before=body)
+        self.count = tk.Label(self.foot, bg=BG, fg=INK, font=font(13))
         self.count.pack(side="left")
-        RoundButton(foot, "Export selected", self._ok, "primary", 180, 40).pack(side="right")
-        RoundButton(foot, "Cancel", self._cancel, "secondary", 110, 40).pack(side="right", padx=10)
-        self.protocol("WM_DELETE_WINDOW", self._cancel)
         self._fill()
         ent.focus_set()
         kids = self.tree.get_children()
         if kids:
             self.tree.selection_set(kids[0])
             self.tree.focus(kids[0])
-        self.grab_set()
 
     # list ---------------------------------------------------------------
     def _fill(self):
@@ -493,8 +480,8 @@ class ChatPicker(tk.Toplevel):
 
     def _apply_dates(self, lo, hi):
         self.lo, self.hi = lo, hi
-        self.date_hint.configure(text="Only these dates are exported" if (lo or hi)
-                                 else "e.g. 2024-01-31 · empty = no limit", fg=MUTED)
+        self.date_hint.configure(text="Only these dates are saved" if (lo or hi)
+                                 else "e.g. 2024-01-31", fg=MUTED)
         self._fill()
 
     # preview ------------------------------------------------------------
@@ -506,7 +493,7 @@ class ChatPicker(tk.Toplevel):
             return
         self.current = (key, c["id"])
         self.worker.clear()
-        msgs, total = self.preview.messages(key, c["id"], 80)
+        msgs, total = self.preview.messages(key, c["id"], self.preview_limit)
         self.pv_title.configure(text=c["name"])
         shown = f"latest {len(msgs)} of {total:,} messages" if total > len(msgs) else f"{total:,} messages"
         self.pv_sub.configure(text=f"{label} · {shown}" + (" · group" if c["group"] else ""))
@@ -567,17 +554,18 @@ class ChatPicker(tk.Toplevel):
         t.configure(state="disabled")
         t.see("end")
 
-    # finish -------------------------------------------------------------
-    def _ok(self):
+    # result -------------------------------------------------------------
+    def selection(self, confirm_empty: bool = True):
+        """{app key: set(chat ids)} plus "_dates": (from, to) when a range is set; None if not ready."""
         out = {key: set() for key, _l, _c in self.rows}
         for key, cid in self.selected:
             out[key].add(cid)
-        if not self.selected and not messagebox.askyesno(
+        if confirm_empty and not self.selected and not messagebox.askyesno(
                 "PhoneKeep", "No chats are ticked, so no chats will be exported. Continue?", parent=self):
-            return
+            return None
         self._typed_dates()
         if self.date_hint.cget("fg") == RED:
-            return
+            return None
         if self.lo or self.hi:
             out["_dates"] = (self.lo, self.hi)
             for key, _l, c in self.rows:   # ticked chats with nothing in these dates are left out
@@ -586,7 +574,43 @@ class ChatPicker(tk.Toplevel):
             if self.selected and not any(out[k] for k in out if k != "_dates"):
                 if not messagebox.askyesno("PhoneKeep", "The ticked chats have no messages in these dates, "
                                            "so nothing will be exported from them. Continue?", parent=self):
-                    return
+                    return None
+        return out
+
+
+class ChatPicker(tk.Toplevel):
+    """Pick chats from WhatsApp, WhatsApp Business and Messages before an export."""
+
+    def __init__(self, parent, lists: dict, preview=None):
+        super().__init__(parent, bg=BG)
+        self.title("Choose chats to export")
+        self.geometry("1040x660")
+        self.minsize(820, 480)
+        self.transient(parent)
+        self.result = None
+        head = tk.Frame(self, bg=GREEN)
+        head.pack(fill="x")
+        tk.Label(head, text="Choose the chats to export", bg=GREEN, fg="white",
+                 font=font(17, "bold")).pack(side="left", padx=18, pady=12)
+        tk.Label(head, text="Click a chat to preview it · tick the box to keep it", bg=GREEN, fg="#d7efe9",
+                 font=font(12)).pack(side="left", pady=12)
+        self.panel = ChatPanel(self, lists, preview)
+        self.panel.pack(fill="both", expand=True)
+        RoundButton(self.panel.foot, "Export selected", self._ok, "primary", 180, 40).pack(side="right")
+        RoundButton(self.panel.foot, "Cancel", self._cancel, "secondary", 110, 40).pack(side="right", padx=10)
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.grab_set()
+
+    # handy for tests and older callers
+    def __getattr__(self, name):
+        if name == "panel":
+            raise AttributeError(name)
+        return getattr(self.panel, name)
+
+    def _ok(self):
+        out = self.panel.selection()
+        if out is None:
+            return
         self.result = out
         self._close()
 
@@ -602,39 +626,30 @@ class ChatPicker(tk.Toplevel):
 # ---------------------------------------------------------------------------
 # Photo picker
 # ---------------------------------------------------------------------------
-class PhotoPicker(tk.Toplevel):
-    """Browse photos month by month as thumbnails and pick which to copy."""
+class PhotoPanel(tk.Frame):
+    """Photos month by month as thumbnails; click to select. Double-click opens a photo when
+    on_open is given. Used by the export picker and by the phone window."""
 
     TILE = 128
     PAGE = 240
 
-    def __init__(self, parent, source, items: list):
+    def __init__(self, parent, source, items: list, select_all: bool = True, on_open=None):
         super().__init__(parent, bg=BG)
         from photos import human_size
         self.human_size = human_size
-        self.title("Choose photos & videos")
-        self.geometry("1040x700")
-        self.minsize(820, 520)
-        self.transient(parent)
+        self.on_open = on_open
         self.source, self.items = source, items
-        self.selected = {i.id for i in items}
-        self.result = None
+        self.selected = {i.id for i in items} if select_all else set()
         self.images: dict = {}
         self.tiles: dict = {}
         self.worker = BgWorker(self)
+        self.bind("<Destroy>", lambda e: self.worker.stop() if e.widget is self else None)
         self.months: dict[str, list] = {}
         for i in items:
             self.months.setdefault(i.month, []).append(i)
         self.month_keys = sorted(self.months, reverse=True)
         self.shown = 0
         self._more_btn = None
-
-        head = tk.Frame(self, bg=GREEN)
-        head.pack(fill="x")
-        tk.Label(head, text="Choose the photos & videos to keep", bg=GREEN, fg="white",
-                 font=font(17, "bold")).pack(side="left", padx=18, pady=12)
-        tk.Label(head, text=f"from {source.label} · click a photo to select or unselect it", bg=GREEN,
-                 fg="#d7efe9", font=font(12)).pack(side="left", pady=12)
 
         bar = tk.Frame(self, bg=BG)
         bar.pack(fill="x", padx=16, pady=(12, 6))
@@ -670,19 +685,15 @@ class PhotoPicker(tk.Toplevel):
             w.bind("<Button-4>", lambda e: self.canvas.yview_scroll(-3, "units"))
             w.bind("<Button-5>", lambda e: self.canvas.yview_scroll(3, "units"))
 
-        foot = tk.Frame(self, bg=BG)
-        foot.pack(side="bottom", fill="x", padx=16, pady=12, before=body)
-        self.count = tk.Label(foot, bg=BG, fg=INK, font=font(13))
+        self.foot = tk.Frame(self, bg=BG)
+        self.foot.pack(side="bottom", fill="x", padx=16, pady=12, before=body)
+        self.count = tk.Label(self.foot, bg=BG, fg=INK, font=font(13))
         self.count.pack(side="left")
-        RoundButton(foot, "Continue", self._ok, "primary", 160, 40).pack(side="right")
-        RoundButton(foot, "Skip photos", self._skip, "secondary", 130, 40).pack(side="right", padx=10)
-        self.protocol("WM_DELETE_WINDOW", self._skip)
 
         self._fill_months()
         if self.month_keys:
             self.mlist.selection_set(self.month_keys[0])
         self._update_count()
-        self.grab_set()
 
     def _wheel(self, e):
         self.canvas.yview_scroll(int(-e.delta / (1 if sys.platform == "darwin" else 120)), "units")
@@ -737,6 +748,8 @@ class PhotoPicker(tk.Toplevel):
         c = tk.Canvas(self.gridf, width=self.TILE, height=self.TILE, bg="#e9edef", highlightthickness=0,
                       cursor="hand2")
         c.bind("<ButtonRelease-1>", lambda e, i=item: self._toggle(i))
+        if self.on_open:
+            c.bind("<Double-Button-1>", lambda e, i=item: self.on_open(i))
         c.bind("<MouseWheel>", self._wheel)
         self.tiles[item.id] = c
         self._draw_tile(item)
@@ -821,8 +834,37 @@ class PhotoPicker(tk.Toplevel):
         self.count.configure(text=f"{len(chosen) - nv:,} photos and {nv:,} videos selected "
                                   f"of {len(self.items):,} · about {self.human_size(size)}")
 
+
+class PhotoPicker(tk.Toplevel):
+    """Browse photos month by month as thumbnails and pick which to copy."""
+
+    def __init__(self, parent, source, items: list):
+        super().__init__(parent, bg=BG)
+        self.title("Choose photos & videos")
+        self.geometry("1040x700")
+        self.minsize(820, 520)
+        self.transient(parent)
+        self.result = None
+        head = tk.Frame(self, bg=GREEN)
+        head.pack(fill="x")
+        tk.Label(head, text="Choose the photos & videos to keep", bg=GREEN, fg="white",
+                 font=font(17, "bold")).pack(side="left", padx=18, pady=12)
+        tk.Label(head, text=f"from {source.label} · click a photo to select or unselect it", bg=GREEN,
+                 fg="#d7efe9", font=font(12)).pack(side="left", pady=12)
+        self.panel = PhotoPanel(self, source, items)
+        self.panel.pack(fill="both", expand=True)
+        RoundButton(self.panel.foot, "Continue", self._ok, "primary", 160, 40).pack(side="right")
+        RoundButton(self.panel.foot, "Skip photos", self._skip, "secondary", 130, 40).pack(side="right", padx=10)
+        self.protocol("WM_DELETE_WINDOW", self._skip)
+        self.grab_set()
+
+    def __getattr__(self, name):
+        if name == "panel":
+            raise AttributeError(name)
+        return getattr(self.panel, name)
+
     def _ok(self):
-        self.result = set(self.selected)
+        self.result = set(self.panel.selected)
         self._close()
 
     def _skip(self):

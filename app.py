@@ -245,7 +245,15 @@ class App(tk.Tk):
         self.dev_line.pack(fill="x", pady=(2, 0))
         self.dev_last = tk.Label(info, text="", bg=CARD, fg=MUTED, font=font(13), anchor="w")
         self.dev_last.pack(fill="x")
-        ui.RoundButton(inner, "Refresh", self.detect, "secondary", 100, 34, 12).pack(side="right", anchor="n")
+        btns = tk.Frame(inner, bg=CARD)
+        btns.pack(side="right", anchor="n", before=info)
+        self.open_btn = ui.RoundButton(btns, "Open iPhone  ›", self.open_phone, "primary", 160, 38, 13)
+        self.open_btn.pack(anchor="e")
+        ui.RoundButton(btns, "Refresh", self.detect, "secondary", 100, 30, 12).pack(anchor="e", pady=(8, 0))
+        self.open_btn.set_enabled(False)
+        for w in (self.phone, self.dev_name):
+            w.configure(cursor="hand2")
+            w.bind("<Button-1>", lambda e: self.open_phone())
 
         # what to keep
         wc = ui.card(self.body)
@@ -465,6 +473,7 @@ class App(tk.Tk):
                 info = wv.backup_info(Path(self.s["backup_dir"]) / self.udid) \
                     if (Path(self.s["backup_dir"]) / self.udid / "Manifest.db").exists() else None
                 self.dev_last.configure(text=f"Last backup: {info['date']}" if info else "Not backed up with PhoneKeep yet")
+                self.open_btn.set_enabled(True)
             else:
                 self.device = self.udid = None
                 self.phone.set_state("none")
@@ -472,6 +481,7 @@ class App(tk.Tk):
                 self.dev_line.configure(text=err or "Plug in your iPhone (or use Wi-Fi sync), unlock it and tap “Trust”.",
                                         fg=RED if err else MUTED)
                 self.dev_last.configure(text="")
+                self.open_btn.set_enabled(False)
         if not silent:
             self.phone.set_state("searching")
             self.dev_name.configure(text="Looking for your iPhone…")
@@ -523,6 +533,23 @@ class App(tk.Tk):
         self.log(f"You selected {n:,} photos & videos." if n else "Photos skipped.")
         self.notes.append(f"{n:,} photos & videos" if n else "no photos")
         return box.get("v")
+
+    # ------------------------------------------------------------------ phone window
+    def open_phone(self):
+        if self.device is None:
+            messagebox.showinfo(wv.APP_NAME, "Connect your iPhone first (cable or Wi-Fi), unlock it and tap Trust.")
+            return
+        win = getattr(self, "phone_win", None)
+        try:
+            if win is not None and win.winfo_exists() and win.udid == self.udid:
+                win.deiconify()
+                win.lift()
+                win.focus_force()
+                return
+        except tk.TclError:
+            pass
+        import phone
+        self.phone_win = phone.PhoneWindow(self, self.device, self.udid)
 
     # ------------------------------------------------------------------ actions
     def _reset_progress(self, with_backup: bool = True):

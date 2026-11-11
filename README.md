@@ -39,6 +39,20 @@ No Python needed. See "Making the installers" below for how to get these files.
 2. **Windows only:** install **iTunes** or the **Apple Devices** app from the Microsoft Store. It provides Apple's USB driver.
 3. Unzip this folder somewhere.
 
+## Your iPhone on your computer
+
+Click **Open iPhone** (or the phone itself) in the main window. A window opens with a picture of your phone, using its own wallpaper, and a home screen of apps: **Photos, Messages, WhatsApp, WhatsApp Business, Call History, Contacts, Voicemail, Notes, Calendar, Voice Memos, Safari, Music, Books, App Files** and **Apps**. Click one to see what's in it:
+
+- **Chats** (Messages and both WhatsApps): search, pick dates, read whole conversations with photos, tick chats and save them as Excel, CSV or a web page.
+- **Photos**: month by month; click to select, double-click to open full size, then **Save selected**.
+- **Call History, Contacts, Calendar, Safari, Apps**: searchable tables; click a column to sort; save as Excel or CSV (plus vCard for contacts and .ics for the calendar).
+- **Notes**: read every note; save one as text, or all of them.
+- **Voicemail, Voice Memos, Music**: play anything, or save the ones you select.
+- **Books**: open or save EPUBs, PDFs and audiobooks stored on the phone.
+- **App Files**: browse the Documents of apps that share files (Files, Pages, VLC, ...) and save what you need.
+
+Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. Nothing is ever written to the phone.
+
 ## Use it
 
 1. Plug in your iPhone (or use Wi-Fi sync), unlock it and tap **Trust This Computer**. PhoneKeep shows the phone's name and when it was last backed up.

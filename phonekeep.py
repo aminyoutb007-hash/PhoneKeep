@@ -42,7 +42,7 @@ from typing import Callable, Optional
 from tables import csv_safe as _csv_safe
 
 APP_NAME = "PhoneKeep"
-VERSION = "3.1.0"
+VERSION = "4.0.0"
 
 WA_DOMAIN = "AppDomainGroup-group.net.whatsapp.WhatsApp.shared"
 WA_BUSINESS_DOMAIN = "AppDomainGroup-group.net.whatsapp.WhatsAppSMB.shared"

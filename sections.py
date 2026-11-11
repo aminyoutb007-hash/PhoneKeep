@@ -640,7 +640,11 @@ def sec_photos(ctx: Ctx) -> dict:
 # Calls
 # ---------------------------------------------------------------------------
 
-def sec_calls(ctx: Ctx) -> dict:
+CALL_HEADERS = ["Date", "Type", "Name", "Number", "Service", "Duration", "Location"]
+
+
+def load_calls(ctx: Ctx) -> list[list]:
+    """Rows in CALL_HEADERS order, newest first."""
     con = ctx.db(HOME, "Library/CallHistoryDB/CallHistory.storedata")
     if con is None:
         raise PhoneKeepError("Call history is only included in ENCRYPTED backups. "
@@ -664,8 +668,13 @@ def sec_calls(ctx: Ctx) -> dict:
     con.close()
     if not rows:
         raise PhoneKeepError("No calls found.")
+    return rows
+
+
+def sec_calls(ctx: Ctx) -> dict:
+    rows = load_calls(ctx)
     d = ctx.out / "Calls"
-    hdr = ["Date", "Type", "Name", "Number", "Service", "Duration", "Location"]
+    hdr = CALL_HEADERS
     write_csv(d / "calls.csv", hdr, rows)
     missed = sum(1 for r in rows if r[1] == "Missed")
     (d / "index.html").write_text(page("Calls", f'<p class="meta">{len(rows):,} calls · {missed:,} missed · '
@@ -727,7 +736,8 @@ def note_text(data: Optional[bytes]) -> Optional[str]:
         return None
 
 
-def sec_notes(ctx: Ctx) -> dict:
+def load_notes(ctx: Ctx) -> list[dict]:
+    """[{title, folder, created, modified, text, locked}], most recently edited first."""
     con = None
     for dom in ctx.reader.domains("%group.com.apple.notes%"):
         con = ctx.db(dom, "NoteStore.sqlite")
@@ -759,6 +769,11 @@ def sec_notes(ctx: Ctx) -> dict:
     if not notes:
         raise PhoneKeepError("No notes found.")
     notes.sort(key=lambda n: n["modified"] or dt.datetime.min, reverse=True)
+    return notes
+
+
+def sec_notes(ctx: Ctx) -> dict:
+    notes = load_notes(ctx)
     d = ctx.out / "Notes"
     txt_dir = d / "text"
     used = set()
@@ -787,7 +802,8 @@ def sec_notes(ctx: Ctx) -> dict:
 # Calendar
 # ---------------------------------------------------------------------------
 
-def sec_calendar(ctx: Ctx) -> dict:
+def load_calendar(ctx: Ctx) -> list[dict]:
+    """[{title, start, end, all_day, loc, desc, cal, uid}], latest first."""
     con = ctx.db(HOME, "Library/Calendar/Calendar.sqlitedb")
     if con is None:
         raise PhoneKeepError("No Calendar database in this backup.")
@@ -807,6 +823,11 @@ def sec_calendar(ctx: Ctx) -> dict:
     if not ev:
         raise PhoneKeepError("No calendar events found.")
     ev.sort(key=lambda x: x["start"], reverse=True)
+    return ev
+
+
+def sec_calendar(ctx: Ctx) -> dict:
+    ev = load_calendar(ctx)
     d = ctx.out / "Calendar"
     d.mkdir(parents=True, exist_ok=True)
 
@@ -845,27 +866,37 @@ def sec_calendar(ctx: Ctx) -> dict:
 # Voicemail & voice memos
 # ---------------------------------------------------------------------------
 
-def sec_voicemail(ctx: Ctx) -> dict:
+def load_voicemail(ctx: Ctx) -> list[dict]:
+    """[{id, when, name, number, length, deleted, rel}] (rel = audio file in HomeDomain, or None)."""
     con = ctx.db(HOME, "Library/Voicemail/voicemail.db")
     if con is None:
         raise PhoneKeepError("No visual voicemail in this backup.")
-    d = ctx.out / "Voicemail"
-    rows = []
+    out = []
     for r in select(con, "voicemail", ["ROWID", "date", "sender", "callback_num", "duration", "trashed_date"],
                     "ORDER BY date DESC"):
-        when = dt.datetime.fromtimestamp(r["date"]) if r["date"] else None
-        audio = ""
-        for ext in (".amr", ".m4a", ".wav"):
-            rel = f"Library/Voicemail/{r['ROWID']}{ext}"
-            if rel in ctx.files(HOME) and ctx.copy(HOME, rel, d / f"{r['ROWID']}{ext}"):
-                audio = f'<a href="{r["ROWID"]}{ext}" download>&#11015; {r["ROWID"]}{ext}</a>'
-                break
+        rel = next((f"Library/Voicemail/{r['ROWID']}{ext}" for ext in (".amr", ".m4a", ".wav")
+                    if f"Library/Voicemail/{r['ROWID']}{ext}" in ctx.files(HOME)), None)
         who = r["sender"] or r["callback_num"] or ""
-        rows.append([fmt(when), ctx.label(who), who, dur(r["duration"]),
-                     "deleted" if r["trashed_date"] else "", audio])
+        out.append({"id": r["ROWID"], "when": dt.datetime.fromtimestamp(r["date"]) if r["date"] else None,
+                    "name": ctx.label(who), "number": who, "length": r["duration"] or 0,
+                    "deleted": bool(r["trashed_date"]), "rel": rel})
     con.close()
-    if not rows:
+    if not out:
         raise PhoneKeepError("No voicemails found.")
+    return out
+
+
+def sec_voicemail(ctx: Ctx) -> dict:
+    d = ctx.out / "Voicemail"
+    rows = []
+    for v in load_voicemail(ctx):
+        audio = ""
+        if v["rel"]:
+            name = Path(v["rel"]).name
+            if ctx.copy(HOME, v["rel"], d / name):
+                audio = f'<a href="{name}" download>&#11015; {name}</a>'
+        rows.append([fmt(v["when"]), v["name"], v["number"], dur(v["length"]),
+                     "deleted" if v["deleted"] else "", audio])
     hdr = ["Date", "From", "Number", "Length", "Status", "Audio"]
     write_csv(d / "voicemail.csv", hdr, [r[:5] for r in rows])
     (d / "index.html").write_text(page("Voicemail", f'<p class="meta">{len(rows):,} voicemails. Audio is '
@@ -874,7 +905,8 @@ def sec_voicemail(ctx: Ctx) -> dict:
     return {"count": len(rows), "detail": f"{len(rows):,} voicemails", "link": "Voicemail/index.html"}
 
 
-def sec_voicememos(ctx: Ctx) -> dict:
+def load_voicememos(ctx: Ctx) -> list[dict]:
+    """[{domain, rel, title, when, length}] newest first (when/length may be unknown)."""
     found: list[tuple[str, str]] = []
     titles: dict[str, tuple[str, Optional[dt.datetime], float]] = {}
     for dom in ctx.reader.domains("%VoiceMemos%") + [MEDIA]:
@@ -895,16 +927,29 @@ def sec_voicememos(ctx: Ctx) -> dict:
                     con.close()
     if not found:
         raise PhoneKeepError("No voice memos in this backup.")
-    d = ctx.out / "Voice Memos"
-    items = []
+    out = []
     for dom, rel in found:
         name = Path(rel).name
-        dest = wv.safe_join(d, name)
+        title, when, length = titles.get(name, ("", None, 0))
+        if when is None:
+            fid = ctx.files(dom).get(rel)
+            mt = ctx.reader.file_mtime(fid) if fid else None
+            when = dt.datetime.fromtimestamp(mt) if mt else None
+        out.append({"domain": dom, "rel": rel, "title": title or Path(name).stem, "when": when,
+                    "length": length})
+    out.sort(key=lambda x: x["when"] or dt.datetime.min, reverse=True)
+    return out
+
+
+def sec_voicememos(ctx: Ctx) -> dict:
+    d = ctx.out / "Voice Memos"
+    items = []
+    for m in load_voicememos(ctx):
+        dom, rel, title, when, length = m["domain"], m["rel"], m["title"], m["when"], m["length"]
+        dest = wv.safe_join(d, Path(rel).name)
         if dest is None or not ctx.copy(dom, rel, dest):
             continue
-        title, when, length = titles.get(name, ("", None, 0))
         when = when or dt.datetime.fromtimestamp(dest.stat().st_mtime)
-        title = title or dest.stem
         nice = d / safe_name(f"{when:%Y-%m-%d %H%M} {title}{dest.suffix}", 120)
         if nice != dest and not nice.exists():
             dest.rename(nice)
@@ -927,8 +972,8 @@ def sec_voicememos(ctx: Ctx) -> dict:
 # Safari
 # ---------------------------------------------------------------------------
 
-def sec_safari(ctx: Ctx) -> dict:
-    d = ctx.out / "Safari"
+def load_safari(ctx: Ctx) -> tuple[list, list]:
+    """(bookmarks [[folder, title, url]], history [[visited, title, url]] newest first)."""
     bm, hist = [], []
     con = ctx.db(HOME, "Library/Safari/Bookmarks.db")
     if con is not None and "bookmarks" in tables(con):
@@ -949,6 +994,12 @@ def sec_safari(ctx: Ctx) -> dict:
         break
     if not bm and not hist:
         raise PhoneKeepError("No Safari data (browsing history needs an ENCRYPTED backup).")
+    return bm, hist
+
+
+def sec_safari(ctx: Ctx) -> dict:
+    d = ctx.out / "Safari"
+    bm, hist = load_safari(ctx)
 
     def link(u):
         return f'<a href="{_e(u)}" target="_blank" rel="noopener noreferrer">{_e(u[:140])}</a>'
@@ -968,7 +1019,7 @@ def sec_safari(ctx: Ctx) -> dict:
 # Apps & raw files
 # ---------------------------------------------------------------------------
 
-def sec_apps(ctx: Ctx) -> dict:
+def load_apps(ctx: Ctx) -> list[str]:
     import plistlib
     apps = set()
     try:
@@ -980,6 +1031,11 @@ def sec_apps(ctx: Ctx) -> dict:
     apps = sorted(a for a in apps if a)
     if not apps:
         raise PhoneKeepError("No app list in this backup.")
+    return apps
+
+
+def sec_apps(ctx: Ctx) -> dict:
+    apps = load_apps(ctx)
     d = ctx.out / "Apps"
     d.mkdir(parents=True, exist_ok=True)
     rows = []
