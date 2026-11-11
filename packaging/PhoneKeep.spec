@@ -5,7 +5,7 @@ import sys
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas, binaries, hiddenimports = [], [], []
-for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl", "certifi", "keyring",
+for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl", "certifi", "keyring", "tkinterdnd2", "send2trash",
             *(("rumps",) if sys.platform == "darwin" else ("pystray",))):
     try:
         d, b, h = collect_all(pkg)
@@ -21,6 +21,7 @@ for pkg in ("typer", "rich", "click", "construct", "asn1", "srptools", "pycrashr
         pass
 hiddenimports += ["sections", "phonekeep", "app", "ui", "photos", "tables", "phone", "device", "build_label",
                   "keychain", "phone_write", "netguard", "certifi", "errors", "firstrun", "helper_core", "helper_ui", "login_item",
+                  "scheduler", "snapshots", "location",
                   "keyring", "keyring.backends.macOS", "keyring.backends.Windows",
                   "keyring.backends.fail", "keyring.backends.null", "tkinter",
                   "PIL.ImageOps", "PIL.ImageTk", "PIL._tkinter_finder"]

@@ -203,10 +203,20 @@ class Bar(tk.Canvas):
         self.create_rectangle(0, 0, int(w * self.value / 100), 8, fill=GREEN, outline="")
 
 
-class App(tk.Tk):
+def _dnd_root():
+    """tk.Tk with drag-and-drop when tkinterdnd2 is available (B5: drop a backup folder onto the window)."""
+    try:
+        from tkinterdnd2 import TkinterDnD
+        return TkinterDnD.Tk
+    except Exception:
+        return tk.Tk
+
+
+class App(_dnd_root()):
     def __init__(self):
         super().__init__()
         self.title(wv.APP_NAME)
+        self._build_menu()
         self.geometry("820x860")
         self.minsize(720, 700)
         self.configure(bg=BG)
@@ -541,6 +551,59 @@ class App(tk.Tk):
             self.detect(silent=True)
         # the first-run guide waits for the phone, so look more often while it is up
         self._timers["detect"] = self.after(3000 if self.guide is not None else 15000, self._auto_detect)
+
+    # ------------------------------------------------------------------ the menu and Open backup (B5)
+    def _build_menu(self):
+        bar = tk.Menu(self)
+        filem = tk.Menu(bar, tearoff=0)
+        filem.add_command(label="Open backup…", command=self.open_backup_dialog, accelerator="Cmd+O" if sys.platform == "darwin" else "Ctrl+O")
+        filem.add_command(label="Open iPhone", command=self.open_phone)
+        filem.add_separator()
+        filem.add_command(label="Settings…", command=self.open_settings)
+        if sys.platform != "darwin":
+            filem.add_separator()
+            filem.add_command(label="Quit", command=self.destroy)
+        bar.add_cascade(label="File", menu=filem)
+        helpm = tk.Menu(bar, tearoff=0)
+        helpm.add_command(label=f"About {wv.APP_NAME}", command=self.open_about)
+        bar.add_cascade(label="Help", menu=helpm)
+        self.configure(menu=bar)
+        self.bind_all("<Command-o>" if sys.platform == "darwin" else "<Control-o>", lambda e: self.open_backup_dialog())
+        try:
+            from tkinterdnd2 import DND_FILES
+            self.drop_target_register(DND_FILES)
+            self.dnd_bind("<<Drop>>", self._on_drop)
+        except Exception:
+            pass
+
+    def _on_drop(self, event):
+        """A folder dropped onto the window: open it as a backup if it is one."""
+        paths = self.tk.splitlist(event.data)
+        for p in paths:
+            if self.open_backup(Path(p)):
+                return
+
+    def open_backup(self, path: Path) -> bool:
+        """Open any backup folder in a phone window (PhoneKeep snapshot, phone folder, Finder or iTunes backup)."""
+        import snapshots as _snaps
+        path = Path(path)
+        if path.is_dir() and not (path / "Manifest.db").exists():
+            latest = _snaps.latest_backup_path(path.parent, path.name) if (path / "format.json").exists() or (path / "snapshots").is_dir() else None
+            if latest is None and (path / "Manifest.db").exists() is False and path.name == "snapshots":
+                latest = None
+            path = latest or path
+        if not (path / "Manifest.db").exists():
+            self.show_problem(errors.Problem("not_a_backup", "That folder isn't an iPhone backup.", "Choose a backup…", errors.TRY_AGAIN),
+                              retry=self.open_backup_dialog)
+            return False
+        import phone
+        win = phone.PhoneWindow(self, {}, None, backup=path)
+        self.phone_windows = getattr(self, "phone_windows", []) + [win]
+        phone_write.log_activity(f"Opened the backup {path}", kind="backup")
+        return True
+
+    def open_backup_dialog(self):
+        OpenBackupDialog(self)
 
     # ------------------------------------------------------------------ first run (E1)
     def start_first_run(self):
@@ -1113,6 +1176,77 @@ class App(tk.Tk):
                 keychain.set_password(self.udid, new)
                 messagebox.showinfo(wv.APP_NAME, "Backup password changed and saved to your keychain.", parent=parent)
         self._run(lambda: (phone_write.change_password(self.udid, name, old, new, confirmed=True, log=self.log), True)[1], done)
+
+
+class OpenBackupDialog(tk.Toplevel):
+    """File → Open backup…: the backups PhoneKeep can see (its own, Finder's, iTunes's), or any folder."""
+
+    def __init__(self, app: App):
+        super().__init__(app, bg=BG)
+        self.app = app
+        self.title("Open a backup")
+        self.geometry("640x460")
+        self.transient(app)
+        head = tk.Frame(self, bg=GREEN)
+        head.pack(fill="x")
+        tk.Label(head, text="Open a backup", bg=GREEN, fg="white", font=font(17, "bold")).pack(side="left", padx=18, pady=12)
+        body = tk.Frame(self, bg=BG)
+        body.pack(fill="both", expand=True, padx=18, pady=14)
+        tk.Label(body, text="Backups on this computer. You can also drop a backup folder onto the main window.",
+                 bg=BG, fg=MUTED, font=font(12), anchor="w", wraplength=600, justify="left").pack(fill="x")
+        c = ui.card(body)
+        c.pack(fill="both", expand=True, pady=(8, 8))
+        self.lb = tk.Listbox(c, font=font(12), activestyle="none", height=10)
+        self.lb.pack(fill="both", expand=True, padx=6, pady=6)
+        self.lb.bind("<Double-Button-1>", lambda e: self._open())
+        self.note = tk.Label(body, text="", bg=BG, fg=AMBER, font=font(11), anchor="w", wraplength=600, justify="left")
+        self.note.pack(fill="x")
+        row = tk.Frame(body, bg=BG)
+        row.pack(fill="x", pady=(8, 0))
+        ui.RoundButton(row, "Open", self._open, "primary", 110, 38).pack(side="right")
+        ui.RoundButton(row, "Other folder…", self._other, "secondary", 140, 38).pack(side="right", padx=8)
+        ui.RoundButton(row, "Cancel", self.destroy, "secondary", 100, 38).pack(side="left")
+        self.backups = []
+        self.lb.insert("end", "Looking for backups…")
+        threading.Thread(target=self._scan, daemon=True).start()
+
+    def _scan(self):
+        msgs = []
+        found = wv.find_backups(msgs.append)
+        self.app.call(lambda: self._show(found, msgs))
+
+    def _show(self, found, msgs):
+        if not self.winfo_exists():
+            return
+        self.backups = found
+        self.lb.delete(0, "end")
+        home = Path.home()
+        for b in found:
+            p = Path(b["path"])
+            where = "PhoneKeep" if str(p).startswith(str(Path(self.app.s["backup_dir"]))) or (p.parent / "snapshot.json").exists() or (p / "snapshot.json").exists() \
+                else "Finder / iTunes" if "MobileSync" in str(p) else str(p.parent).replace(str(home), "~", 1)
+            self.lb.insert("end", f"{b['name']} · {b['date'] or '?'} · iOS {b['ios'] or '?'}{' · 🔒' if b['encrypted'] else ''} · {where}")
+        if not found:
+            self.lb.insert("end", "No backups found. Use \"Other folder…\" to pick one.")
+        if msgs and sys.platform == "darwin":
+            self.note.configure(text="Some Finder backups couldn't be read. To include them, give PhoneKeep Full Disk Access in "
+                                     "System Settings → Privacy & Security → Full Disk Access, then open this list again.")
+        if found:
+            self.lb.selection_set(0)
+
+    def _open(self):
+        sel = self.lb.curselection()
+        if not sel or sel[0] >= len(self.backups):
+            return
+        path = Path(self.backups[sel[0]]["path"])
+        self.destroy()
+        self.app.open_backup(path)
+
+    def _other(self):
+        d = filedialog.askdirectory(title="Choose a backup folder", parent=self)
+        if d:
+            self.destroy()
+            self.app.open_backup(Path(d))
 
 
 class SettingsWindow(tk.Toplevel):

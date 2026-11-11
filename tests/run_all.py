@@ -26,6 +26,7 @@ STEPS = [
     ("B3: snapshots over time, content store, upgrade, FAT32", "test_b3_snapshots.py", False),
     ("B4: backup location, moving backups, unplugged drive, free space", "test_b4_location.py", True),
     ("X2: backup redaction tool leaves nothing personal and still opens", "test_x2_redaction.py", False),
+    ("B5: open any backup with no phone; All files preview and save", "test_b5_open_backup.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
