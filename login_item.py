@@ -29,7 +29,7 @@ def plist_content(cmd: list[str]) -> bytes:
 def install(home: Path | None = None, cmd: list[str] | None = None) -> str:
     """Register the helper to start at login. Returns where it was registered (for the activity log)."""
     cmd = cmd or helper_command()
-    if sys.platform == "darwin" or home is not None and os.name != "nt":
+    if sys.platform == "darwin" or home is not None:          # a given home = a test on any platform
         p = plist_path(home)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_bytes(plist_content(cmd))
@@ -43,7 +43,7 @@ def install(home: Path | None = None, cmd: list[str] | None = None) -> str:
 
 
 def remove(home: Path | None = None) -> None:
-    if sys.platform == "darwin" or home is not None and os.name != "nt":
+    if sys.platform == "darwin" or home is not None:
         try:
             plist_path(home).unlink()
         except OSError:
@@ -59,7 +59,7 @@ def remove(home: Path | None = None) -> None:
 
 
 def installed(home: Path | None = None) -> bool:
-    if sys.platform == "darwin" or home is not None and os.name != "nt":
+    if sys.platform == "darwin" or home is not None:
         return plist_path(home).exists()
     if os.name == "nt":
         import winreg
