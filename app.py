@@ -501,9 +501,11 @@ class App(tk.Tk):
         self.call(show)
         ev.wait()
         if box.get("v") is not None:
-            n = sum(len(v) for v in box["v"].values())
+            n = sum(len(v) for k, v in box["v"].items() if k != "_dates")
             self.log(f"You selected {n} chat{'s' if n != 1 else ''}.")
-            self.notes.append(f"{n} chat{'s' if n != 1 else ''}")
+            dates = box["v"].get("_dates")
+            when = f" ({wv.describe_dates(dates)})" if dates else ""
+            self.notes.append(f"{n} chat{'s' if n != 1 else ''}{when}")
         return box.get("v")
 
     def _choose_photos(self, source, items):
@@ -534,13 +536,20 @@ class App(tk.Tk):
         self.bar.set(0)
 
     def _progress_backup(self, pct: float, t0: list):
-        if pct > 1 and t0[0] is None:
-            t0[0] = (time.time(), pct)
+        # The time left is estimated from the speed over the last few minutes, so it settles
+        # quickly and follows changes (e.g. many small files, then big videos).
+        now = time.time()
+        if pct > 0.5:
+            t0.append((now, pct))
+            while len(t0) > 2 and now - t0[1][0] > 300:   # t0[0] is kept for the overall start
+                t0.pop(1)
         eta = ""
-        if t0[0] and pct > t0[0][1] + 1:
-            rate = (pct - t0[0][1]) / max(1, time.time() - t0[0][0])
+        pts = [x for x in t0[1:] if x]
+        if len(pts) >= 2 and pct > pts[0][1] + 0.5 and now - pts[0][0] > 20:
+            rate = (pct - pts[0][1]) / (now - pts[0][0])
             eta = _fmt_eta((100 - pct) / rate) if rate > 0 else ""
-        self.call(lambda: (self.bar.set(pct), self.steps["backup"].set("active", right=f"{int(pct)}%  {eta}")))
+        right = f"{pct:.0f}%" + (f" · {eta}" if eta else " · working out time left…")
+        self.call(lambda: (self.bar.set(pct), self.steps["backup"].set("active", right=right)))
 
     def _progress_build(self, pct: float):
         def ui_update():
@@ -583,10 +592,14 @@ class App(tk.Tk):
         t0 = [None]
 
         def work():
-            self.call(lambda: self.steps["backup"].set("active", detail="Keep your iPhone unlocked and nearby. "
-                                                                         "If it asks for its passcode, enter it."))
+            self.call(lambda: self.steps["backup"].set(
+                "active", detail="Connecting… Keep your iPhone unlocked and nearby. If it asks for its "
+                                 "passcode, enter it. Your chats appear for you to choose as soon as "
+                                 "the backup finishes."))
             path = wv.make_backup(Path(self.s["backup_dir"]), self.udid, log=self.log,
-                                  progress=lambda p: self._progress_backup(p, t0))
+                                  progress=lambda p: self._progress_backup(p, t0),
+                                  status=lambda text: self.call(
+                                      lambda: self.steps["backup"].set("active", detail=text)))
             self.call(lambda: self.steps["backup"].set("done", detail="Backup complete", right=""))
             return self._export(path)
         self._run(work, self._exported)

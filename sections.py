@@ -177,6 +177,7 @@ class Ctx:
         self.cache: dict = {}                  # section key -> chats already read (for the picker)
         self.photo_source = None               # photos.PhotoSource; None = the backup's camera roll
         self.photo_selection: Optional[set] = None  # photo ids to copy (None = all)
+        self.dates = None                      # (from, to) dates for chat messages (None = all)
         self._files: dict[str, dict[str, str]] = {}
         self.tmp = Path(reader._tmp.name)
 
@@ -453,6 +454,12 @@ def sec_messages(ctx: Ctx) -> dict:
     if only is not None:
         chats = [c for c in chats if c["id"] in only]
         ctx.log(f"Exporting the {len(chats)} conversation{'s' if len(chats) != 1 else ''} you selected.")
+    if ctx.dates and any(ctx.dates):
+        chats = wv.filter_by_dates(chats, ctx.dates)
+        ctx.log(f"Keeping messages {wv.describe_dates(ctx.dates)}: "
+                f"{sum(len(c['messages']) for c in chats):,} messages in {len(chats)} conversations.")
+        if not chats:
+            raise PhoneKeepError(f"No messages {wv.describe_dates(ctx.dates)} in the conversations you chose.")
     out = ctx.out / "Messages"
     mdir = out / "media"
     n_media = 0
@@ -503,7 +510,7 @@ def sec_whatsapp(ctx: Ctx) -> dict:
     r = wv.export_whatsapp(ctx.reader, ctx.out / "WhatsApp", ctx.include_media, False, ctx.log,
                            None, ctx.binfo, ctx.name_for, hub=True, strict=True,
                            only_chats=ctx.chat_filter.get("whatsapp"), formats=ctx.formats,
-                           loaded=ctx.cache.get("whatsapp"))
+                           loaded=ctx.cache.get("whatsapp"), dates=ctx.dates)
     r["link"] = "WhatsApp/" + r.pop("main")
     return r
 
@@ -512,7 +519,7 @@ def sec_whatsapp_business(ctx: Ctx) -> dict:
     r = wv.export_whatsapp(ctx.reader, ctx.out / "WhatsApp Business", ctx.include_media, True, ctx.log,
                            None, ctx.binfo, ctx.name_for, hub=True, strict=True,
                            only_chats=ctx.chat_filter.get("whatsappbusiness"), formats=ctx.formats,
-                           loaded=ctx.cache.get("whatsappbusiness"))
+                           loaded=ctx.cache.get("whatsappbusiness"), dates=ctx.dates)
     r["link"] = "WhatsApp Business/" + r.pop("main")
     return r
 
@@ -1076,7 +1083,7 @@ def _chat_summary(c: dict) -> dict:
     times = [m["time"] for m in c["messages"] if m.get("time")]
     return {"id": c["id"], "name": c["name"], "group": c.get("group", False),
             "messages": len(c["messages"]), "last": times[-1][:10] if times else "",
-            "first": times[0][:10] if times else ""}
+            "first": times[0][:10] if times else "", "days": sorted(t[:10] for t in times)}
 
 
 CHAT_SECTIONS = [("whatsapp", "WhatsApp"), ("whatsappbusiness", "WhatsApp Business"), ("messages", "Messages")]
@@ -1087,8 +1094,11 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
                log: Log = wv._print, progress: Optional[Callable[[float], None]] = None,
                chooser: Optional[Callable] = None, chat_names: Optional[list[str]] = None,
                formats: Optional[set] = None, photo_source: Optional[str] = None,
-               udid: Optional[str] = None, photo_chooser: Optional[Callable] = None) -> Path:
+               udid: Optional[str] = None, photo_chooser: Optional[Callable] = None,
+               dates=None) -> Path:
     """Build the archive.
+    dates: (from, to) - keep only chat messages in this period (either end may be None).
+        A chooser may also return it under the key "_dates".
     chooser(lists, preview): lists = {section: (label, [chat summary])} for WhatsApp, WhatsApp
         Business and Messages; returns {section: set(chat ids)}, or None to cancel.
     chat_names: instead of a chooser, keep chats whose name contains one of these words.
@@ -1104,6 +1114,7 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
     with wv.BackupReader(backup_path, password, log) as reader:
         ctx = Ctx(reader, out, log, include_media, binfo, None)
         ctx.formats = set(formats or {"web"})
+        ctx.dates = dates if dates and any(dates) else None
         people = []
         try:
             people = load_contacts(ctx)
@@ -1136,6 +1147,12 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
                     sel = chooser(lists, ChatPreview(ctx))
                     if sel is None:
                         raise PhoneKeepError("Cancelled: nothing was exported.")
+                    sel = dict(sel)
+                    picked = sel.pop("_dates", None)
+                    if picked and any(picked):
+                        ctx.dates = tuple(picked)
+                if ctx.dates:
+                    log(f"Chat messages: {wv.describe_dates(ctx.dates)}.")
                 ctx.chat_filter = sel
                 labels = dict(CHAT_SECTIONS)
                 for k, ids in sel.items():

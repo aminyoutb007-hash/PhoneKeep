@@ -76,11 +76,15 @@ python phonekeep.py export                   # build full archive from a backup
 python phonekeep.py export --only messages,contacts,notes
 python phonekeep.py export --all-files       # also dump every raw file
 python phonekeep.py export --only whatsappbusiness --chats "Acme,Supplier" --formats excel,csv
+python phonekeep.py export --only whatsappbusiness --from 2025-01-01 --to 2025-06-30 --formats excel
 python phonekeep.py whatsapp                 # WhatsApp-only archive
 ```
 Sections: `whatsapp, whatsappbusiness, messages, photos, contacts, calls, notes, calendar, voicemail, voicememos, safari, apps, files`.
 
 ## Good to know
+
+- **Chats appear after the backup.** The iPhone only hands its data over as one whole backup (Apple doesn't allow copying a single app), so the chat list shows up once the backup step finishes. The first backup is the long one; later ones only copy changes. While it runs PhoneKeep shows the percentage, the time left and how much has been copied.
+- **Pick dates in the chat list:** choose *Last 30 days*, *This year*, etc., or type your own *From* and *To* dates. Only messages in that period go into the web pages, Excel and CSV files.
 
 - **Not included:** saved passwords (Keychain), Health data and Screen Time. These need extra decryption that PhoneKeep doesn't do; they are still inside your encrypted backup and come back if you restore it to an iPhone.
 - **Locked notes** show as locked; their content stays encrypted.

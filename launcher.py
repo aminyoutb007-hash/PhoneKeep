@@ -9,8 +9,55 @@ import multiprocessing
 import sys
 
 
+def _pk_backup(args: list) -> None:
+    """Internal: back up the iPhone and print machine-readable progress, one line each:
+         PKPCT 37.5            percent done, as reported by the iPhone
+         PKERR <message>       what went wrong
+    Exit code 3 = this pymobiledevice3 lacks the API (the caller falls back to its CLI)."""
+    import asyncio
+    import traceback
+    directory = args[0]
+    full = "--full" in args
+    udid = args[args.index("--udid") + 1] if "--udid" in args else None
+    try:
+        from pymobiledevice3.lockdown import create_using_usbmux
+        from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
+    except ImportError as e:
+        print(f"PKAPI {e}", flush=True)
+        sys.exit(3)
+
+    async def run():
+        async with await create_using_usbmux(serial=udid) as lockdown:
+            async with Mobilebackup2Service(lockdown) as svc:
+                last = [-1.0]
+
+                def cb(p):
+                    try:
+                        p = float(p)
+                    except (TypeError, ValueError):
+                        return
+                    if p >= 100 or abs(p - last[0]) >= 0.1:
+                        last[0] = p
+                        print(f"PKPCT {p:.1f}", flush=True)
+
+                print("PKSTAGE started", flush=True)
+                await svc.backup(full=full, backup_directory=directory, progress_callback=cb)
+
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except Exception as e:
+        traceback.print_exc(file=sys.stdout)
+        print(f"PKERR {type(e).__name__}: {e}", flush=True)
+        sys.exit(1)
+
+
 def main() -> None:
     args = sys.argv[1:]
+    if len(args) >= 2 and args[0] == "--pk-backup":
+        _pk_backup(args[1:])
+        return
     if len(args) >= 2 and args[0] == "--pk-encryption":
         # Internal: change backup encryption. The password arrives on stdin, never on the
         # command line, so other programs on this computer can't read it from the process list.

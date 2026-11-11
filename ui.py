@@ -239,6 +239,43 @@ TYPE_LABEL = {"image": "📷 Photo", "video": "🎬 Video", "audio": "🎤 Voice
               "deleted": "🚫 Deleted message", "system": "Group update", "link": "🔗 Link"}
 
 
+DATE_PRESETS = ["All dates", "Today", "Last 7 days", "Last 30 days", "Last 3 months",
+                "Last 12 months", "This year", "Last year", "Custom dates"]
+
+
+def preset_range(name: str, today: Optional[dt.date] = None):
+    """(from, to) dates for a preset name; (None, None) for all dates."""
+    t = today or dt.date.today()
+    days = {"Today": 0, "Last 7 days": 6, "Last 30 days": 29, "Last 3 months": 91, "Last 12 months": 364}
+    if name in days:
+        return t - dt.timedelta(days=days[name]), t
+    if name == "This year":
+        return dt.date(t.year, 1, 1), t
+    if name == "Last year":
+        return dt.date(t.year - 1, 1, 1), dt.date(t.year - 1, 12, 31)
+    return None, None
+
+
+def parse_day(text: str) -> Optional[dt.date]:
+    text = (text or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y"):
+        try:
+            return dt.datetime.strptime(text, fmt).date()
+        except ValueError:
+            pass
+    raise ValueError(text)
+
+
+def count_in_range(days: list, lo: Optional[dt.date], hi: Optional[dt.date]) -> int:
+    """days: sorted 'YYYY-MM-DD' strings."""
+    import bisect
+    a = bisect.bisect_left(days, lo.isoformat()) if lo else 0
+    b = bisect.bisect_right(days, hi.isoformat()) if hi else len(days)
+    return max(0, b - a)
+
+
 class ChatPicker(tk.Toplevel):
     """Pick chats from WhatsApp, WhatsApp Business and Messages, with a live preview."""
 
@@ -256,6 +293,7 @@ class ChatPicker(tk.Toplevel):
         self.images = []
         self.worker = BgWorker(self)
         self.current = None
+        self.lo = self.hi = None   # date range (None = open)
 
         head = tk.Frame(self, bg=GREEN)
         head.pack(fill="x")
@@ -279,6 +317,31 @@ class ChatPicker(tk.Toplevel):
             cb.bind("<<ComboboxSelected>>", lambda e: self._fill())
         RoundButton(bar, "Select none", lambda: self._set_all(False), "secondary", 120, 32, 12).pack(side="right")
         RoundButton(bar, "Select all", lambda: self._set_all(True), "secondary", 110, 32, 12).pack(side="right", padx=6)
+
+        dbar = tk.Frame(self, bg=BG)
+        dbar.pack(fill="x", padx=16, pady=(0, 8))
+        tk.Label(dbar, text="📅  Messages from", bg=BG, fg=INK, font=font(13)).pack(side="left")
+        self.preset = tk.StringVar(value="All dates")
+        pc = ttk.Combobox(dbar, textvariable=self.preset, values=DATE_PRESETS, state="readonly", width=15)
+        pc.pack(side="left", padx=(8, 12))
+        pc.bind("<<ComboboxSelected>>", lambda e: self._preset())
+        tk.Label(dbar, text="From", bg=BG, fg=MUTED, font=font(12)).pack(side="left")
+        self.d_from = tk.StringVar()
+        self.d_to = tk.StringVar()
+        e1 = ttk.Entry(dbar, textvariable=self.d_from, width=12)
+        e1.pack(side="left", padx=(4, 8))
+        tk.Label(dbar, text="to", bg=BG, fg=MUTED, font=font(12)).pack(side="left")
+        e2 = ttk.Entry(dbar, textvariable=self.d_to, width=12)
+        e2.pack(side="left", padx=(4, 8))
+        for e in (e1, e2):
+            e.bind("<Return>", lambda ev: self._typed_dates())
+            e.bind("<FocusOut>", lambda ev: self._typed_dates())
+        self.date_hint = tk.Label(dbar, text="e.g. 2024-01-31 · empty = no limit", bg=BG, fg=MUTED,
+                                  font=font(11))
+        self.date_hint.pack(side="left", padx=6)
+        self.hide_empty = tk.BooleanVar(value=True)
+        ttk.Checkbutton(dbar, text="Hide empty chats", variable=self.hide_empty,
+                        command=self._fill).pack(side="right")
 
         body = tk.PanedWindow(self, orient="horizontal", sashwidth=6, bg=BG, bd=0)
         body.pack(fill="both", expand=True, padx=16)
@@ -350,12 +413,16 @@ class ChatPicker(tk.Toplevel):
                 continue
             if app != "All apps" and label != app:
                 continue
+            n_in = self._n_in(c)
+            if n_in == 0 and self.hide_empty.get() and (self.lo or self.hi):
+                continue
             vals = ("☑" if (key, c["id"]) in self.selected else "☐",
                     ("👥 " if c["group"] else "") + c["name"])
             if len(self.apps) > 1:
                 vals += (label,)
-            vals += (f"{c['messages']:,}", c["last"])
-            self.tree.insert("", "end", iid=str(i), values=vals)
+            vals += (f"{n_in:,}", c["last"])
+            self.tree.insert("", "end", iid=str(i), values=vals, tags=("dim",) if n_in == 0 else ())
+        self.tree.tag_configure("dim", foreground=MUTED)
         self._update_count()
 
     def _toggle(self, iid):
@@ -380,10 +447,55 @@ class ChatPicker(tk.Toplevel):
             (self.selected.add if on else self.selected.discard)((key, c["id"]))
         self._fill()
 
+    def _n_in(self, c) -> int:
+        if not (self.lo or self.hi):
+            return c["messages"]
+        days = c.get("days")
+        if days is None:
+            return c["messages"]
+        return count_in_range(days, self.lo, self.hi)
+
     def _update_count(self):
-        n = len(self.selected)
-        msgs = sum(c["messages"] for k, _l, c in self.rows if (k, c["id"]) in self.selected)
-        self.count.configure(text=f"{n:,} of {len(self.rows):,} chats selected · {msgs:,} messages")
+        sel = [c for k, _l, c in self.rows if (k, c["id"]) in self.selected]
+        msgs = sum(self._n_in(c) for c in sel)
+        text = f"{len(sel):,} of {len(self.rows):,} chats ticked · {msgs:,} messages"
+        if self.lo or self.hi:
+            f = lambda d: d.strftime("%d %b %Y")
+            when = (f"{f(self.lo)} – {f(self.hi)}" if self.lo and self.hi else
+                    f"from {f(self.lo)}" if self.lo else f"up to {f(self.hi)}")
+            with_msgs = sum(1 for c in sel if self._n_in(c) > 0)
+            text += f" in {with_msgs:,} chat{'s' if with_msgs != 1 else ''} · {when}"
+        self.count.configure(text=text)
+
+    # dates --------------------------------------------------------------
+    def _preset(self):
+        name = self.preset.get()
+        if name == "Custom dates":
+            self.date_hint.configure(text="Type the dates, then press Return", fg=GREEN)
+            return
+        lo, hi = preset_range(name)
+        self.d_from.set(lo.isoformat() if lo else "")
+        self.d_to.set(hi.isoformat() if hi else "")
+        self._apply_dates(lo, hi)
+
+    def _typed_dates(self):
+        try:
+            lo, hi = parse_day(self.d_from.get()), parse_day(self.d_to.get())
+        except ValueError as e:
+            self.date_hint.configure(text=f"“{e}” isn't a date. Use 2024-01-31.", fg=RED)
+            return
+        if lo and hi and lo > hi:
+            self.date_hint.configure(text="The ‘from’ date is after the ‘to’ date.", fg=RED)
+            return
+        if (lo, hi) != (self.lo, self.hi):
+            self.preset.set("Custom dates" if (lo or hi) else "All dates")
+        self._apply_dates(lo, hi)
+
+    def _apply_dates(self, lo, hi):
+        self.lo, self.hi = lo, hi
+        self.date_hint.configure(text="Only these dates are exported" if (lo or hi)
+                                 else "e.g. 2024-01-31 · empty = no limit", fg=MUTED)
+        self._fill()
 
     # preview ------------------------------------------------------------
     def _show(self, iid):
@@ -463,6 +575,18 @@ class ChatPicker(tk.Toplevel):
         if not self.selected and not messagebox.askyesno(
                 "PhoneKeep", "No chats are ticked, so no chats will be exported. Continue?", parent=self):
             return
+        self._typed_dates()
+        if self.date_hint.cget("fg") == RED:
+            return
+        if self.lo or self.hi:
+            out["_dates"] = (self.lo, self.hi)
+            for key, _l, c in self.rows:   # ticked chats with nothing in these dates are left out
+                if self._n_in(c) == 0:
+                    out[key].discard(c["id"])
+            if self.selected and not any(out[k] for k in out if k != "_dates"):
+                if not messagebox.askyesno("PhoneKeep", "The ticked chats have no messages in these dates, "
+                                           "so nothing will be exported from them. Continue?", parent=self):
+                    return
         self.result = out
         self._close()
 

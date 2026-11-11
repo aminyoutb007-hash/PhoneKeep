@@ -29,6 +29,8 @@ import json
 import os
 import plistlib
 import re
+import threading
+import time
 import shutil
 import sqlite3
 import subprocess
@@ -40,7 +42,7 @@ from typing import Callable, Optional
 from tables import csv_safe as _csv_safe
 
 APP_NAME = "PhoneKeep"
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 
 WA_DOMAIN = "AppDomainGroup-group.net.whatsapp.WhatsApp.shared"
 WA_BUSINESS_DOMAIN = "AppDomainGroup-group.net.whatsapp.WhatsAppSMB.shared"
@@ -135,9 +137,84 @@ def list_devices() -> list[dict]:
     return devices
 
 
+def _launcher_cmd() -> list[str]:
+    """Command that runs launcher.py's internal modes (--pk-backup, --pk-encryption)."""
+    if getattr(sys, "frozen", False):
+        return _helper()[:1]
+    return [sys.executable, str(Path(__file__).resolve().with_name("launcher.py"))]
+
+
+def _human_bytes(n: float) -> str:
+    for unit in ("bytes", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:,.0f} {unit}" if unit in ("bytes", "KB") else f"{n:,.1f} {unit}"
+        n /= 1024
+    return ""
+
+
+def _folder_bytes(folder: Path) -> int:
+    total = 0
+    for root, _dirs, files in os.walk(folder):
+        for f in files:
+            try:
+                total += os.stat(os.path.join(root, f)).st_size
+            except OSError:
+                pass
+    return total
+
+
+def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int, list[str]]:
+    """Run a backup helper, forwarding progress. Returns (exit code, last output lines)."""
+    env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, encoding="utf-8", errors="replace", env=env, bufsize=1, **_NOWIN)
+    last_pct, tail = -1, []
+    assert proc.stdout is not None
+    for raw in proc.stdout:  # universal newlines also split \r progress updates
+        line = raw.strip()
+        if not line:
+            continue
+        pct = None
+        if line.startswith("PKPCT "):
+            try:
+                pct = float(line.split()[1])
+            except (IndexError, ValueError):
+                continue
+        elif line.startswith("PKSTAGE"):
+            seen["connected"] = True
+            continue
+        elif line.startswith("PKAPI"):
+            tail.append(line)
+            continue
+        else:
+            m = re.search(r"(\d{1,3}(?:\.\d+)?)%", line)
+            if m and "backup" in line.lower():
+                pct = float(m.group(1))
+        if pct is not None:
+            pct = max(0.0, min(100.0, pct))
+            seen["pct"] = pct
+            if progress:
+                progress(pct)
+            if int(pct) // 5 != last_pct // 5:
+                last_pct = int(pct)
+                log(f"  backup progress: {int(pct)}%")
+            continue
+        if line.startswith("PKERR "):
+            line = line[6:]
+        tail.append(line)
+        tail = tail[-15:]
+        if "--udid" in line and "no such option" in line.lower():
+            break
+        log("  " + line)
+    return proc.wait(), tail
+
+
 def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = None,
-                log: Log = _print, progress: Optional[Callable[[float], None]] = None) -> Path:
-    """Back up the connected iPhone into backup_root/<UDID>. Incremental after the first run."""
+                log: Log = _print, progress: Optional[Callable[[float], None]] = None,
+                status: Optional[Callable[[str], None]] = None) -> Path:
+    """Back up the connected iPhone into backup_root/<UDID>. Incremental after the first run.
+    progress(percent) follows the iPhone's own estimate; status(text) gets a plain-language line
+    every few seconds (what is happening, how much has been copied)."""
     check_pmd3()
     devices = list_devices()
     if not devices:
@@ -152,66 +229,69 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
 
     backup_root = Path(backup_root)
     backup_root.mkdir(parents=True, exist_ok=True)
-    existing = (backup_root / udid / "Manifest.db").exists()
-    args = ["backup2", "backup"]
-    if not existing:
-        args.append("--full")
-    args += ["--udid", udid, str(backup_root)]
+    target = backup_root / udid
+    existing = (target / "Manifest.db").exists()
 
-    log(f"Backing up '{name}' to {backup_root / udid}")
+    log(f"Backing up '{name}' to {target}")
     log("Incremental backup (only changes since last time)." if existing
         else "First backup: this copies everything and can take a while.")
-    log("Keep the phone unlocked. If it asks for your passcode, enter it on the phone.")
+    log("Keep the phone unlocked and awake. If it asks for your passcode, enter it on the phone.")
 
-    cmd = [*_helper(), *args]
-    env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, encoding="utf-8", errors="replace", env=env, bufsize=1, **_NOWIN)
-    last_pct, tail = -1, []
-    assert proc.stdout is not None
-    for raw in proc.stdout:  # universal newlines also split tqdm's \r updates
-        line = raw.strip()
-        if not line:
-            continue
-        m = re.search(r"(\d{1,3}(?:\.\d+)?)%", line)
-        if m:
-            pct = float(m.group(1))
-            if progress:
-                progress(pct)
-            if int(pct) // 5 != last_pct // 5:
-                last_pct = int(pct)
-                log(f"  backup progress: {int(pct)}%")
-            continue
-        tail.append(line)
-        tail = tail[-15:]
-        if "--udid" in line and "no such option" in line.lower():
-            break
-        log("  " + line)
-    code = proc.wait()
+    # a small watcher that reports how much has been copied, so there is always a sign of life
+    seen: dict = {"pct": None, "connected": False}
+    stop = threading.Event()
+    start_bytes = _folder_bytes(target) if target.exists() else 0
+    t_start = time.time()
 
-    if code != 0 and any("no such option" in l.lower() and "udid" in l.lower() for l in tail):
-        # older pymobiledevice3 without --udid on this command
-        args = [a for a in args if a not in ("--udid", udid)]
-        log("Retrying without --udid ...")
-        r = _pmd3(args)
-        code, tail = r.returncode, (r.stdout + r.stderr).strip().splitlines()[-15:]
+    def watch():
+        while not stop.wait(4):
+            if not status:
+                continue
+            try:
+                copied = max(0, _folder_bytes(target) - start_bytes) if target.exists() else 0
+            except Exception:
+                continue
+            mins = int((time.time() - t_start) // 60)
+            took = f" · {mins} min so far" if mins else ""
+            if seen["pct"] is None or seen["pct"] < 0.5:
+                if copied < 1_000_000:
+                    status("Your iPhone is getting the backup ready. This can take a few minutes "
+                           "before copying starts. Keep it unlocked." + took)
+                else:
+                    status(f"{_human_bytes(copied)} copied from the iPhone{took}")
+            else:
+                status(f"{_human_bytes(copied)} copied from the iPhone{took}")
 
-    if code != 0 or not (backup_root / udid / "Manifest.db").exists():
+    threading.Thread(target=watch, daemon=True).start()
+    try:
+        cmd = [*_launcher_cmd(), "--pk-backup", str(backup_root), "--udid", udid]
+        if not existing:
+            cmd.append("--full")
+        code, tail = _stream_backup(cmd, log, progress, seen)
+        if code == 3:  # helper without the in-process API: use the pymobiledevice3 command
+            args = ["backup2", "backup"] + (["--full"] if not existing else []) + ["--udid", udid, str(backup_root)]
+            code, tail = _stream_backup([*_helper(), *args], log, progress, seen)
+            if code != 0 and any("no such option" in l.lower() and "udid" in l.lower() for l in tail):
+                args = [a for a in args if a not in ("--udid", udid)]
+                log("Retrying without --udid ...")
+                code, tail = _stream_backup([*_helper(), *args], log, progress, seen)
+    finally:
+        stop.set()
+
+    if code != 0 or not (target / "Manifest.db").exists():
         raise PhoneKeepError("Backup failed: " + _explain("\n".join(tail)))
     if progress:
         progress(100.0)
-    log("Backup complete.")
-    return backup_root / udid
+    took = int(time.time() - t_start)
+    log(f"Backup complete in {took // 60} min {took % 60} s.")
+    return target
 
 
 def set_backup_encryption(on: bool, password: str, udid: Optional[str] = None, log: Log = _print) -> None:
     """Turn the iPhone's local-backup encryption on (new password) or off (current password).
     The password is passed through a pipe, never as a command-line argument."""
     check_pmd3()
-    if getattr(sys, "frozen", False):
-        cmd = _helper()[:1]
-    else:
-        cmd = [sys.executable, str(Path(__file__).resolve().with_name("launcher.py"))]
+    cmd = _launcher_cmd()
     cmd += ["--pk-encryption", "on" if on else "off"] + (["--udid", udid] if udid else [])
     env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
     r = subprocess.run(cmd, input=password + "\n", capture_output=True, text=True, env=env,
@@ -699,14 +779,56 @@ def whatsapp_media_rel(loaded: dict, m: dict) -> Optional[str]:
     return next((p for p in _media_candidates(src) if p in loaded["files"]), None)
 
 
+def parse_day(text: Optional[str]) -> Optional[dt.date]:
+    """'2024-05-31' (or 31/05/2024) -> date; empty -> None."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y"):
+        try:
+            return dt.datetime.strptime(text, fmt).date()
+        except ValueError:
+            pass
+    raise PhoneKeepError(f"Not a date: {text!r}. Use the form 2024-05-31.")
+
+
+def filter_by_dates(chats: list[dict], dates=None) -> list[dict]:
+    """Keep only messages between dates=(from, to) (dates, both inclusive, either may be None).
+    Chats left with no messages are dropped. Returns new chat dicts."""
+    lo, hi = (dates or (None, None))
+    if not lo and not hi:
+        return chats
+    lo_s = lo.isoformat() if lo else "0000"
+    hi_s = hi.isoformat() if hi else "9999"
+    out = []
+    for c in chats:
+        msgs = [m for m in c["messages"] if m.get("time") and lo_s <= m["time"][:10] <= hi_s]
+        if msgs:
+            out.append(dict(c, messages=msgs))
+    return out
+
+
+def describe_dates(dates) -> str:
+    lo, hi = (dates or (None, None))
+    if lo and hi:
+        return f"from {lo:%d %b %Y} to {hi:%d %b %Y}"
+    if lo:
+        return f"from {lo:%d %b %Y} onwards"
+    if hi:
+        return f"up to {hi:%d %b %Y}"
+    return "all dates"
+
+
 def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = True,
                     business: bool = False, log: Log = _print,
                     progress: Optional[Callable[[float], None]] = None,
                     binfo: Optional[dict] = None, name_for=None, hub: bool = False,
                     strict: bool = False, only_chats: Optional[set] = None,
-                    formats: Optional[set] = None, loaded: Optional[dict] = None) -> dict:
+                    formats: Optional[set] = None, loaded: Optional[dict] = None,
+                    dates=None) -> dict:
     """Build the WhatsApp (or WhatsApp Business) archive in `out` from an open backup.
-    loaded: the result of load_whatsapp(), when the chats were already read (e.g. for the picker)."""
+    loaded: the result of load_whatsapp(), when the chats were already read (e.g. for the picker).
+    dates: (from, to) to keep only messages in that period."""
     out = Path(out)
     loaded = loaded or load_whatsapp(reader, business, strict, name_for, log)
     domain, files = loaded["domain"], loaded["files"]
@@ -716,6 +838,12 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
         log(f"Exporting the {len(chats)} chat{'s' if len(chats) != 1 else ''} you selected.")
         if not chats:
             raise PhoneKeepError("No chats selected for this app.")
+    if dates and any(dates):
+        chats = filter_by_dates(chats, dates)
+        log(f"Keeping messages {describe_dates(dates)}: {sum(len(c['messages']) for c in chats):,} "
+            f"messages in {len(chats)} chat{'s' if len(chats) != 1 else ''}.")
+        if not chats:
+            raise PhoneKeepError(f"No messages {describe_dates(dates)} in the chats you chose.")
 
     media_dir = out / "media"
     copied = missing = skipped = 0
@@ -1108,8 +1236,11 @@ def _export_cli(backup: Path, a) -> None:
     formats = {f.strip().lower() for f in (a.formats or "web").split(",") if f.strip()}
     if formats - {"web", "excel", "csv"}:
         raise PhoneKeepError("--formats takes web, excel and/or csv")
+    dates = (parse_day(a.date_from), parse_day(a.date_to))
+    if all(dates) and dates[0] > dates[1]:
+        raise PhoneKeepError("--from is after --to")
     index = sx.export_all(backup, a.out, pw, only, include_media=not a.no_media, chat_names=names,
-                          formats=formats)
+                          formats=formats, dates=dates if any(dates) else None)
     print(f"\nOpen this file in your browser:\n  {index}")
 
 
@@ -1141,6 +1272,8 @@ def main(argv=None) -> int:
         x.add_argument("--chats", help='WhatsApp: export only chats whose name contains one of these, '
                                          'comma-separated, e.g. --chats "Acme,Mum"')
         x.add_argument("--formats", help="chat exports: web, excel and/or csv, comma-separated (default web)")
+        x.add_argument("--from", dest="date_from", help="chats: keep messages from this date (2024-01-31)")
+        x.add_argument("--to", dest="date_to", help="chats: keep messages up to this date (inclusive)")
     ph = sub.add_parser("photos", help="copy photos & videos straight off the iPhone")
     ph.add_argument("--out", default=str(DEFAULT_ARCHIVE_DIR), help="archive folder")
     enc = sub.add_parser("encryption", help="turn backup encryption on/off")
