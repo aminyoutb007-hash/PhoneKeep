@@ -126,6 +126,28 @@ def _pk_wifi(args: list) -> None:
         sys.exit(1)
 
 
+def _pk_battery(args: list) -> None:
+    """Internal: print PKBATTERY charging=<0|1> level=<0-100> from the phone's battery domain."""
+    import asyncio
+    udid = args[args.index("--udid") + 1] if "--udid" in args else None
+    try:
+        from pymobiledevice3.lockdown import create_using_usbmux
+    except ImportError as e:
+        print(f"PKAPI {e}", flush=True)
+        sys.exit(3)
+
+    async def run():
+        async with await create_using_usbmux(serial=udid) as lockdown:
+            v = await lockdown.get_value(domain="com.apple.mobile.battery")
+            v = v or {}
+            print(f"PKBATTERY charging={1 if v.get('BatteryIsCharging') else 0} level={int(v.get('BatteryCurrentCapacity', -1))}", flush=True)
+    try:
+        asyncio.run(run())
+    except Exception as e:
+        print(f"PKERR {type(e).__name__}: {e}", flush=True)
+        sys.exit(1)
+
+
 def _pk_change_password(args: list) -> None:
     """Internal: change the backup password. The old and new passwords arrive on stdin, one per
     line, never on the command line."""
@@ -153,6 +175,9 @@ def main() -> None:
         return
     if args and args[0] == "--pk-change-password":
         _pk_change_password(args[1:])
+        return
+    if args and args[0] == "--pk-battery":
+        _pk_battery(args[1:])
         return
     if len(args) >= 2 and args[0] == "--pk-wifi":
         _pk_wifi(args[1:])

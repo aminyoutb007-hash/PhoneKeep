@@ -19,7 +19,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | E1 | First-run guide | Five steps in the main window; 2 clicks + password to a backup | Done | [05-ease-of-use.md](05-ease-of-use.md#e1-first-run-guide) |
 | B1 | Back up by cable and Wi-Fi | Works; only changes after the first run | Done | [03-backup.md](03-backup.md#b1-back-up-by-cable-and-wi-fi) |
 | E2 | Menu bar / system tray helper | Menu, Back up now, notifications, progress ring, start at login | Done | [05-ease-of-use.md](05-ease-of-use.md#e2-menu-bar-and-system-tray-helper) |
-| B2 | Scheduled automatic backups (needs E2) | Not available | To build | [03-backup.md](03-backup.md#b2-scheduled-automatic-backups) |
+| B2 | Scheduled automatic backups (needs E2) | Daily / Weekly at a time, only when charging; from the helper | Done | [03-backup.md](03-backup.md#b2-scheduled-automatic-backups) |
 | B3 | Snapshots over time | One backup per phone, overwritten | To build | [03-backup.md](03-backup.md#b3-snapshots-over-time) |
 | B4 | Backups on any drive or NAS; move backups | Folder setting only | Partial | [03-backup.md](03-backup.md#b4-backup-location-and-moving-backups) |
 | X2 | Backup redaction tool (for the regression library; before B5) | Not available | To build | [12-engineering.md](12-engineering.md#x2-backup-redaction-tool) |

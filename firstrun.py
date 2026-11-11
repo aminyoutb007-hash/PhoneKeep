@@ -392,9 +392,7 @@ class FirstRunGuide(tk.Frame):
         if key == "auto_daily":
             self.app.s["auto_backup"] = "daily" if yes else "off"
             if yes:
-                self.app.set_start_at_login(True)                   # E2: the helper starts at login
-            if yes and not hasattr(self.app, "scheduler"):      # B2 not in this version yet: say so
-                label.configure(text="Yes · starts with the next update")
+                self.app.set_start_at_login(True)                   # E2: the helper starts at login, and runs the schedule (B2)
         elif key == "app_lock":
             self.app.s["app_lock"] = bool(yes)
         elif key == "wifi" and yes:

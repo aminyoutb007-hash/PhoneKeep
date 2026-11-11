@@ -23,6 +23,7 @@ from typing import Callable, Optional
 
 import keychain
 import phonekeep as wv
+import scheduler as sch
 
 HOME = wv.DEFAULT_HOME
 PORT_FILE = HOME / "app.port"
@@ -80,6 +81,7 @@ class Helper:
         self.last_error: Optional[str] = None
         self.lock = threading.Lock()
         self._refresh_at = 0.0
+        self.clock = None                             # tests set a fake clock
 
     # -- status -----------------------------------------------------------------------------
     def phones(self) -> list[dict]:
@@ -121,6 +123,14 @@ class Helper:
             if p["connected"]:
                 line += f" · connected by {p['how']}"
             out.append(line)
+            plan = sch.Plan.from_settings(settings())
+            state, extra = sch.card_state(plan, sch.Health.load(self.backup_dir / (p["udid"] or "-")), self.now())
+            if state == "amber":
+                out.append("⚠ " + extra)
+            elif plan.mode != "off":
+                nxt = plan.next_run_text(self.now(), p["last"])
+                if nxt:
+                    out.append("   " + nxt)
         if not out:
             out.append("No iPhone backed up yet")
         if self.busy and self.progress is not None:
@@ -190,25 +200,64 @@ class Helper:
             self.busy, self.progress = False, None
             self.on_change()
 
-    # -- backup health (B2 reads this for the amber state) ------------------------------------------
+    # -- backup health (the scheduler and the phone card read this) ----------------------------------
     def write_health(self, udid: str, ok: bool, reason: str = ""):
-        try:
-            f = self.backup_dir / udid / "health.json"
-            data = {}
-            try:
-                data = json.loads(f.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-            if ok:
-                data = {"last_ok": dt.datetime.now().isoformat(timespec="seconds"), "failed_days": []}
+        h = sch.Health.load(self.backup_dir / udid)
+        now = self.now()
+        h.last_try = now
+        if ok:
+            h.last_ok, h.failed_days, h.last_reason = now, [], ""
+        else:
+            today = now.date().isoformat()
+            h.failed_days = [d for d in (h.failed_days or []) if d != today] + [today]
+            h.last_reason = reason
+        h.save(self.backup_dir / udid)
+
+    # -- the schedule (B2) -----------------------------------------------------------------------------
+    def now(self) -> dt.datetime:
+        return self.clock() if self.clock else dt.datetime.now()
+
+    def tick(self) -> str:
+        """Called every minute by the helper. Decides from the plan, the phone and the health file.
+        Returns what it did, for the tests and the log."""
+        plan = sch.Plan.from_settings(settings())
+        if plan.mode == "off" or plan.paused:
+            return "off"
+        now = self.now()
+        start = plan.window_start(now)
+        if start is not None and now >= start and not self.busy and any(
+                not sch.is_fresh(now, sch.Health.load(self.backup_dir / p["udid"]).last_ok)
+                for p in self.phones() if p["udid"] and (self.backup_dir / p["udid"] / "Manifest.db").exists()):
+            self.refresh_devices(force=True)          # look for the phone only while a backup is due
+        done = []
+        for ph in self.phones():
+            udid = ph["udid"]
+            if not udid or not (self.backup_dir / udid / "Manifest.db").exists():
+                continue                          # the first backup is made from the window (S1 password)
+            health = sch.Health.load(self.backup_dir / udid)
+            charging = None
+            if plan.only_when_charging and ph["connected"]:
+                b = wv.battery_state(udid)
+                charging = b["charging"] if b else None
+            what, why = sch.decide(plan, health, now, ph["connected"], charging, self.busy)
+            if what == "backup":
+                self.log(f"Scheduled backup of {ph['name']}")
+                if self.back_up_now(udid):
+                    done.append(f"backup:{udid}")
             else:
-                days = [d for d in data.get("failed_days", []) if d != dt.date.today().isoformat()]
-                data["failed_days"] = days + [dt.date.today().isoformat()]
-                data["last_reason"] = reason
-            f.parent.mkdir(parents=True, exist_ok=True)
-            f.write_text(json.dumps(data), encoding="utf-8")
-        except OSError:
-            pass
+                done.append(f"wait:{why}")
+                if not ph["connected"] and now >= dt.datetime.combine(now.date(), dt.time(plan.hour)) \
+                        and not sch.is_fresh(now, health.last_ok):
+                    # a missed slot counts as a failed try of the day (for the 3-days notice)
+                    if (health.last_try is None or health.last_try.date() != now.date()) and now.hour >= 23:
+                        self.write_health(udid, ok=False, reason="PhoneKeep couldn't reach your iPhone.")
+            notice = sch.failure_notice(sch.Health.load(self.backup_dir / udid), now.date())
+            if notice:
+                self.notify(*notice)
+                h = sch.Health.load(self.backup_dir / udid)
+                h.noticed_failure_on = now.date().isoformat()
+                h.save(self.backup_dir / udid)
+        return ", ".join(done) if done else "nothing"
 
     # -- the main window ---------------------------------------------------------------------------
     def open_app(self, what: str = "window") -> None:

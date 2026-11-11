@@ -2,6 +2,7 @@
 """PhoneKeep desktop window. Run: python app.py"""
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import queue
@@ -74,6 +75,9 @@ class Settings:
         "app_lock": None,            # E1 step 5 / S2: None = decide by hardware
         "start_at_login": False,     # E2: the helper starts at login (asked once in E1 step 5)
         "auto_backup_paused": False, # E2: Pause automatic backups
+        "auto_backup_hour": 21,      # B2: "around 9 pm"
+        "auto_backup_weekday": 6,    # B2: weekly on Sunday
+        "auto_backup_charging": False,  # B2: only when charging
     }
 
     def __init__(self):
@@ -593,9 +597,11 @@ class App(tk.Tk):
                 info = wv.backup_info(Path(self.s["backup_dir"]) / self.udid) \
                     if (Path(self.s["backup_dir"]) / self.udid / "Manifest.db").exists() else None
                 half = (not info) and wv.backup_incomplete(Path(self.s["backup_dir"]) / self.udid)
-                self.dev_last.configure(text=f"Last backup: {info['date']}" if info else
-                                        "The last backup didn't finish. Back up again to complete it." if half else
-                                        "Not backed up with PhoneKeep yet", fg=AMBER if half else MUTED)
+                state, line = self.health_line(info)
+                if half:
+                    state, line = "amber", "The last backup didn't finish. Back up again to complete it."
+                self.dev_last.configure(text=line or ("Not backed up with PhoneKeep yet" if not info else f"Last backup: {info['date']}"),
+                                        fg=AMBER if state == "amber" else MUTED)
                 self.dev_lock.configure(text=self.lock_badge(info))
                 self.open_btn.set_enabled(True)
             else:
@@ -658,6 +664,33 @@ class App(tk.Tk):
         self.log(f"You selected {n:,} photos & videos." if n else "Photos skipped.")
         self.notes.append(f"{n:,} photos & videos" if n else "no photos")
         return box.get("v")
+
+    # ------------------------------------------------------------------ automatic backups (B2)
+    def set_schedule(self, mode: str, hour_text: str, day_text: str):
+        hours = [f"{(h % 12) or 12} {'am' if h < 12 else 'pm'}" for h in range(24)]
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        self.s["auto_backup"] = mode
+        if hour_text in hours:
+            self.s["auto_backup_hour"] = hours.index(hour_text)
+        if day_text in days:
+            self.s["auto_backup_weekday"] = days.index(day_text)
+        if mode != "off" and not self.s["start_at_login"]:
+            self.set_start_at_login(True)          # the schedule runs from the helper, which must be there after a restart
+        self.detect(silent=True)
+
+    def health_line(self, info) -> tuple[str, str]:
+        """("ok" | "amber" | "none", line) for the phone card (B2): last backup, next backup, or the amber fix."""
+        import scheduler as sch
+        if not self.udid:
+            return "none", ""
+        plan = sch.Plan.from_settings(self.s.data)
+        health = sch.Health.load(Path(self.s["backup_dir"]) / self.udid)
+        if health.last_ok is None and info and info.get("date"):
+            try:
+                health.last_ok = dt.datetime.strptime(info["date"], "%Y-%m-%d %H:%M")
+            except ValueError:
+                pass
+        return sch.card_state(plan, health, dt.datetime.now())
 
     # ------------------------------------------------------------------ the helper (E2)
     def set_start_at_login(self, on: bool):
@@ -1106,6 +1139,40 @@ class SettingsWindow(tk.Toplevel):
         self.update_line = tk.Label(net, text="", bg=CARD, fg=MUTED, font=font(12), anchor="w", wraplength=560, justify="left")
         ui.RoundButton(nrow, "Check for updates…", lambda: app.check_updates(self), "secondary", 190, 38, 13, bg=CARD).pack(side="left")
         self.update_line.pack(fill="x", pady=(6, 0))
+
+        # automatic backups (B2)
+        import scheduler as sch
+        ab = section("Automatic backups",
+                     "PhoneKeep backs up by itself from the menu bar helper when your iPhone is nearby "
+                     "(same Wi-Fi or cable) at or after the chosen time, and tries again every 30 minutes until midnight.")
+        self.mode_var = tk.StringVar(value=self.s["auto_backup"])
+        mrow = tk.Frame(ab, bg=CARD)
+        mrow.pack(anchor="w", pady=(0, 6))
+        for val, label in (("daily", "Daily"), ("weekly", "Weekly"), ("off", "Off")):
+            ttk.Radiobutton(mrow, text=label, value=val, variable=self.mode_var,
+                            command=lambda: app.set_schedule(self.mode_var.get(), self.hour_var.get(), self.day_var.get())
+                            ).pack(side="left", padx=(0, 14))
+        trow = tk.Frame(ab, bg=CARD)
+        trow.pack(anchor="w", pady=3)
+        tk.Label(trow, text="At around", bg=CARD, fg=INK, font=font(12)).pack(side="left", padx=(0, 8))
+        hours = [f"{(h % 12) or 12} {'am' if h < 12 else 'pm'}" for h in range(24)]
+        self.hour_var = tk.StringVar(value=hours[int(self.s["auto_backup_hour"]) % 24])
+        hb = ttk.Combobox(trow, textvariable=self.hour_var, values=hours, width=7, state="readonly")
+        hb.pack(side="left")
+        hb.bind("<<ComboboxSelected>>", lambda e: app.set_schedule(self.mode_var.get(), self.hour_var.get(), self.day_var.get()))
+        days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        self.day_var = tk.StringVar(value=days[int(self.s["auto_backup_weekday"]) % 7])
+        tk.Label(trow, text="   on", bg=CARD, fg=INK, font=font(12)).pack(side="left", padx=(8, 8))
+        db = ttk.Combobox(trow, textvariable=self.day_var, values=days, width=10, state="readonly")
+        db.pack(side="left")
+        db.bind("<<ComboboxSelected>>", lambda e: app.set_schedule(self.mode_var.get(), self.hour_var.get(), self.day_var.get()))
+        tk.Label(trow, text="(weekly)", bg=CARD, fg=MUTED, font=font(11)).pack(side="left", padx=(6, 0))
+        self.charging_var = tk.BooleanVar(value=bool(self.s["auto_backup_charging"]))
+        ui.Chip(ab, "Only when charging", self.charging_var,
+                lambda: self.s.__setitem__("auto_backup_charging", self.charging_var.get()), size=12, bg=CARD).pack(anchor="w", pady=3)
+        self.sched_line = tk.Label(ab, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w")
+        self.sched_line.pack(fill="x", pady=(4, 0))
+        self.sched_line.configure(text=sch.Plan.from_settings(self.s.data).next_run_text(dt.datetime.now(), None).capitalize())
 
         # the helper (E2)
         import login_item
