@@ -116,7 +116,10 @@ failures = []
 
 
 def check(cond, what):
-    print(("ok   " if cond else "FAIL ") + what, flush=True)
+    try:
+        print(("ok   " if cond else "FAIL ") + what, flush=True)
+    except UnicodeEncodeError:            # a console that can't show ✓ or ' (Windows cp1252)
+        print(("ok   " if cond else "FAIL ") + what.encode("ascii", "replace").decode(), flush=True)
     if not cond:
         failures.append(what)
 

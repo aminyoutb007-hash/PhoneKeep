@@ -19,7 +19,7 @@ for dom, rel, table, col in [(pk.WA_DOMAIN, 'ChatStorage.sqlite', 'ZWAMESSAGE', 
     fid = man.execute("select fileID from Files where domain=? and relativePath=?", (dom, rel)).fetchone()[0]
     db = sqlite3.connect(d / 'backup' / fid[:2] / fid); db.execute(f"update {table} set {col}=?", (evil,)); db.commit(); db.close()
 sx.export_all(d / 'backup', d / 'out', formats={'web', 'excel', 'csv'}, log=lambda m: None)
-bad = [str(f) for f in (d / 'out').rglob('*.html') for pat in ['<img src=x', '<script>alert', '<svg onload', 'onmouseover="alert'] if pat in f.read_text()]
+bad = [str(f) for f in (d / 'out').rglob('*.html') for pat in ['<img src=x', '<script>alert', '<svg onload', 'onmouseover="alert'] if pat in f.read_text(encoding='utf-8')]
 print('XSS in archive pages:', bad or 'none'); ok &= not bad
 
 # 2. path escapes

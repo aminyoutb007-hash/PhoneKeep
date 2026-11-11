@@ -3,8 +3,11 @@
 Usage (from the repository root):  python tests/run_all.py
 Generated data goes to tests/work/ (ignored by git).
 """
-import shutil, subprocess, sys
+import os, shutil, subprocess, sys
 from pathlib import Path
+
+# The app and its exports are UTF-8 everywhere; make Python on Windows read and print them that way too.
+os.environ.setdefault("PYTHONUTF8", "1")
 
 HERE = Path(__file__).resolve().parent
 STEPS = [
