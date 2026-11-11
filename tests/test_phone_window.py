@@ -20,6 +20,9 @@ if not (BACKUPS / UDID / "Manifest.db").exists():
     print("fake backup missing: building it with test_full_backup.py first", flush=True)
     subprocess.run([sys.executable, str(HERE / "test_full_backup.py")], cwd=HERE.parent, check=True)
 
+import faulthandler
+faulthandler.dump_traceback_later(240, repeat=True)   # if this ever stalls in CI, show where
+
 import tkinter as tk
 from PIL import Image
 
