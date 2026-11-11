@@ -204,5 +204,10 @@ hc.SETTINGS_FILE.write_text(json.dumps({"auto_backup": "daily", "auto_backup_hou
 clock["now"] = D(18, 21, 1)
 check(h.tick() == "off" and backups_made() == 3, "paused: nothing runs")
 
+
+# the first-run guide now asks "Back up automatically every day?" (hidden until this feature existed)
+import app as appmod
+check(appmod.App.FEATURES["scheduler"] is True, "first-run guide's daily-backup question is on with B2")
+
 print("\nB2 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)
