@@ -12,6 +12,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 os.environ["PYTHONUTF8"] = "1"
+os.environ["PHONEKEEP_NO_HELPER"] = "1"
 
 import errors
 import phonekeep as wv

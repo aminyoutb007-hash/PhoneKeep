@@ -78,6 +78,8 @@ class Settings:
         "auto_backup_hour": 21,      # B2: "around 9 pm"
         "auto_backup_weekday": 6,    # B2: weekly on Sunday
         "auto_backup_charging": False,  # B2: only when charging
+        "snapshots_keep": 10,        # B3: keep the last N snapshots (3-100)
+        "snapshots_until_full": False,  # B3: or keep everything until the disk is 90% full
     }
 
     def __init__(self):
@@ -594,9 +596,11 @@ class App(tk.Tk):
                 self.dev_line.configure(text=f"iOS {d.get('ProductVersion', '?')} · connected by {how}"
                                         + ("  (a cable is faster for the first backup)" if how == "Wi-Fi" else ""),
                                         fg=MUTED)
-                info = wv.backup_info(Path(self.s["backup_dir"]) / self.udid) \
-                    if (Path(self.s["backup_dir"]) / self.udid / "Manifest.db").exists() else None
-                half = (not info) and wv.backup_incomplete(Path(self.s["backup_dir"]) / self.udid)
+                import snapshots as _snaps
+                latest = _snaps.latest_backup_path(Path(self.s["backup_dir"]), self.udid)
+                info = wv.backup_info(latest) if latest else None
+                half = (not info) and (wv.backup_incomplete(Path(self.s["backup_dir"]) / self.udid)
+                                       or wv.backup_incomplete(_snaps.current_dir(Path(self.s["backup_dir"]), self.udid)))
                 state, line = self.health_line(info)
                 if half:
                     state, line = "amber", "The last backup didn't finish. Back up again to complete it."
@@ -865,7 +869,8 @@ class App(tk.Tk):
             path = wv.make_backup(Path(self.s["backup_dir"]), self.udid, log=self.log,
                                   progress=lambda p: self._progress_backup(p, t0),
                                   status=lambda text: self.call(
-                                      lambda: self.steps["backup"].set("active", detail=text)))
+                                      lambda: self.steps["backup"].set("active", detail=text)),
+                                  keep=self.s["snapshots_keep"], until_disk_full=self.s["snapshots_until_full"])
             self.call(lambda: self.steps["backup"].set("done", detail="Backup complete", right=""))
             return self._export(path)
         self._run(work, self._exported)
@@ -1103,8 +1108,10 @@ class SettingsWindow(tk.Toplevel):
 
         # security (S1)
         info = None
-        if app.udid and (Path(self.s["backup_dir"]) / app.udid / "Manifest.db").exists():
-            info = wv.backup_info(Path(self.s["backup_dir"]) / app.udid)
+        import snapshots as _snaps
+        latest = _snaps.latest_backup_path(Path(self.s["backup_dir"]), app.udid) if app.udid else None
+        if latest:
+            info = wv.backup_info(latest)
         stored = bool(app.udid and keychain.get_password(app.udid))
         where = "your Keychain" if sys.platform == "darwin" else "Windows Credential Manager"
         status = ("Backups are encrypted. The password is in " + where + "." if info and info["encrypted"] and stored
@@ -1173,6 +1180,26 @@ class SettingsWindow(tk.Toplevel):
         self.sched_line = tk.Label(ab, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w")
         self.sched_line.pack(fill="x", pady=(4, 0))
         self.sched_line.configure(text=sch.Plan.from_settings(self.s.data).next_run_text(dt.datetime.now(), None).capitalize())
+
+        # snapshots (B3)
+        sp = section("Snapshots",
+                     "Every backup is kept as a snapshot you can open from the phone window's timeline. "
+                     "Unchanged files are stored once, so ten snapshots don't take ten times the space.")
+        srow = tk.Frame(sp, bg=CARD)
+        srow.pack(anchor="w", pady=3)
+        self.keep_mode = tk.StringVar(value="full" if self.s["snapshots_until_full"] else "keep")
+        ttk.Radiobutton(srow, text="Keep the last", value="keep", variable=self.keep_mode,
+                        command=lambda: self.s.__setitem__("snapshots_until_full", False)).pack(side="left")
+        self.keep_var = tk.IntVar(value=int(self.s["snapshots_keep"]))
+        sb = ttk.Spinbox(srow, from_=3, to=100, textvariable=self.keep_var, width=5,
+                         command=lambda: self.s.__setitem__("snapshots_keep", max(3, min(100, self.keep_var.get()))))
+        sb.pack(side="left", padx=6)
+        sb.bind("<FocusOut>", lambda e: self.s.__setitem__("snapshots_keep", max(3, min(100, self.keep_var.get() or 10))))
+        tk.Label(srow, text="snapshots (3 to 100)", bg=CARD, fg=INK, font=font(12)).pack(side="left")
+        ttk.Radiobutton(sp, text="Keep everything until the disk is 90% full", value="full", variable=self.keep_mode,
+                        command=lambda: self.s.__setitem__("snapshots_until_full", True)).pack(anchor="w", pady=3)
+        tk.Label(sp, text="Snapshots marked \"Keep forever\" are never removed automatically; the oldest unlocked one goes first.",
+                 bg=CARD, fg=MUTED, font=font(11), anchor="w", wraplength=560, justify="left").pack(fill="x", pady=(4, 0))
 
         # the helper (E2)
         import login_item

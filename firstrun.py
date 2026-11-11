@@ -372,7 +372,8 @@ class FirstRunGuide(tk.Frame):
 
         def work():
             from pathlib import Path
-            return wv.make_backup(Path(app.s["backup_dir"]), app.udid, log=app.log, progress=progress, status=status)
+            return wv.make_backup(Path(app.s["backup_dir"]), app.udid, log=app.log, progress=progress, status=status,
+                                  keep=app.s["snapshots_keep"], until_disk_full=app.s["snapshots_until_full"])
 
         def done(result):
             if result is not None:
@@ -430,8 +431,9 @@ def wanted(app) -> bool:
     from pathlib import Path
     if app.s["first_run_done"]:
         return False
+    import snapshots as _snaps
     root = Path(app.s["backup_dir"])
     try:
-        return not any((p / "Manifest.db").exists() for p in root.iterdir() if p.is_dir())
+        return not any(_snaps.has_backup(root, p.name) for p in root.iterdir() if p.is_dir())
     except OSError:
         return True

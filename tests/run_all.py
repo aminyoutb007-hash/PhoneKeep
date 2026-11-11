@@ -8,6 +8,7 @@ from pathlib import Path
 
 # The app and its exports are UTF-8 everywhere; make Python on Windows read and print them that way too.
 os.environ.setdefault("PYTHONUTF8", "1")
+os.environ["PHONEKEEP_NO_HELPER"] = "1"      # tests open the real window; it must not start a real helper
 
 HERE = Path(__file__).resolve().parent
 STEPS = [
@@ -22,6 +23,7 @@ STEPS = [
     ("E1: first-run guide walked end to end with a stub iPhone", "test_e1_first_run.py", True),
     ("E2: menu bar / tray helper backs up and notifies with no window open", "test_e2_helper.py", True),
     ("B2: scheduled automatic backups with a fake clock", "test_b2_schedule.py", False),
+    ("B3: snapshots over time, content store, upgrade, FAT32", "test_b3_snapshots.py", False),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)

@@ -7,3 +7,4 @@ keyring>=25
 certifi>=2024.0
 rumps>=0.4; sys_platform == "darwin"
 pystray>=0.19; sys_platform != "darwin"
+send2trash>=1.8

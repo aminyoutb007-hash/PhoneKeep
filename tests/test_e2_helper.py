@@ -76,7 +76,8 @@ t0 = time.time()
 while h.busy and time.time() - t0 < 60:
     time.sleep(0.05)
 check(not h.busy, "the backup finished")
-check((W / "Backups" / "00008030-E2TEST" / "Manifest.db").exists(), "a backup was made")
+import snapshots as _sn
+check(_sn.has_backup(W / "Backups", "00008030-E2TEST"), "a backup was made (as a snapshot)")
 rings = [p for p in changes if p is not None]
 check(rings and max(rings) == 100 and min(rings) >= 0, f"the icon's progress ring moved: {sorted(set(int(r) for r in rings))}")
 check(notes and notes[-1][0] == "iPhone backed up" and notes[-1][1].startswith("Amin's iPhone · ") and "min · " in notes[-1][1]

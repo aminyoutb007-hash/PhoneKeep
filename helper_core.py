@@ -24,6 +24,7 @@ from typing import Callable, Optional
 import keychain
 import phonekeep as wv
 import scheduler as sch
+import snapshots as sn
 
 HOME = wv.DEFAULT_HOME
 PORT_FILE = HOME / "app.port"
@@ -89,8 +90,9 @@ class Helper:
         seen = {}
         try:
             for p in self.backup_dir.iterdir():
-                if (p / "Manifest.db").exists():
-                    info = wv.backup_info(p)
+                latest = sn.latest_backup_path(self.backup_dir, p.name) if p.is_dir() else None
+                if latest:
+                    info = wv.backup_info(latest)
                     when = None
                     try:
                         when = dt.datetime.strptime(info["date"], "%Y-%m-%d %H:%M") if info["date"] else None
@@ -182,7 +184,9 @@ class Helper:
             def progress(p):
                 self.progress = float(p)
                 self.on_change()
-            wv.make_backup(self.backup_dir, udid, log=self.log, progress=progress)
+            s = settings()
+            wv.make_backup(self.backup_dir, udid, log=self.log, progress=progress,
+                           keep=int(s.get("snapshots_keep", 10)), until_disk_full=bool(s.get("snapshots_until_full", False)))
             took = int(time.time() - t0)
             after = wv._folder_bytes(self.backup_dir / udid)
             mins = max(1, round(took / 60))
@@ -227,12 +231,12 @@ class Helper:
         start = plan.window_start(now)
         if start is not None and now >= start and not self.busy and any(
                 not sch.is_fresh(now, sch.Health.load(self.backup_dir / p["udid"]).last_ok)
-                for p in self.phones() if p["udid"] and (self.backup_dir / p["udid"] / "Manifest.db").exists()):
+                for p in self.phones() if p["udid"] and sn.has_backup(self.backup_dir, p["udid"])):
             self.refresh_devices(force=True)          # look for the phone only while a backup is due
         done = []
         for ph in self.phones():
             udid = ph["udid"]
-            if not udid or not (self.backup_dir / udid / "Manifest.db").exists():
+            if not udid or not sn.has_backup(self.backup_dir, udid):
                 continue                          # the first backup is made from the window (S1 password)
             health = sch.Health.load(self.backup_dir / udid)
             charging = None
