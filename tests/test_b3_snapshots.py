@@ -166,15 +166,15 @@ UD3 = "00008030-FAILTEST"
 old3 = sn.phone_dir(BD, UD3)
 shutil.copytree(fake, old3)
 before = sorted(str(p.relative_to(old3)) for p in old3.rglob("*"))
-real = sn._blob_path
-sn._blob_path = lambda store, sha: real(store, sha).with_name("nope")        # the store 'loses' every blob
+real = sn._sha256
+sn._sha256 = lambda path: "0" * 64                     # every blob 'hashes' to one bogus value: the store can't hold it right
 try:
     sn.upgrade(BD, UD3)
     check(False, "a failed conversion raises")
 except OSError as e:
-    check("nothing was changed" in str(e) or "missing from the store" in str(e), f"a failed conversion raises: {e}")
+    check("nothing was changed" in str(e) or "missing from the store" in str(e) or "didn't match" in str(e), f"a failed conversion raises: {e}")
 finally:
-    sn._blob_path = real
+    sn._sha256 = real
 after = sorted(str(p.relative_to(old3)) for p in old3.rglob("*") if "store" not in str(p) and "snapshots" not in str(p) and p.name != "format.json")
 check((old3 / "Manifest.db").exists() and before == after, "the old backup is exactly as it was")
 
