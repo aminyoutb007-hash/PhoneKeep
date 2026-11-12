@@ -170,6 +170,9 @@ def main() -> None:
         sys.argv = ["pymobiledevice3"] + args[2:]
         runpy.run_module("pymobiledevice3", run_name="__main__", alter_sys=True)
         return
+    if args and args[0] == "--pk-helper":
+        import helper_ui
+        sys.exit(helper_ui.main())
     args = [a for a in args if not a.startswith("-psn_")]  # macOS Finder launch arg
     if args == ["--pk-launch-check"]:
         # Internal, used by the installer build: open the real window, prove it drew, then quit.
@@ -178,6 +181,12 @@ def main() -> None:
         import phonekeep
         win = app.App()
         win.after(2500, lambda: (print(f"PKLAUNCH ok {phonekeep.full_version()}", flush=True), win.destroy()))
+        win.mainloop()
+        return
+    if args == ["--open-phone"]:
+        import app
+        win = app.App()
+        win.open_phone_when_ready()
         win.mainloop()
         return
     if args:

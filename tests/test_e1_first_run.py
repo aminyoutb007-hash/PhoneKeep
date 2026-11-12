@@ -175,16 +175,12 @@ a.update()
 check(opened and a.guide is None, "Open iPhone ends the guide and opens the phone window")
 check(all(w.winfo_manager() for w in a.main_cards[:2]), "the normal cards are back")
 check(a.s["first_run_done"] and json.loads(appmod.SETTINGS_FILE.read_text(encoding="utf-8"))["first_run_done"], "first run recorded")
-for job in a.tk.call("after", "info"):
-    a.after_cancel(job)
 a.destroy()
 
 # second launch: no guide
 b = appmod.App()
 b.withdraw()
 check(b.guide is None, "second launch: the guide doesn't show again")
-for job in b.tk.call("after", "info"):
-    b.after_cancel(job)
 b.destroy()
 
 # the already-encrypted path: the step asks for the existing password instead
@@ -203,8 +199,6 @@ check(c.guide.pw_btn.text == "Continue" and any("already encrypts" in t for t in
       "already encrypted: 'Enter your backup password' with Continue, and the 'I don't know the password' help")
 c.end_first_run()
 c.update()
-for job in c.tk.call("after", "info"):
-    c.after_cancel(job)
 c.destroy()
 
 print("\nE1 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))

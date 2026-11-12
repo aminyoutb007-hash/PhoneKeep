@@ -104,7 +104,7 @@ class FirstRunGuide(tk.Frame):
         self.finished = False
         self._build()
         self.show_step(0)
-        self.after(1000, self._watch)
+        self._watch_id = self.after(1000, self._watch)
 
     # layout ----------------------------------------------------------------------------------
     def _build(self):
@@ -124,6 +124,14 @@ class FirstRunGuide(tk.Frame):
         self.inner.pack(fill="both", expand=True, padx=22, pady=14)
 
     def _clear(self):
+        var = getattr(self, "pw_var", None)
+        if var is not None:                      # drop traces before the entry goes (Tk dislikes the other order)
+            for mode, cb in var.trace_info():
+                try:
+                    var.trace_remove(mode, cb)
+                except Exception:
+                    pass
+            self.pw_var = None
         for w in self.inner.winfo_children():
             w.destroy()
 
@@ -261,7 +269,7 @@ class FirstRunGuide(tk.Frame):
         if self.step == 0:
             if app.device is not None:
                 self.show_step(1)
-                self.after(100, self._watch)
+                self._watch_id = self.after(100, self._watch)
                 return
             err = getattr(app, "detect_error", "") or ""
             if "trust" in err.lower():
@@ -280,7 +288,14 @@ class FirstRunGuide(tk.Frame):
                 err = getattr(app, "detect_error", "") or ""
                 if hasattr(self, "fixes") and err and "trust" not in err.lower():
                     self.fixes.configure(text=err)
-        self.after(1000, self._watch)
+        self._watch_id = self.after(1000, self._watch)
+
+    def destroy(self):
+        try:
+            self.after_cancel(self._watch_id)
+        except Exception:
+            pass
+        super().destroy()
 
     def start_password_step(self):
         """Step 3 needs to know whether the phone already encrypts; asked in the background."""
@@ -376,6 +391,8 @@ class FirstRunGuide(tk.Frame):
         label.configure(text=("Turning on…" if key == "wifi" else "Yes") if yes else "Not now")
         if key == "auto_daily":
             self.app.s["auto_backup"] = "daily" if yes else "off"
+            if yes:
+                self.app.set_start_at_login(True)                   # E2: the helper starts at login
             if yes and not hasattr(self.app, "scheduler"):      # B2 not in this version yet: say so
                 label.configure(text="Yes · starts with the next update")
         elif key == "app_lock":
