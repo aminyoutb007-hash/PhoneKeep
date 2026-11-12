@@ -68,6 +68,10 @@ class Settings:
         "direct_photos": True,
         "backup_dir": str(wv.DEFAULT_BACKUP_DIR),
         "archive_dir": str(wv.DEFAULT_ARCHIVE_DIR),
+        "first_run_done": False,     # E1: the guide was finished or skipped
+        "auto_backup": "off",        # E1 step 5 / B2: "daily" | "weekly" | "off"
+        "wifi_sync": False,          # E1 step 5: the owner turned on Wi-Fi backups
+        "app_lock": None,            # E1 step 5 / S2: None = decide by hardware
     }
 
     def __init__(self):
@@ -218,6 +222,10 @@ class App(tk.Tk):
         self._build()
         self.after(100, self._pump)
         self.after(120, self._spin)
+        self.guide = None
+        import firstrun
+        if firstrun.wanted(self):
+            self.start_first_run()
         self.after(300, self.detect)
         self.after(15000, self._auto_detect)
 
@@ -511,7 +519,43 @@ class App(tk.Tk):
     def _auto_detect(self):
         if not self.busy:
             self.detect(silent=True)
-        self.after(15000, self._auto_detect)
+        # the first-run guide waits for the phone, so look more often while it is up
+        self.after(3000 if self.guide is not None else 15000, self._auto_detect)
+
+    # ------------------------------------------------------------------ first run (E1)
+    def start_first_run(self):
+        import firstrun
+        self.main_cards = [w for w in self.body.winfo_children()]
+        for w in self.main_cards:
+            w.pack_forget()
+        self.guide = firstrun.FirstRunGuide(self)
+        self.guide.pack(fill="both", expand=True)
+
+    def end_first_run(self):
+        if self.guide is None:
+            return
+        self.guide.destroy()
+        self.guide = None
+        for w in self.main_cards:
+            if w is self.prog or w is self.done:
+                continue
+            w.pack(fill="x", pady=(0, 0) if w is self.main_cards[0] else (14, 0))
+        self.detect(silent=True)
+
+    FEATURES = {"scheduler": False, "app_lock": False}   # flipped on by the PR that ships each feature
+
+    def has_feature(self, name: str) -> bool:
+        return bool(self.FEATURES.get(name))
+
+    def has_touch_id(self) -> bool:
+        """Best effort: Macs with Touch ID report a biometric sensor; used only to word a question."""
+        if sys.platform != "darwin":
+            return False
+        try:
+            out = subprocess.run(["bioutil", "-r"], capture_output=True, text=True, timeout=5).stdout
+            return "Touch ID" in out or "fingerprint" in out.lower()
+        except Exception:
+            return False
 
     def detect(self, silent: bool = False):
         if self.busy or getattr(self, "detecting", False):
@@ -522,6 +566,7 @@ class App(tk.Tk):
 
         def done(devs, err=None):
             self.detecting = False
+            self.detect_error = err
             if devs:
                 d = devs[0]
                 self.device = d

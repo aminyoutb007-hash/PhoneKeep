@@ -69,3 +69,7 @@ def change_password(udid: Optional[str], phone_name: str, old: str, new: str, *,
                     log=lambda m: None) -> None:
     run("Changed the backup password", phone_name,
         lambda: wv.change_backup_password(old, new, udid, log), confirmed=confirmed)
+
+
+def turn_on_wifi_sync(udid: Optional[str], phone_name: str, *, confirmed: bool, log=lambda m: None) -> None:
+    run("Turned on Wi-Fi backups", phone_name, lambda: wv.set_wifi_sync(True, udid, log), confirmed=confirmed)
