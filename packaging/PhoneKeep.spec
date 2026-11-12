@@ -5,7 +5,7 @@ import sys
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas, binaries, hiddenimports = [], [], []
-for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl"):
+for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl", "certifi"):
     try:
         d, b, h = collect_all(pkg)
         datas += d; binaries += b; hiddenimports += h
@@ -19,7 +19,7 @@ for pkg in ("typer", "rich", "click", "construct", "asn1", "srptools", "pycrashr
     except Exception:
         pass
 hiddenimports += ["sections", "phonekeep", "app", "ui", "photos", "tables", "phone", "device", "build_label",
-                  "keychain", "phone_write", "netguard", "keyring", "keyring.backends.macOS", "keyring.backends.Windows",
+                  "keychain", "phone_write", "netguard", "certifi", "keyring", "keyring.backends.macOS", "keyring.backends.Windows",
                   "keyring.backends.fail", "keyring.backends.null", "tkinter",
                   "PIL.ImageOps", "PIL.ImageTk", "PIL._tkinter_finder"]
 

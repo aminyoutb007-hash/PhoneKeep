@@ -366,9 +366,15 @@ def check_for_updates(timeout: float = 10.0) -> dict:
     import netguard
     out = {"current": VERSION, "latest": None, "newer": False, "page": RELEASES_PAGE, "error": None}
     try:
+        import ssl
+        try:
+            import certifi                      # the packaged app has no system CA bundle (python.org builds)
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            ctx = ssl.create_default_context()
         req = urllib.request.Request(RELEASES_API, headers={"User-Agent": "PhoneKeep", "Accept": "application/vnd.github+json"})
         with netguard.allow("Check for updates"):
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
                 data = _json.loads(r.read().decode("utf-8"))
         tag = str(data.get("tag_name") or "").lstrip("v")
         out["latest"] = tag or None

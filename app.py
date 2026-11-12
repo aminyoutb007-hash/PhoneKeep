@@ -683,7 +683,7 @@ class App(tk.Tk):
             if not settings.winfo_exists():
                 return
             if r["error"]:
-                settings.update_line.configure(text=r["error"], fg=RED)
+                settings.update_line.configure(text=r["error"] + f"  ({r.get('detail', '')[:80]})", fg=RED)
             elif r["newer"]:
                 settings.update_line.configure(text=f"Version {r['latest']} is available (you have {r['current']}).", fg=INK)
                 if messagebox.askyesno(wv.APP_NAME, f"Version {r['latest']} is available. Open the download page?", parent=settings):
