@@ -530,7 +530,9 @@ class PhoneWindow(tk.Toplevel):
             self._update_src_line()
         self.live_runner.submit(go, ok, err)
 
-    def _open_backup(self, password: Optional[str] = None):
+    def _open_backup(self, password: Optional[str] = None, ask: bool = False):
+        """ask=True: the stored password didn't open the backup last time, so ask for one now (the stored
+        one is kept until a typed one works)."""
         if self.backup_path is None or not (Path(self.backup_path) / "Manifest.db").exists():
             self.data_error = "No backup yet. Messages, chats, calls & notes appear after the first backup."
             self._update_src_line()
@@ -547,7 +549,7 @@ class PhoneWindow(tk.Toplevel):
         typed = False
         if info["encrypted"] and password is None:
             # silently from the keychain (S1); only ask if it isn't there yet
-            password = keychain.get_password(self.udid or "") or getattr(self.app, "_backup_password", None)
+            password = None if ask else (keychain.get_password(self.udid or "") or getattr(self.app, "_backup_password", None))
             if not password:
                 password = ui.ask_password(self, "enter", info["name"], wv.RESET_PASSWORD_HELP)
                 typed = True
@@ -579,11 +581,12 @@ class PhoneWindow(tk.Toplevel):
         def err(e):
             msg = describe_error(e)
             if "password" in msg.lower():
+                # Never remove the stored password here: it is the owner's only copy, and an open can fail for
+                # other reasons (a snapshot still being written, a read refused by the keychain, a bad file).
+                # The stored one is replaced only when a typed password opens the backup (S1).
                 self.app._backup_password = None
-                if self.udid:
-                    keychain.delete_password(self.udid)   # a stored password that no longer opens the backup
                 if messagebox.askretrycancel(wv.APP_NAME, msg, parent=self):
-                    self._open_backup()
+                    self._open_backup(ask=True)
                     return
             self.data_error = msg
             self.banner(msg, color="#fdecea")

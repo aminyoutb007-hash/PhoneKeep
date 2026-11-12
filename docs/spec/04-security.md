@@ -12,6 +12,7 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 - If the phone already has a backup password the user doesn't know: explain the iPhone's own "Reset All Settings" path in plain steps (it keeps data, removes the backup password).
 - Change password: old + new, done on the phone through the backup service.
 - The password never appears on a command line, in logs or in crash reports.
+- PhoneKeep never removes the stored password by itself. A backup that won't open with it asks for one to be typed; the stored password is replaced only by a typed one that opens the backup. (Lesson of 12 Nov: a failed open seconds after a snapshot wiped the owner's only copy.)
 - The "if you forget it" warning is shown once more at the moments when the keychain and the backup may part ways: when the backup location changes, when backups are moved (B4), and when a backup is opened on another computer (B5).
 - Turning encryption on, and changing the password, write to the phone and go through `phone_write.py` ([12-engineering.md](12-engineering.md#architecture-rules)). In the first-run guide, clicking **Turn on encryption** is itself the confirmation; no second dialog. Changing the password later gets a named confirmation ("Change the backup password on *Amin's iPhone*?").
 
