@@ -107,6 +107,10 @@ for fid, rel in sqlite3.connect(src / "Manifest.db").execute("SELECT fileID, rel
     c.execute("CREATE TABLE IF NOT EXISTS ZWAMEDIAITEM (Z_PK INTEGER PRIMARY KEY, ZMESSAGE INTEGER, ZMEDIALOCALPATH VARCHAR, ZMETADATA BLOB)")
     c.execute("INSERT INTO ZWAMEDIAITEM (ZMESSAGE, ZMEDIALOCALPATH, ZMETADATA) VALUES (1, ?, ?)",
               ("Message/Media/447700900123@s.whatsapp.net/Driss birthday.jpg", b"\x12\x00Your parcel from Driss Lamrani is on its way\x00\x01"))
+    # SQLite lets a BLOB column hold text: seen on a real phone, it crashed the tool
+    c.execute("INSERT INTO ZWAMEDIAITEM (ZMESSAGE, ZMEDIALOCALPATH, ZMETADATA) VALUES (2, NULL, ?)",
+              ("Lunch with Salma Chraibi on Friday",))
+    personal.add("Salma Chraibi")
     c.commit(); c.close()
     personal.add("Driss Lamrani"); personal.add("Driss birthday")
     break

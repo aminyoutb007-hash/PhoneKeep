@@ -230,7 +230,8 @@ def redact_sqlite(src: Path, dest: Path, mapper: Mapper, report: Counter) -> Non
                 elif c in keep_cols:
                     nv = mapper.shape(v)
                 else:
-                    nv = (PLACEHOLDER_JPEG if (v and _looks_like_image(v)) else None) if v else v   # blobs are dropped; images become a placeholder
+                    # blobs are dropped (whatever they hold: bytes, or text stored in a BLOB column); images become a placeholder
+                    nv = (PLACEHOLDER_JPEG if _looks_like_image(v) else None) if v not in (None, b"", "") else v
                 changed |= nv != v
                 new.append(nv)
             if changed:
@@ -241,7 +242,10 @@ def redact_sqlite(src: Path, dest: Path, mapper: Mapper, report: Counter) -> Non
     con.close()
 
 
-def _looks_like_image(b: bytes) -> bool:
+def _looks_like_image(b) -> bool:
+    """A BLOB column can hold any SQLite value (text, numbers); only real image bytes count."""
+    if not isinstance(b, (bytes, bytearray, memoryview)):
+        return False
     return bytes(b[:3]) == b"\xff\xd8\xff" or bytes(b[:8]) == b"\x89PNG\r\n\x1a\n"
 
 
@@ -358,9 +362,10 @@ def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=prin
             try:
                 redact_sqlite(src_tmp, dest, mapper, report)
                 report["databases redacted"] += 1
-            except sqlite3.DatabaseError:
+            except Exception as e:          # never let one odd database end the whole run, or leak it
                 placeholder(dest, size, Path(rel).suffix)
-                report["files replaced by placeholders"] += 1
+                report["databases that couldn't be redacted (replaced by placeholders)"] += 1
+                log(f"Couldn't redact {Path(rel).name} ({type(e).__name__}); replaced by an empty placeholder.")
         elif STRUCTURE.search(rel):
             shutil.copyfile(src_tmp, dest)
             report["structure files kept"] += 1
