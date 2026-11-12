@@ -22,7 +22,7 @@ All three work the same way: a chat list on the left, the conversation as bubble
 
 ## M3. Chats to PDF and print
 
-**What the user sees and does:** tick one or more chats (and optionally a date range) → **Save** → **PDF**. The PDF looks like the phone: bubbles, photos inline, emoji, the chat name and date range at the top of each page, page numbers at the bottom. **Print** sends the same layout to the system print dialog.
+**What the user sees and does:** tick one or more chats (and optionally a date range) → **Save** → **PDF**. The PDF looks like the phone: bubbles, photos inline, emoji, the chat name and date range at the top of each page, page numbers at the bottom. **Print** makes the same PDF and sends it to the system print dialog, so the printed page is identical to the saved one.
 
 **Requirements**
 - One PDF per chat (or one combined PDF, a choice in the Save menu).

@@ -53,7 +53,28 @@ def _pk_backup(args: list) -> None:
         sys.exit(1)
 
 
+def _crash_log() -> None:
+    """Any uncaught error in the packaged app goes to ~/PhoneKeep/crash.log (plain text, no personal data),
+    so a crash can be diagnosed without a terminal."""
+    import traceback
+    from pathlib import Path
+
+    def hook(exc_type, exc, tb):
+        try:
+            p = Path.home() / "PhoneKeep" / "crash.log"
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "a", encoding="utf-8") as f:
+                import datetime as dt
+                f.write(f"--- {dt.datetime.now().isoformat(timespec='seconds')} {sys.argv[1:2]}\n")
+                f.write("".join(traceback.format_exception(exc_type, exc, tb)))
+        except Exception:
+            pass
+        sys.__excepthook__(exc_type, exc, tb)
+    sys.excepthook = hook
+
+
 def main() -> None:
+    _crash_log()
     args = sys.argv[1:]
     if len(args) >= 2 and args[0] == "--pk-backup":
         _pk_backup(args[1:])
@@ -72,6 +93,15 @@ def main() -> None:
         runpy.run_module("pymobiledevice3", run_name="__main__", alter_sys=True)
         return
     args = [a for a in args if not a.startswith("-psn_")]  # macOS Finder launch arg
+    if args == ["--pk-launch-check"]:
+        # Internal, used by the installer build: open the real window, prove it drew, then quit.
+        # Prints "PKLAUNCH ok <version>" so the build can check the packaged app actually starts.
+        import app
+        import phonekeep
+        win = app.App()
+        win.after(2500, lambda: (print(f"PKLAUNCH ok {phonekeep.full_version()}", flush=True), win.destroy()))
+        win.mainloop()
+        return
     if args:
         import phonekeep
         sys.exit(phonekeep.main(args))

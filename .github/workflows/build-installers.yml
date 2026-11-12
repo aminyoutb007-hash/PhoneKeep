@@ -1,12 +1,38 @@
-# Builds the one-file installers on GitHub's own Mac and Windows machines (free for public repos,
-# and within the free monthly minutes for private ones).
-#   Run it: GitHub repo -> Actions -> "Build installers" -> Run workflow.
-#   Get the files: open the finished run -> "Artifacts" at the bottom.
-#   Pushing a tag like v2.0.0 also publishes them on the repo's Releases page.
+# Builds the installers on GitHub's own Mac and Windows machines.
+#   Every pull request: test builds, labelled "<next release>-dev+<feature ID>" (shown in the About box
+#     and by `phonekeep-cli --version`), downloadable from the run's "Artifacts" section.
+#   Run it by hand: GitHub repo -> Actions -> "Build installers" -> Run workflow.
+#   Pushing a tag like v5.0.0 publishes the installers and their SHA-256 checksums on the Releases page.
+#
+# Signing (docs/spec/04-security.md, S4): when the certificate secrets exist the Mac app is Developer ID
+# signed with the hardened runtime, notarised and stapled, and the Windows app and installer are
+# code-signed. Without the secrets the build falls back to ad-hoc (Mac) / unsigned (Windows) so test
+# builds keep working. Secrets, all optional:
+#   MAC_CERT_P12 (base64 of the Developer ID Application .p12), MAC_CERT_PASSWORD, MAC_SIGN_IDENTITY,
+#   NOTARY_APPLE_ID, NOTARY_PASSWORD (app-specific password), NOTARY_TEAM_ID,
+#   WIN_CERT_PFX (base64 of the .pfx), WIN_CERT_PASSWORD
 name: Build installers
 
+# Cost (agreed 12 Nov, in case the repository goes private): installers are NOT built on every pull
+# request. Run this by hand from the Actions tab (pick the targets) or push a release tag (builds all three).
 on:
   workflow_dispatch:
+    inputs:
+      ref_note:
+        description: "Branch or PR to build (just a note for the summary; run the workflow on that branch)"
+        default: ""
+      apple_silicon:
+        description: "Build Mac (Apple Silicon)"
+        type: boolean
+        default: true
+      intel:
+        description: "Build Mac (Intel)"
+        type: boolean
+        default: false
+      windows:
+        description: "Build Windows"
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -14,17 +40,65 @@ permissions:
   contents: write
 
 jobs:
+  label:
+    name: Build label
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.set.outputs.label }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set
+        shell: bash
+        run: |
+          # Releases (tags) carry no label. Pull requests: "<next release>-dev+<feature ID>", the ID
+          # being the first word of the PR title (e.g. "B3 Snapshots over time" -> B3).
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "label=" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          next=$(tr -d '[:space:]' < packaging/next-release.txt)
+          # the feature ID from the branch name (e.g. b3-snapshots -> B3), else the branch name
+          id=$(echo "${GITHUB_REF_NAME}" | sed -E 's/^([a-zA-Z][0-9]+)-.*/\1/' | tr '[:lower:]' '[:upper:]')
+          [[ "$id" == "${GITHUB_REF_NAME^^}" ]] && id=$(echo "${GITHUB_REF_NAME}" | tr -cs 'A-Za-z0-9' '-' | cut -c1-20)
+          echo "label=${next}-dev+${id}" >> "$GITHUB_OUTPUT"
+
+  targets:
+    name: Which installers
+    runs-on: ubuntu-latest
+    outputs:
+      mac: ${{ steps.pick.outputs.mac }}
+      windows: ${{ steps.pick.outputs.windows }}
+    steps:
+      - id: pick
+        shell: bash
+        run: |
+          # a release tag builds everything; a manual run builds what was ticked
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo 'mac=[{"runner":"macos-latest","arch":"AppleSilicon"},{"runner":"macos-15-intel","arch":"Intel"}]' >> "$GITHUB_OUTPUT"
+            echo "windows=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          mac="[]"
+          [[ "${{ inputs.apple_silicon }}" == "true" ]] && mac='[{"runner":"macos-latest","arch":"AppleSilicon"}]'
+          [[ "${{ inputs.intel }}" == "true" ]] && mac=$(echo "$mac" | sed 's/\]$/,{"runner":"macos-15-intel","arch":"Intel"}]/' | sed 's/^\[,/[/')
+          echo "mac=$mac" >> "$GITHUB_OUTPUT"
+          echo "windows=${{ inputs.windows }}" >> "$GITHUB_OUTPUT"
+
   mac:
     name: Mac (${{ matrix.arch }})
+    needs: [label, targets]
+    if: needs.targets.outputs.mac != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: macos-15          # Apple Silicon (M1/M2/M3/M4...)
-            arch: AppleSilicon
-          - runner: macos-15-intel    # Intel Macs
-            arch: Intel
+        include: ${{ fromJson(needs.targets.outputs.mac) }}
     runs-on: ${{ matrix.runner }}
+    env:
+      BUILD_LABEL: ${{ needs.label.outputs.label }}
+      MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+      MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+      MAC_SIGN_IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
+      NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+      NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+      NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -34,16 +108,38 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --only-binary=cryptography -r requirements.txt pyinstaller
+      - name: Write the build label
+        run: printf 'BUILD_LABEL = "%s"\n' "$BUILD_LABEL" > build_label.py
       - name: Build PhoneKeep.app
         run: |
           python packaging/make_icons.py
           pyinstaller packaging/PhoneKeep.spec --noconfirm
-      - name: Sign (ad-hoc) so macOS will run it
-        run: codesign --force --deep --sign - dist/PhoneKeep.app
-      - name: Smoke test
+      - name: Sign
         run: |
+          if [[ -n "$MAC_CERT_P12" && -n "$MAC_SIGN_IDENTITY" ]]; then
+            echo "Developer ID signing"
+            echo "$MAC_CERT_P12" | base64 --decode > cert.p12
+            security create-keychain -p ci build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p ci build.keychain
+            security import cert.p12 -k build.keychain -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+            rm cert.p12
+            codesign --force --deep --options runtime --timestamp --sign "$MAC_SIGN_IDENTITY" dist/PhoneKeep.app
+            echo "signed=developer-id" >> "$GITHUB_ENV"
+          else
+            echo "No signing certificate in secrets: ad-hoc signing (see docs/spec/04-security.md, S4)"
+            codesign --force --deep --sign - dist/PhoneKeep.app
+            echo "signed=ad-hoc" >> "$GITHUB_ENV"
+          fi
+          codesign --verify --deep --strict dist/PhoneKeep.app
+      - name: Launch check (the packaged app opens its window and quits)
+        run: |
+          dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --version
           dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli -m pymobiledevice3 version
-          dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --help
+          out=$(dist/PhoneKeep.app/Contents/MacOS/PhoneKeep --pk-launch-check 2>&1 | tail -5)
+          echo "$out"
+          echo "$out" | grep -q "PKLAUNCH ok"
       - name: Make the .dmg (drag-to-Applications)
         run: |
           mkdir dmg
@@ -55,14 +151,43 @@ jobs:
             echo "hdiutil failed (attempt $i), retrying..."; sleep 10
           done
           test -f "PhoneKeep-Mac-${{ matrix.arch }}.dmg"
+      - name: Notarise and staple
+        if: env.signed == 'developer-id'
+        run: |
+          if [[ -n "$NOTARY_APPLE_ID" && -n "$NOTARY_PASSWORD" && -n "$NOTARY_TEAM_ID" ]]; then
+            xcrun notarytool submit "PhoneKeep-Mac-${{ matrix.arch }}.dmg" --apple-id "$NOTARY_APPLE_ID" \
+              --password "$NOTARY_PASSWORD" --team-id "$NOTARY_TEAM_ID" --wait
+            xcrun stapler staple "PhoneKeep-Mac-${{ matrix.arch }}.dmg"
+            echo "notarised=yes" >> "$GITHUB_ENV"
+          else
+            echo "Notary credentials missing: signed but not notarised"
+          fi
+      - name: Checksum and size
+        run: |
+          f="PhoneKeep-Mac-${{ matrix.arch }}.dmg"
+          shasum -a 256 "$f" > "$f.sha256"
+          {
+            echo "### Mac (${{ matrix.arch }})"
+            echo "- Build: \`${BUILD_LABEL:-release}\` · signing: ${signed} · notarised: ${notarised:-no}"
+            echo "- $f: $(du -h "$f" | cut -f1)"
+            echo "- SHA-256: \`$(cut -d' ' -f1 "$f.sha256")\`"
+          } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: PhoneKeep-Mac-${{ matrix.arch }}
-          path: "*.dmg"
+          path: |
+            *.dmg
+            *.sha256
 
   windows:
     name: Windows
+    needs: [label, targets]
+    if: needs.targets.outputs.windows == 'true'
     runs-on: windows-latest
+    env:
+      BUILD_LABEL: ${{ needs.label.outputs.label }}
+      WIN_CERT_PFX: ${{ secrets.WIN_CERT_PFX }}
+      WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -72,22 +197,62 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --only-binary=cryptography -r requirements.txt pyinstaller
+      - name: Write the build label
+        shell: bash
+        run: printf 'BUILD_LABEL = "%s"\n' "$BUILD_LABEL" > build_label.py
       - name: Build PhoneKeep.exe
         run: |
           python packaging/make_icons.py
           pyinstaller packaging/PhoneKeep.spec --noconfirm
-      - name: Smoke test
+      - name: Sign the app
+        shell: pwsh
         run: |
+          if ($env:WIN_CERT_PFX) {
+            Write-Host "Code signing"
+            [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WIN_CERT_PFX))
+            $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
+            & $signtool sign /f cert.pfx /p $env:WIN_CERT_PASSWORD /tr http://timestamp.digicert.com /td sha256 /fd sha256 dist\PhoneKeep\PhoneKeep.exe dist\PhoneKeep\phonekeep-cli.exe
+            Remove-Item cert.pfx
+            "signed=yes" | Out-File -Append -FilePath $env:GITHUB_ENV
+          } else {
+            Write-Host "No signing certificate in secrets: unsigned build (see docs/spec/04-security.md, S4)"
+            "signed=no" | Out-File -Append -FilePath $env:GITHUB_ENV
+          }
+      - name: Launch check (the packaged app opens its window and quits)
+        shell: pwsh
+        run: |
+          dist\PhoneKeep\phonekeep-cli.exe --version
           dist\PhoneKeep\phonekeep-cli.exe -m pymobiledevice3 version
-          dist\PhoneKeep\phonekeep-cli.exe --help
+          $out = & dist\PhoneKeep\phonekeep-cli.exe --pk-launch-check 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch "PKLAUNCH ok") { throw "The packaged app did not open its window" }
       - name: Make PhoneKeep-Setup.exe
         run: |
           choco install innosetup -y --no-progress
           iscc packaging\PhoneKeep.iss
+      - name: Sign the installer
+        if: env.signed == 'yes'
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:WIN_CERT_PFX))
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -Last 1).FullName
+          & $signtool sign /f cert.pfx /p $env:WIN_CERT_PASSWORD /tr http://timestamp.digicert.com /td sha256 /fd sha256 Output\PhoneKeep-Setup.exe
+          Remove-Item cert.pfx
+      - name: Checksum and size
+        shell: pwsh
+        run: |
+          $f = "Output\PhoneKeep-Setup.exe"
+          $hash = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
+          "$hash  PhoneKeep-Setup.exe" | Out-File -Encoding ascii "Output\PhoneKeep-Setup.exe.sha256"
+          $mb = [math]::Round((Get-Item $f).Length / 1MB, 1)
+          $label = if ($env:BUILD_LABEL) { $env:BUILD_LABEL } else { "release" }
+          @("### Windows", "- Build: ``$label`` · signed: $env:signed", "- PhoneKeep-Setup.exe: $mb MB", "- SHA-256: ``$hash``") | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
       - uses: actions/upload-artifact@v4
         with:
           name: PhoneKeep-Windows
-          path: Output/PhoneKeep-Setup.exe
+          path: |
+            Output/PhoneKeep-Setup.exe
+            Output/PhoneKeep-Setup.exe.sha256
 
   release:
     name: Publish release
@@ -99,6 +264,11 @@ jobs:
         with:
           path: out
           merge-multiple: true
+      - name: Release notes with checksums
+        run: |
+          { echo "## Installers"; echo; echo "| File | SHA-256 |"; echo "| --- | --- |";
+            for s in out/*.sha256; do echo "| $(basename "${s%.sha256}") | \`$(cut -d' ' -f1 "$s")\` |"; done; } > notes.md
       - uses: softprops/action-gh-release@v2
         with:
           files: out/*
+          body_path: notes.md

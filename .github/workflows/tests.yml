@@ -1,0 +1,91 @@
+# Runs every test in tests/ for each push and pull request. A failing test blocks the pull request
+# (see docs/spec/12-engineering.md, "Tests").
+#
+# Cost (agreed 12 Nov): every push and pull request runs the suite on Linux (the cheapest runner, with a
+# virtual display for the window tests). Mac and Windows runs are on demand (Actions tab) and on release tags.
+name: Tests
+
+on:
+  push:
+    branches: [main]      # branches with a pull request run through pull_request (once, not twice)
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      mac:
+        description: "Also run on a Mac"
+        type: boolean
+        default: false
+      windows:
+        description: "Also run on Windows"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq >/dev/null && sudo apt-get install -y -qq python3-tk xvfb libnotify-bin >/dev/null
+          python -m pip install --upgrade pip
+          pip install --only-binary=cryptography -r requirements.txt
+      - name: Run all tests
+        env:
+          PHONEKEEP_NO_HELPER: "1"
+        run: python tests/run_all.py
+      - name: Keep the generated test archive for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output-Linux
+          path: tests/work/Archive
+          if-no-files-found: ignore
+          retention-days: 7
+
+  mac:
+    name: Tests (Mac)
+    if: startsWith(github.ref, 'refs/tags/') || inputs.mac == true
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --only-binary=cryptography -r requirements.txt
+      - name: Run all tests
+        env:
+          PHONEKEEP_NO_HELPER: "1"
+        run: python tests/run_all.py
+
+  windows:
+    name: Tests (Windows)
+    if: startsWith(github.ref, 'refs/tags/') || inputs.windows == true
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --only-binary=cryptography -r requirements.txt
+      - name: Run all tests
+        env:
+          PHONEKEEP_NO_HELPER: "1"
+        run: python tests/run_all.py

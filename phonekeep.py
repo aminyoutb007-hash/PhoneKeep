@@ -44,6 +44,16 @@ from tables import csv_safe as _csv_safe
 APP_NAME = "PhoneKeep"
 VERSION = "4.0.1"
 
+try:
+    from build_label import BUILD_LABEL   # "5.0-dev+B3" on a test build, "" on a release
+except Exception:                          # pragma: no cover
+    BUILD_LABEL = ""
+
+
+def full_version() -> str:
+    """'4.0.1' for a release, '4.0.1 (build 5.0-dev+B3)' for a test build."""
+    return f"{VERSION} (build {BUILD_LABEL})" if BUILD_LABEL else VERSION
+
 WA_DOMAIN = "AppDomainGroup-group.net.whatsapp.WhatsApp.shared"
 WA_BUSINESS_DOMAIN = "AppDomainGroup-group.net.whatsapp.WhatsAppSMB.shared"
 WA_DB = "ChatStorage.sqlite"
@@ -1249,6 +1259,7 @@ def main(argv=None) -> int:
     keys = ",".join(k for k, *_ in sx.SECTIONS)
     p = argparse.ArgumentParser(prog="phonekeep", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--version", action="version", version=f"{APP_NAME} {full_version()}")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("devices", help="list connected iPhones")
     sub.add_parser("backups", help="list backups on this computer")

@@ -6,7 +6,7 @@
 
 **Requirements**
 - Albums, favourites and media types read from the phone's Photos library database (live) or the backup.
-- "Most compatible" converts HEIC to JPG and HEVC to H.264 MP4, keeping the date taken and location in the file, and the file date set to the date taken.
+- "Most compatible" converts HEIC photos to JPG, keeping the date taken and location in the file, and the file date set to the date taken. Videos are always saved as originals in P1 (conversion is P8, P2).
 - Live Photos save as the photo plus its short video, same name.
 - Thumbnails appear immediately as placeholders, then fill in; the grid stays smooth with 50,000 items.
 - Never draw selection with see-through/stippled overlays (they render solid on macOS); use a frame and tick.
@@ -15,6 +15,10 @@
 - [ ] Albums and favourites match the phone.
 - [ ] A saved JPG shows the original date and location in Finder/Explorer and Photos.
 - [ ] Usability test task 2 passes.
+
+## P8. Video conversion
+
+**P2 (moved from P1).** "Most compatible" also converts HEVC videos to H.264 MP4, keeping date and location. Needs ffmpeg bundled in the installers (size and licence to be agreed before building). Done when a converted video plays in Windows Media Player and QuickTime with the original date.
 
 ## P2. Music
 

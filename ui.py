@@ -679,7 +679,8 @@ class PhotoPanel(tk.Frame):
         self.gridf = tk.Frame(self.canvas, bg=CARD)
         self.canvas.create_window((0, 0), window=self.gridf, anchor="nw")
         self.gridf.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.bind("<Configure>", lambda e: self._relayout())
+        self._laid_out = None          # (month, cols, shown) of the last layout: re-grid only when it changes,
+        self.canvas.bind("<Configure>", lambda e: self._relayout())   # or a Configure storm can loop (macOS)
         for w in (self.canvas, self.gridf):
             w.bind("<MouseWheel>", self._wheel)
             w.bind("<Button-4>", lambda e: self.canvas.yview_scroll(-3, "units"))
@@ -798,6 +799,10 @@ class PhotoPanel(tk.Frame):
         m = self._month()
         if not m:
             return
+        key = (m, cols, self.shown, len(self.tiles))
+        if key == getattr(self, "_laid_out", None):
+            return
+        self._laid_out = key
         r = 0
         for n, item in enumerate(self.months[m][:self.shown]):
             c = self.tiles.get(item.id)
