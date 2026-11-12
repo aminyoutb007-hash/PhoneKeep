@@ -22,6 +22,7 @@ V=.build-venv/bin/python
 grep -v -i '^rumps' requirements.txt > .build-venv/req.txt
 "$V" -m pip install -q --only-binary=:all: -r .build-venv/req.txt pyinstaller
 "$V" -m pip install -q --no-deps rumps
+"$V" -c "import Foundation, AppKit, rumps" || { echo "rumps/pyobjc not importable in the build venv" >&2; exit 1; }
 
 # label: "<next release>-dev+<ID>-local", like GitHub's pull-request builds, from the branch name
 NEXT=$(cat packaging/next-release.txt 2>/dev/null || echo 0)

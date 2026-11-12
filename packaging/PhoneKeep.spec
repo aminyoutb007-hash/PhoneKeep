@@ -22,6 +22,7 @@ for pkg in ("typer", "rich", "click", "construct", "asn1", "srptools", "pycrashr
 hiddenimports += ["sections", "phonekeep", "app", "ui", "photos", "tables", "phone", "device", "build_label",
                   "keychain", "phone_write", "netguard", "certifi", "errors", "firstrun", "helper_core", "helper_ui", "login_item",
                   "scheduler", "snapshots", "location",
+                  *(["Foundation", "AppKit", "objc", "PyObjCTools"] if sys.platform == "darwin" else []),   # rumps
                   "keyring", "keyring.backends.macOS", "keyring.backends.Windows",
                   "keyring.backends.fail", "keyring.backends.null", "tkinter",
                   "PIL.ImageOps", "PIL.ImageTk", "PIL._tkinter_finder"]
