@@ -363,15 +363,18 @@ class ChatPanel(tk.Frame):
         self.pv_sub.pack(fill="x", padx=14, pady=(0, 6))
         tf = tk.Frame(right, bg="#efeae2")
         tf.pack(fill="both", expand=True)
-        self.text = tk.Text(tf, bg="#efeae2", relief="flat", wrap="word", font=font(13), padx=10, pady=8,
+        # fg must be set: in macOS dark mode Tk's default text colour is white, which vanished on the light
+        # bubbles (owner, 12 Nov: "all messages look empty")
+        self.text = tk.Text(tf, bg="#efeae2", fg=INK, insertbackground=INK, selectforeground=INK,
+                            relief="flat", wrap="word", font=font(13), padx=10, pady=8,
                             cursor="arrow", highlightthickness=0)
         tsb = ttk.Scrollbar(tf, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=tsb.set, state="disabled")
         self.text.pack(side="left", fill="both", expand=True)
         tsb.pack(side="right", fill="y")
-        self.text.tag_configure("them", lmargin1=6, lmargin2=6, rmargin=70, background="#ffffff",
+        self.text.tag_configure("them", foreground=INK, lmargin1=6, lmargin2=6, rmargin=70, background="#ffffff",
                                 spacing1=6, spacing3=2)
-        self.text.tag_configure("me", lmargin1=70, lmargin2=70, rmargin=6, background=ME,
+        self.text.tag_configure("me", foreground=INK, lmargin1=70, lmargin2=70, rmargin=6, background=ME,
                                 spacing1=6, spacing3=2)
         self.text.tag_configure("sender", foreground=GREEN, font=font(11, "bold"))
         self.text.tag_configure("meta", foreground=MUTED, font=font(10))

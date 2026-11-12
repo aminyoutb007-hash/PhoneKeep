@@ -240,6 +240,31 @@ check(d.entry.get() == "x" and d.winfo_exists(), "the text dialog opens with the
 d._cancel()
 check(d.result is None, "Cancel gives None")
 
+# dark mode: a tk widget that sets a light background must also set its text colour, or macOS draws white
+# text on it (12 Nov: every chat bubble looked empty). Checked on the source of every window module.
+import ast as _ast
+bad = []
+for mod in ("ui.py", "phone.py", "app.py", "firstrun.py"):
+    tree = _ast.parse((HERE.parent / mod).read_text(encoding="utf-8"))
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Call) and isinstance(node.func, _ast.Attribute) and node.func.attr in ("Text", "Listbox") \
+                and isinstance(node.func.value, _ast.Name) and node.func.value.id == "tk":
+            keys = {k.arg for k in node.keywords}
+            if "bg" in keys and "fg" not in keys:
+                bad.append(f"{mod}:{node.lineno}")
+check(not bad, f"every tk.Text/Listbox with a background sets its text colour: {bad}")
+# iMessage text inside attributedBody: older typedstream, NSMutableString variant, long (0x81) lengths,
+# and a keyed archive — the decoder must find the text in all of them
+import plistlib as _pl, sections as _sx
+_blobs = [
+    (b'\x04\x0bstreamtyped\x81\xe8\x03\x84\x01@\x84\x84\x84\x12NSAttributedString\x00\x84\x84\x08NSObject\x00\x85\x92\x84\x84\x84\x08NSString\x01\x94\x84\x01+\x05Hello\x86', "Hello"),
+    (b'\x84\x0fNSMutableString\x01\x84\x84\x08NSString\x01\x95\x84\x01+\x0bmerci bien!\x86', "merci bien!"),
+    (b'NSString\x01\x94\x84\x01+\x81\x2c\x01' + b'x' * 300 + b'\x86', "x" * 300),
+    (_pl.dumps({"$archiver": "NSKeyedArchiver", "$version": 100000, "$top": {"root": _pl.UID(1)},
+                "$objects": ["$null", {"NSString": _pl.UID(2)}, {"NS.string": "Bonjour"}]}, fmt=_pl.FMT_BINARY), "Bonjour"),
+]
+check(all(_sx.decode_attributed_body(b) == want for b, want in _blobs), "attributedBody text found in every layout")
+
 # every transfer shows progress and a realistic time left (01-principles.md, 6a)
 import ui as _ui2
 e = _ui2.Eta(settle=0.0)

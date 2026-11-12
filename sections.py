@@ -347,26 +347,71 @@ def sec_contacts(ctx: Ctx, people: list[dict]) -> dict:
 # Messages (SMS / iMessage / RCS)
 # ---------------------------------------------------------------------------
 
+def _typedstream_text(b: bytes) -> str:
+    """The string of an NSAttributedString archived as a 'typedstream' (iMessage attributedBody up to now).
+    Layout after the class name: a few class-info bytes, then '+' (C string), then a length (one byte,
+    or 0x81 + 2 bytes LE, or 0x82 + 4 bytes LE), then UTF-8 bytes. The class may be NSString or
+    NSMutableString, and the number of class-info bytes varies between iOS versions, so scan for '+'."""
+    for cls in (b"NSString", b"NSMutableString"):
+        i = b.find(cls)
+        while i >= 0:
+            j = i + len(cls)
+            plus = b.find(b"+", j, j + 16)
+            if plus >= 0 and plus + 1 < len(b):
+                k = plus + 1
+                n = b[k]
+                k += 1
+                if n == 0x81:
+                    n = int.from_bytes(b[k:k + 2], "little"); k += 2
+                elif n == 0x82:
+                    n = int.from_bytes(b[k:k + 4], "little"); k += 4
+                elif n >= 0x80:
+                    n = -1
+                if 0 < n <= len(b) - k:
+                    text = b[k:k + n].decode("utf-8", "replace")
+                    if text.strip():
+                        return text
+            i = b.find(cls, i + 1)
+    return ""
+
+
+def _keyed_archive_text(b: bytes) -> str:
+    """The string of an NSAttributedString archived with NSKeyedArchiver (a binary plist)."""
+    import plistlib
+    try:
+        pl = plistlib.loads(b)
+    except Exception:
+        return ""
+    objs = pl.get("$objects") or []
+
+    def deref(v):
+        if isinstance(v, plistlib.UID):
+            v = objs[v.data] if v.data < len(objs) else None
+        return v
+
+    root = deref((pl.get("$top") or {}).get("root"))
+    candidates = [root] + [o for o in objs if isinstance(o, dict)]
+    for o in candidates:
+        if not isinstance(o, dict):
+            continue
+        for key in ("NSString", "NS.string", "NSAttributedString"):
+            v = deref(o.get(key))
+            if isinstance(v, dict):
+                v = deref(v.get("NS.string")) or deref(v.get("NSString"))
+            if isinstance(v, str) and v.strip():
+                return v
+    best = max((o for o in objs if isinstance(o, str) and o != "$null" and not o.startswith("NS")), key=len, default="")
+    return best
+
+
 def decode_attributed_body(b: Optional[bytes]) -> str:
-    """Pull the plain text out of iOS's 'typedstream' attributedBody blob."""
+    """Pull the plain text out of iOS's attributedBody blob (typedstream, or a keyed archive)."""
     if not b:
         return ""
     b = bytes(b)
-    i = b.find(b"NSString")
-    if i < 0:
-        return ""
-    i += len(b"NSString") + 5
-    if i >= len(b):
-        return ""
-    n = b[i]
-    i += 1
-    if n == 0x81:
-        n = int.from_bytes(b[i:i + 2], "little")
-        i += 2
-    elif n == 0x82:
-        n = int.from_bytes(b[i:i + 3], "little")
-        i += 3
-    return b[i:i + n].decode("utf-8", "replace")
+    if b.startswith(b"bplist"):
+        return _keyed_archive_text(b)
+    return _typedstream_text(b)
 
 
 def load_messages(ctx: Ctx) -> list[dict]:

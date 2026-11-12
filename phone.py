@@ -1246,7 +1246,7 @@ class PhoneWindow(tk.Toplevel):
         meta = tk.Label(rf, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w")
         meta.pack(fill="x", padx=14)
         txt = tk.Text(rf, wrap="word", relief="flat", font=font(13), padx=12, pady=8, bg="#fffdf3",
-                      highlightthickness=0)
+                      fg=INK, insertbackground=INK, highlightthickness=0)
         txt.pack(fill="both", expand=True, padx=2, pady=6)
         pane.add(rf, minsize=320)
 
