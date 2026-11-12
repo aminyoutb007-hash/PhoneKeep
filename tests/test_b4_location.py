@@ -61,6 +61,19 @@ check(r["files"] > 0 and not (old_root / UD).exists(), f"moved {r['files']} file
 check((theirs / "big.bin").exists() and (old_root / "notes.txt").exists() and not (new_root / "Holiday photos").exists(),
       "the owner's own files in the old folder are neither moved nor removed")
 shutil.rmtree(theirs); (old_root / "notes.txt").unlink(); old_root.rmdir()
+
+# a verified copy whose old copy can't be removed is still a successful move (found on NTFS through FUSE)
+r2_old = W / "Flaky" / "root"
+shutil.copytree(sn.phone_dir(new_root, UD), r2_old / UD)
+real_rmtree = shutil.rmtree
+shutil.rmtree = lambda p, ignore_errors=False, **k: None          # the driver 'loses' the delete
+try:
+    r2 = loc.move_backups(r2_old, W / "Flaky" / "dest", log=logs.append)
+finally:
+    shutil.rmtree = real_rmtree
+check(r2["files"] == r["files"] and r2["left_behind"] == [str(r2_old / UD)] and sn.has_backup(W / "Flaky" / "dest", UD),
+      "copy checked but old copy not removable: the move still succeeds and says what was left behind")
+check(any("couldn't be fully removed" in l for l in logs), "and the log says so")
 check(any("Checking the copy" in l for l in logs), "the copy was verified")
 check(sn.has_backup(new_root, UD) and sn.list_snapshots(new_root, UD)[0].id == snap.id, "the snapshot is there in the new location")
 reader = wv.BackupReader(sn.list_snapshots(new_root, UD)[0].path, None, lambda m: None)

@@ -714,7 +714,11 @@ class App(tk.Tk):
                 phone_write.log_activity(f"Backups moved to {new} ({r['files']:,} files)", kind="settings")
                 if settings.winfo_exists():
                     settings.refresh_location()
-                messagebox.showinfo(wv.APP_NAME, f"Moved {r['files']:,} files ({loc.human(r['bytes'])}) to {new}.", parent=self)
+                msg = f"Moved {r['files']:,} files ({loc.human(r['bytes'])}) to {new}."
+                if r.get("left_behind"):
+                    msg += ("\n\nThe old copy couldn't be removed from the old drive; it's still there and can be deleted "
+                            "by hand: " + ", ".join(r["left_behind"]))
+                messagebox.showinfo(wv.APP_NAME, msg, parent=self)
                 self.detect(silent=True)
         self._reset_progress(False)
         self.steps["backup"].set("active", detail=f"Moving backups to {new}…")

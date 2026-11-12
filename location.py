@@ -191,9 +191,19 @@ def move_backups(old_root: Path, new_root: Path, log: Callable[[str], None] = la
                 raise OSError(f"{f.relative_to(old_root)} didn't copy correctly; the original was kept.")
             if progress and i % 50 == 0:
                 progress(90.0 + 10.0 * i / max(1, len(files)))
+    # The copy is complete and checked: from here the move has succeeded, whatever happens to the old copy.
+    # Removing it is best effort (some drivers, e.g. NTFS through FUSE, drop entries mid-walk).
+    left = []
     for d in ours:
-        shutil.rmtree(d)
+        shutil.rmtree(d, ignore_errors=True)
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)
+        if d.exists():
+            left.append(d)
     if progress:
         progress(100.0)
-    log("Done. The old copy has been removed.")
-    return {"files": len(files), "bytes": total}
+    if left:
+        log("Done. The old copy couldn't be fully removed; it's still at " + ", ".join(str(d) for d in left))
+    else:
+        log("Done. The old copy has been removed.")
+    return {"files": len(files), "bytes": total, "left_behind": [str(d) for d in left]}
