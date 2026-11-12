@@ -77,6 +77,8 @@ Default locations (in your home folder):
 
 If **iCloud Photos** is on, iOS leaves the photo library out of backups. Keep **"Copy photos directly from the phone"** ticked: PhoneKeep then copies the camera roll straight off the iPhone, and only new photos on later runs. If the phone is set to **Optimize iPhone Storage**, some originals only exist in iCloud. To get those, switch the phone to **Download and Keep Originals** first (Settings → Photos), or download them from icloud.com.
 
+Every backup is kept as a **snapshot**: a timeline under the phone picture lets you open your iPhone as it was on any earlier day (handy for a message you deleted since). Unchanged files are stored once, so ten snapshots take little more space than one; PhoneKeep keeps the last 10 (Settings → Snapshots), and you can mark any snapshot **Keep forever**, rename it or delete it.
+
 Turn on **automatic backups** (Settings → Automatic backups: daily or weekly, at a time you choose, only when charging if you like) and PhoneKeep backs up by itself whenever your iPhone is nearby, with a quiet notification each time; the phone card shows when the next one is due.
 
 A small PhoneKeep icon in the menu bar (Mac) or system tray (Windows) shows when your iPhone was last backed up and backs it up with one click, even when the main window is closed; it can start at login (Settings → Backups).

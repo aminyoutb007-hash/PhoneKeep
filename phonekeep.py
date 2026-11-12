@@ -230,10 +230,13 @@ def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int,
 
 def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = None,
                 log: Log = _print, progress: Optional[Callable[[float], None]] = None,
-                status: Optional[Callable[[str], None]] = None) -> Path:
-    """Back up the connected iPhone into backup_root/<UDID>. Incremental after the first run.
+                status: Optional[Callable[[str], None]] = None,
+                keep: int = 10, until_disk_full: bool = False) -> Path:
+    """Back up the connected iPhone into backup_root/<UDID>/current, incremental after the first run,
+    then record it as a snapshot (B3) and tidy old ones. Returns the folder to open (the new snapshot).
     progress(percent) follows the iPhone's own estimate; status(text) gets a plain-language line
     every few seconds (what is happening, how much has been copied)."""
+    import snapshots as _snaps
     check_pmd3()
     devices = list_devices()
     if not devices:
@@ -248,7 +251,20 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
 
     backup_root = Path(backup_root)
     backup_root.mkdir(parents=True, exist_ok=True)
-    target = backup_root / udid
+    try:
+        _snaps.check_filesystem(backup_root)
+        _snaps.check_format(_snaps.phone_dir(backup_root, udid))
+    except _snaps.FileSystemRefused as e:
+        raise PhoneKeepError(str(e), button="Change location", action="change_location", key="fat32")
+    except _snaps.FormatTooNew as e:
+        raise PhoneKeepError(str(e), button="Show details", action="show_details", key="format")
+    if _snaps.is_old_layout(_snaps.phone_dir(backup_root, udid)):
+        if status:
+            status("Converting your existing backup into its first snapshot…")
+        _snaps.upgrade(backup_root, udid, log)
+    live = _snaps.live_root(backup_root, udid)          # pymobiledevice3 appends the UDID itself
+    live.mkdir(parents=True, exist_ok=True)
+    target = _snaps.current_dir(backup_root, udid)
     existing = (target / "Manifest.db").exists()
 
     log(f"Backing up '{name}' to {target}")
@@ -283,12 +299,12 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
 
     threading.Thread(target=watch, daemon=True).start()
     try:
-        cmd = [*_launcher_cmd(), "--pk-backup", str(backup_root), "--udid", udid]
+        cmd = [*_launcher_cmd(), "--pk-backup", str(live), "--udid", udid]
         if not existing:
             cmd.append("--full")
         code, tail = _stream_backup(cmd, log, progress, seen)
         if code == 3:  # helper without the in-process API: use the pymobiledevice3 command
-            args = ["backup2", "backup"] + (["--full"] if not existing else []) + ["--udid", udid, str(backup_root)]
+            args = ["backup2", "backup"] + (["--full"] if not existing else []) + ["--udid", udid, str(live)]
             code, tail = _stream_backup([*_helper(), *args], log, progress, seen)
             if code != 0 and any("no such option" in l.lower() and "udid" in l.lower() for l in tail):
                 args = [a for a in args if a not in ("--udid", udid)]
@@ -299,11 +315,15 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
 
     if code != 0 or not (target / "Manifest.db").exists():
         raise PhoneKeepError.from_problem("\n".join(tail), where=backup_root)
-    if progress:
-        progress(100.0)
     took = int(time.time() - t_start)
     log(f"Backup complete in {took // 60} min {took % 60} s.")
-    return target
+    if status:
+        status("Saving this backup as a snapshot…")
+    snap = _snaps.make_snapshot(backup_root, udid, log=log)
+    _snaps.prune(backup_root, udid, keep=keep, until_disk_full=until_disk_full, log=log)
+    if progress:
+        progress(100.0)
+    return snap.path
 
 
 def set_backup_encryption(on: bool, password: str, udid: Optional[str] = None, log: Log = _print) -> None:
@@ -565,8 +585,14 @@ def find_backups(log: Log = _print) -> list[dict]:
             if not root.is_dir():
                 continue
             for d in root.iterdir():
-                if d.is_dir() and (d / "Manifest.db").exists():
+                if not d.is_dir():
+                    continue
+                if (d / "Manifest.db").exists():
                     found.append(backup_info(d))
+                elif (d / "format.json").exists() or (d / "snapshots").is_dir():
+                    import snapshots as _snaps
+                    for s_ in _snaps.list_snapshots(root, d.name)[:1]:      # the latest snapshot of this phone
+                        found.append(backup_info(s_.path))
         except PermissionError:
             if sys.platform == "darwin":
                 who = "PhoneKeep" if getattr(sys, "frozen", False) else "your Terminal (or Python)"
@@ -600,6 +626,10 @@ class BackupReader:
             raise PhoneKeepError(f"{self.path} is not an iPhone backup (no Manifest.db).")
         self.log = log
         self.encrypted = backup_info(self.path)["encrypted"]
+        import snapshots as _snaps
+        self._snapshot = _snaps.is_snapshot(self.path)      # blobs live in the content store (B3)
+        if self._snapshot:
+            _snaps.install_decrypt_hook()
         self._tmp = tempfile.TemporaryDirectory(prefix="phonekeep_")
         self._enc = None
         if self.encrypted:
@@ -694,6 +724,13 @@ class BackupReader:
                 return dest.exists()
             except Exception:
                 return False
+        if self._snapshot:
+            import snapshots as _snaps
+            src = _snaps.resolve(self.path, file_id)
+            if src is not None and src.exists():
+                shutil.copyfile(src, dest)
+                return True
+            return False
         for src in (self.path / file_id[:2] / file_id, self.path / file_id):
             if src.exists():
                 shutil.copyfile(src, dest)

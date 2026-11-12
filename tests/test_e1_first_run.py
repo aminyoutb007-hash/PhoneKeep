@@ -13,6 +13,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 os.environ["PYTHONUTF8"] = "1"
+os.environ["PHONEKEEP_NO_HELPER"] = "1"
 
 import keychain
 import phone_write
@@ -150,7 +151,8 @@ check(acts and acts[0]["summary"] == "Turned on backup encryption", "activity lo
 check(any("close this window" in t for t in labels()), "step 4 says the window can be closed")
 clicks.append("Back up now"); a.guide.do_backup()
 check(pump(lambda: a.guide.step == 4, 60, "done step"), "backup runs and the done step appears")
-check((W / "Backups" / "00008030-E1TEST" / "Manifest.db").exists(), "a backup exists")
+import snapshots as _sn
+check(_sn.has_backup(W / "Backups", "00008030-E1TEST"), "a backup exists (as a snapshot)")
 check(any("safely backed up" in t for t in labels()), "done screen says 'Your iPhone is safely backed up'")
 asks_daily = any("automatically every day" in t for t in labels())
 check(asks_daily == appmod.App.FEATURES["scheduler"] and any("over Wi-Fi" in t for t in labels()),

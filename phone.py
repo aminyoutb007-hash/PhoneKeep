@@ -29,6 +29,7 @@ from typing import Callable, Optional
 
 import keychain
 import phonekeep as wv
+import snapshots as sn
 import sections as sx
 import ui
 from ui import BG, CARD, GREEN, GREEN_SOFT, INK, LINE, MUTED, RED, RoundButton, card, font
@@ -252,7 +253,9 @@ class PhoneWindow(tk.Toplevel):
         self.title(f"{self.name} — PhoneKeep")
         self.geometry("1220x800")
         self.minsize(980, 640)
-        self.backup_path = Path(app.s["backup_dir"]) / udid if udid else None
+        self.backup_dir = Path(app.s["backup_dir"])
+        self.snapshot: Optional[sn.Snapshot] = None            # B3: which snapshot is open (None = latest)
+        self.backup_path = sn.latest_backup_path(self.backup_dir, udid) if udid else None
         self.out_root = Path(app.s["archive_dir"]) / "From iPhone"
         self.data: Optional[BackupData] = None
         self.data_error: Optional[str] = None
@@ -304,10 +307,112 @@ class PhoneWindow(tk.Toplevel):
         self._draw_phone()
         self.src_line = tk.Label(left, text="", bg=BG, fg=MUTED, font=font(11), justify="center", wraplength=250)
         self.src_line.pack()
+        # B3: the timeline of snapshots. Click one to see the phone as it was then; right-click for more.
+        self.timeline = tk.Frame(left, bg=BG)
+        self.timeline.pack(fill="x", pady=(10, 0))
+        self.viewing = tk.Label(left, text="", bg="#fff4e0", fg="#b06000", font=font(11, "bold"))
+        self._build_timeline()
         self._update_src_line()
 
         self.content = tk.Frame(body, bg=BG)
         self.content.pack(side="left", fill="both", expand=True, padx=(14, 0))
+
+    # snapshots (B3) ------------------------------------------------------------------------
+    def _build_timeline(self):
+        for w in self.timeline.winfo_children():
+            w.destroy()
+        snaps = sn.list_snapshots(self.backup_dir, self.udid) if self.udid else []
+        self.snaps = snaps
+        if not snaps:
+            return
+        tk.Label(self.timeline, text="Snapshots", bg=BG, fg=INK, font=font(12, "bold"), anchor="w").pack(fill="x")
+        row = tk.Frame(self.timeline, bg=BG)
+        row.pack(fill="x")
+        current = self.snapshot.id if self.snapshot else snaps[0].id
+        for i, snap in enumerate(snaps[:8]):
+            lab = tk.Label(row, text=(("🔒 " if snap.locked else "") + snap.title), bg=GREEN if snap.id == current else CARD,
+                           fg="white" if snap.id == current else INK, font=font(11), padx=8, pady=3, cursor="hand2")
+            lab.pack(side="left", padx=(0, 4), pady=2)
+            lab.bind("<Button-1>", lambda e, s_=snap: self.open_snapshot(s_))
+            lab.bind("<Button-3>", lambda e, s_=snap: self._snapshot_menu(e, s_))
+            lab.bind("<Button-2>", lambda e, s_=snap: self._snapshot_menu(e, s_))
+            lab.bind("<Control-Button-1>", lambda e, s_=snap: self._snapshot_menu(e, s_))
+        if len(snaps) > 8:
+            more = tk.Label(self.timeline, text=f"+ {len(snaps) - 8} older…", bg=BG, fg=GREEN, font=font(11), cursor="hand2", anchor="w")
+            more.pack(fill="x")
+            more.bind("<Button-1>", lambda e: self._all_snapshots())
+        detail = self.snapshot or snaps[0]
+        size = f"{detail.size / 1e9:.1f} GB" if detail.size >= 1e9 else f"{detail.size / 1e6:.1f} MB"
+        tk.Label(self.timeline, text=f"{detail.when.strftime('%d %b %Y %H:%M').lstrip('0')} · {size} · iOS {detail.ios or '?'} · "
+                                     + ("🔒 encrypted" if detail.encrypted else "not encrypted"),
+                 bg=BG, fg=MUTED, font=font(10), anchor="w", wraplength=250, justify="left").pack(fill="x", pady=(2, 0))
+
+    def open_snapshot(self, snap: Optional[sn.Snapshot]):
+        """Show the phone as it was at that snapshot (None = the latest)."""
+        latest = self.snaps[0] if self.snaps else None
+        self.snapshot = None if (snap is None or (latest and snap.id == latest.id)) else snap
+        self.backup_path = (self.snapshot.path if self.snapshot else sn.latest_backup_path(self.backup_dir, self.udid))
+        if self.snapshot:
+            self.viewing.configure(text=f"Viewing {self.snapshot.title}")
+            self.viewing.pack(fill="x", before=self.timeline, pady=(6, 0))
+        else:
+            self.viewing.pack_forget()
+        self._build_timeline()
+        if self.data is not None:
+            self.data.close()
+            self.data = None
+        self.counts = {}
+        self.photo_src = None
+        self._open_backup()
+
+    def _snapshot_menu(self, event, snap: sn.Snapshot):
+        m = tk.Menu(self, tearoff=0)
+        m.add_command(label="Keep forever" if not snap.locked else "Don't keep forever",
+                      command=lambda: (sn.set_locked(self.backup_dir, self.udid, snap.id, not snap.locked), self._build_timeline()))
+        m.add_command(label="Rename…", command=lambda: self._rename_snapshot(snap))
+        m.add_separator()
+        m.add_command(label="Delete…", command=lambda: self._delete_snapshot(snap))
+        try:
+            m.tk_popup(event.x_root, event.y_root)
+        finally:
+            m.grab_release()
+
+    def _rename_snapshot(self, snap: sn.Snapshot):
+        name = simpledialog.askstring("Rename snapshot", f"A name for the snapshot of {snap.when.strftime('%d %b %Y').lstrip('0')}:",
+                                      initialvalue=snap.label, parent=self)
+        if name is not None:
+            sn.set_label(self.backup_dir, self.udid, snap.id, name)
+            self._build_timeline()
+
+    def _delete_snapshot(self, snap: sn.Snapshot):
+        if snap.locked:
+            messagebox.showinfo("Kept forever", "This snapshot is kept forever. Choose \"Don't keep forever\" first.", parent=self)
+            return
+        if len(self.snaps) <= 1:
+            messagebox.showinfo(wv.APP_NAME, "This is the only snapshot of this iPhone; make a new backup before deleting it.", parent=self)
+            return
+        if not messagebox.askokcancel(f"Delete the snapshot of {snap.title}?",
+                                      f"The backup of {self.name} from {snap.when.strftime('%d %b %Y %H:%M').lstrip('0')} goes to the "
+                                      + ("Trash" if sys.platform == "darwin" else "Recycle Bin") + ". Other snapshots are not affected.",
+                                      icon="warning", parent=self):
+            return
+        sn.delete_snapshot(self.backup_dir, self.udid, snap.id)
+        import phone_write
+        phone_write.log_activity(f"Deleted the snapshot of {snap.when.strftime('%d %b %Y').lstrip('0')}", self.name, kind="backup")
+        if self.snapshot and self.snapshot.id == snap.id:
+            self.open_snapshot(None)
+        else:
+            self._build_timeline()
+
+    def _all_snapshots(self):
+        win = tk.Toplevel(self, bg=CARD)
+        win.title("All snapshots")
+        win.transient(self)
+        lb = tk.Listbox(win, width=48, height=min(20, len(self.snaps)), font=font(12), activestyle="none")
+        lb.pack(padx=12, pady=12)
+        for s_ in self.snaps:
+            lb.insert("end", f"{'🔒 ' if s_.locked else ''}{s_.title}  ·  {s_.when.strftime('%d %b %Y %H:%M').lstrip('0')}")
+        lb.bind("<Double-Button-1>", lambda e: (self.open_snapshot(self.snaps[lb.curselection()[0]]), win.destroy()) if lb.curselection() else None)
 
     def _draw_phone(self):
         c = self.mock
@@ -401,7 +506,7 @@ class PhoneWindow(tk.Toplevel):
         self.live_runner.submit(go, ok, err)
 
     def _open_backup(self, password: Optional[str] = None):
-        if self.backup_path is None or not (self.backup_path / "Manifest.db").exists():
+        if self.backup_path is None or not (Path(self.backup_path) / "Manifest.db").exists():
             self.data_error = "No backup yet. Messages, chats, calls & notes appear after the first backup."
             self._update_src_line()
             if wv.backup_incomplete(Path(self.app.s["backup_dir"]) / (self.udid or "-")):
@@ -1180,7 +1285,8 @@ class PhoneWindow(tk.Toplevel):
 
         def work():
             return wv.make_backup(Path(self.app.s["backup_dir"]), self.udid, log=lambda m: None,
-                                  progress=progress, status=status)
+                                  progress=progress, status=status,
+                                  keep=self.app.s["snapshots_keep"], until_disk_full=self.app.s["snapshots_until_full"])
 
         def done(path=None, err=None):
             self.refreshing = False
@@ -1193,7 +1299,10 @@ class PhoneWindow(tk.Toplevel):
                 self.banner(f"Backup didn't finish: {err}", ("Try again", self.refresh), color="#fdecea")
                 return
             self.banner("✓ Up to date. Reloading…")
+            self.snapshot = None
             self.backup_path = Path(path)
+            self.viewing.pack_forget()
+            self._build_timeline()
             if self.data is not None:
                 self.data.close()
                 self.data = None
