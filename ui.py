@@ -992,6 +992,51 @@ class PasswordDialog(tk.Toplevel):
         self.destroy()
 
 
+class TextDialog(tk.Toplevel):
+    """One line of text with OK/Cancel, in PhoneKeep's own style (Tk's simpledialog misbehaves on macOS:
+    it can come up behind the window, or not at all from a popup menu). Result: str, or None if cancelled."""
+
+    def __init__(self, parent, title: str, prompt: str, initial: str = "", ok: str = "Save"):
+        super().__init__(parent, bg=CARD)
+        self.result = None
+        self.title(title)
+        self.resizable(False, False)
+        self.transient(parent)
+        body = tk.Frame(self, bg=CARD)
+        body.pack(fill="both", expand=True, padx=28, pady=22)
+        tk.Label(body, text=title, bg=CARD, fg=INK, font=font(17, "bold")).pack(pady=(2, 4))
+        tk.Label(body, text=prompt, bg=CARD, fg=MUTED, font=font(12), wraplength=400, justify="center").pack()
+        self.var = tk.StringVar(value=initial or "")
+        self.entry = ttk.Entry(body, textvariable=self.var, font=font(14), width=32)
+        self.entry.pack(fill="x", pady=(14, 0), ipady=4)
+        btns = tk.Frame(body, bg=CARD)
+        btns.pack(fill="x", pady=(18, 0))
+        RoundButton(btns, ok, self._ok, "primary", 150, 40, bg=CARD).pack(side="right")
+        RoundButton(btns, "Cancel", self._cancel, "secondary", 100, 40, bg=CARD).pack(side="right", padx=8)
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self._cancel())
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.entry.focus_set()
+        self.entry.select_range(0, "end")
+        self.lift()
+        self.grab_set()
+
+    def _ok(self):
+        self.result = self.var.get().strip()
+        self.destroy()
+
+    def _cancel(self):
+        self.result = None
+        self.destroy()
+
+
+def ask_text(parent, title: str, prompt: str, initial: str = "", ok: str = "Save"):
+    """Open a TextDialog and wait for it. Returns the text, or None if cancelled."""
+    d = TextDialog(parent, title, prompt, initial, ok)
+    parent.wait_window(d)
+    return d.result
+
+
 def ask_password(parent, mode: str, phone_name: str, help_text: str = ""):
     """Open a PasswordDialog and wait for it. Returns the result (see PasswordDialog)."""
     import keychain as kc

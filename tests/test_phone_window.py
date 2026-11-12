@@ -215,6 +215,31 @@ xlsx = list(out_dir.rglob("*.xlsx"))
 check(bool(xlsx), f"save produced an Excel file ({len(xlsx)} found)")
 
 # closing
+# B3: renaming a snapshot from the timeline uses PhoneKeep's own text dialog (found on a Mac: Tk's
+# simpledialog never appeared); the typed name lands in snapshots.json
+import datetime as _dt, json as _json
+from types import SimpleNamespace
+import snapshots as _sn2
+snap0 = SimpleNamespace(id="20261112-164026", when=_dt.datetime(2026, 11, 12, 16, 40), label=None, locked=False, title="Today")
+typed = []
+real_ask = phone.ui.ask_text
+phone.ui.ask_text = lambda parent, title, prompt, initial="", ok="Save": typed.append((title, initial)) or "Before the holiday"
+try:
+    win._rename_snapshot(snap0)
+finally:
+    phone.ui.ask_text = real_ask
+choices_file = _sn2.phone_dir(win.backup_dir, win.udid) / "snapshots.json"
+saved = _json.loads(choices_file.read_text(encoding="utf-8")) if choices_file.exists() else {}
+check(typed and typed[0][0] == "Rename snapshot", f"rename asks with the app's own dialog: {typed}")
+check(saved.get(snap0.id, {}).get("label") == "Before the holiday", f"the new name is saved in snapshots.json: {saved}")
+if choices_file.exists():
+    choices_file.unlink()
+d = phone.ui.TextDialog(win, "Rename snapshot", "A name:", initial="x")
+root.update()
+check(d.entry.get() == "x" and d.winfo_exists(), "the text dialog opens with the current name")
+d._cancel()
+check(d.result is None, "Cancel gives None")
+
 win.close()
 root.update()
 check(("close",) in win.live.calls, "closing the window disconnects the simulated iPhone")

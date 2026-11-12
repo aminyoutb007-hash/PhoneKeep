@@ -24,7 +24,7 @@ import tempfile
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import messagebox, ttk
 from typing import Callable, Optional
 
 import keychain
@@ -402,8 +402,8 @@ class PhoneWindow(tk.Toplevel):
             m.grab_release()
 
     def _rename_snapshot(self, snap: sn.Snapshot):
-        name = simpledialog.askstring("Rename snapshot", f"A name for the snapshot of {snap.when.strftime('%d %b %Y').lstrip('0')}:",
-                                      initialvalue=snap.label, parent=self)
+        name = ui.ask_text(self, "Rename snapshot", f"A name for the snapshot of {snap.when.strftime('%d %b %Y').lstrip('0')}:",
+                           initial=snap.label or "")
         if name is not None:
             sn.set_label(self.backup_dir, self.udid, snap.id, name)
             self._build_timeline()
