@@ -60,6 +60,8 @@ def _crash_log() -> None:
     from pathlib import Path
 
     def hook(exc_type, exc, tb):
+        if issubclass(exc_type, BrokenPipeError):      # the window closed while a helper was still printing
+            return
         try:
             p = Path.home() / "PhoneKeep" / "crash.log"
             p.parent.mkdir(parents=True, exist_ok=True)
