@@ -74,6 +74,11 @@ def _crash_log() -> None:
             pass
         sys.__excepthook__(exc_type, exc, tb)
     sys.excepthook = hook
+    import threading
+
+    def thread_hook(args):                      # crashes on worker threads (the helper's backup thread, say)
+        hook(args.exc_type, args.exc_value, args.exc_traceback)
+    threading.excepthook = thread_hook
 
 
 def _lockdown_run(udid, coro_fn) -> None:
