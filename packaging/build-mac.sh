@@ -35,7 +35,8 @@ printf 'BUILD_LABEL = "%s"\n' "$LABEL" > build_label.py
 codesign --force --deep --sign - dist/PhoneKeep.app
 printf 'BUILD_LABEL = ""\n' > build_label.py          # keep the committed file empty
 
-dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-launch-check | grep -q "PKLAUNCH ok"
+# the launch check opens the real window; PHONEKEEP_NO_HELPER keeps it from starting the menu bar helper
+PHONEKEEP_NO_HELPER=1 dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-launch-check | grep -q "PKLAUNCH ok"
 echo "Launch check: ok ($LABEL)"
 
 if pgrep -x PhoneKeep >/dev/null || pgrep -f "phonekeep-cli" >/dev/null; then
