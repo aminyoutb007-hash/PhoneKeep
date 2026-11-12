@@ -366,6 +366,7 @@ class FirstRunGuide(tk.Frame):
         self.cancel_btn.configure_text("Cancel")
         self.cancel_btn.set_enabled(True)
         self.cancel_btn.pack(side="left", padx=(10, 0))
+        self._watch_cancel()
         t0 = [None]
         app = self.app
 
@@ -394,6 +395,16 @@ class FirstRunGuide(tk.Frame):
                 self.status.configure(text="")
                 self.backup_btn.set_enabled(True)
         app._run(work, done)
+
+    def _watch_cancel(self):
+        """Cancel is offered only while the phone helper runs; saving the snapshot afterwards can't be cancelled."""
+        if not self.winfo_exists() or not self.app.busy:
+            return
+        if not wv.backup_running() and self.cancel_btn.winfo_manager() and self.cancel_btn.text != "Cancelling…" \
+                and self.status.cget("text").startswith("Saving"):
+            self.cancel_btn.pack_forget()
+            return
+        self.after(500, self._watch_cancel)
 
     def cancel_backup(self):
         if wv.cancel_backup():
