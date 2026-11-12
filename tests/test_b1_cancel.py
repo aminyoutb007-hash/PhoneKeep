@@ -147,6 +147,15 @@ try:
     check(not a.busy and not a.cancel_btn.winfo_manager(), "the job ends and the Cancel button goes away")
     check(a.bar_frame.winfo_manager() == "pack" and a.bar_text.cget("text").startswith("Backup cancelled.")
           and a.bar_frame.cget("bg") != "#fdecea", f"amber (not red) banner: {a.bar_text.cget('text')!r}")
+    # an export can be cancelled too: the Cancel button appears for the archive build and stops it plainly
+    import sections as sx
+    a._exporting, a._export_cancel = True, True
+    try:
+        a._export_progress(10)
+        check(False, "a cancelled export stops at the next progress tick")
+    except sx.ExportCancelled as ex:
+        check(ex.key == "cancelled" and str(ex).startswith("Export cancelled."), f"export cancel wording: {ex}")
+    a._exporting = False
     a.destroy()
 
     # the first-run guide's backup step

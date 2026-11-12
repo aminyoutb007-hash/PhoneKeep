@@ -26,6 +26,14 @@ from typing import Callable, Optional
 import phonekeep as wv
 from phonekeep import _e, Log, PhoneKeepError
 
+
+class ExportCancelled(PhoneKeepError):
+    """The owner pressed Cancel during an export (raised from the progress callback)."""
+
+    def __init__(self):
+        super().__init__("Export cancelled. Your backup is untouched; files already saved stay in the archive.",
+                         button="Try again", action="try_again", key="cancelled")
+
 HOME = "HomeDomain"
 MEDIA = "MediaDomain"
 CAMERA = "CameraRollDomain"
@@ -1250,6 +1258,8 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
             try:
                 r = sec_contacts(ctx, people) if key == "contacts" else fn(ctx)
                 log(f"{label}: {r.get('detail', '')}")
+            except ExportCancelled:
+                raise
             except PhoneKeepError as e:
                 r = {"count": 0, "note": str(e)}
                 log(f"{label}: {e}")

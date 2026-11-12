@@ -491,9 +491,10 @@ class App(_dnd_root()):
         """Show the Cancel button while the backup helper runs, hide it otherwise."""
         if not self.winfo_exists():
             return
-        running = wv.backup_running() and bool(self.go.winfo_manager())     # the guide has its own Cancel
+        exporting = self.busy and getattr(self, "_exporting", False)
+        running = (wv.backup_running() or exporting) and bool(self.go.winfo_manager())     # the guide has its own Cancel
         if running and not self.cancel_btn.winfo_manager():
-            self.cancel_btn.configure_text("Cancel backup")
+            self.cancel_btn.configure_text("Cancel backup" if wv.backup_running() else "Cancel export")
             self.cancel_btn.set_enabled(True)
             self.cancel_btn.pack(fill="x", pady=(6, 0), after=self.go)
         elif not running and self.cancel_btn.winfo_manager():
@@ -506,6 +507,11 @@ class App(_dnd_root()):
             self.cancel_btn.configure_text("Cancelling…")
             self.cancel_btn.set_enabled(False)
             self.log("Cancelling the backup…")
+        elif getattr(self, "_exporting", False):
+            self._export_cancel = True
+            self.cancel_btn.configure_text("Cancelling…")
+            self.cancel_btn.set_enabled(False)
+            self.log("Cancelling the export…")
 
     def _finish(self, result, err, done, quiet, fn=None):
         self.busy = False
@@ -989,6 +995,12 @@ class App(_dnd_root()):
         right = f"{pct:.0f}%" + (f" · {eta}" if eta else " · working out time left…")
         self.call(lambda: (self.bar.set(pct), self.steps["backup"].set("active", right=right)))
 
+    def _export_progress(self, pct: float):
+        """Progress of the archive build; raising here is how Cancel stops the export."""
+        if getattr(self, "_export_cancel", False):
+            raise sx.ExportCancelled()
+        self._progress_build(pct)
+
     def _progress_build(self, pct: float):
         if not hasattr(self, "_build_eta") or pct < 1:
             self._build_eta = ui.Eta()
@@ -1003,6 +1015,13 @@ class App(_dnd_root()):
         self.call(ui_update)
 
     def _export(self, path: Path) -> Path:
+        self._exporting, self._export_cancel = True, False
+        try:
+            return self._export_inner(path)
+        finally:
+            self._exporting = False
+
+    def _export_inner(self, path: Path) -> Path:
         info = wv.backup_info(path)
         pw = None
         if info["encrypted"]:
@@ -1019,7 +1038,7 @@ class App(_dnd_root()):
         direct = self.s["direct_photos"] and self.udid is not None and "photos" in secs
         index = sx.export_all(path, Path(self.s["archive_dir"]), pw, secs,
                               include_media=self.s["include_media"], log=self.log,
-                              progress=self._progress_build,
+                              progress=self._export_progress,
                               chooser=self._choose_chats if wants_chats else None,
                               formats={f for f, v in self.fmt.items() if v.get()},
                               photo_source="device" if direct else None, udid=self.udid,
