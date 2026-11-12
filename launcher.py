@@ -119,6 +119,9 @@ def _pk_change_password(args: list) -> None:
 
 def main() -> None:
     _crash_log()
+    # No network (S3): refuse every internet connection from this process, app or helper.
+    import netguard
+    netguard.install()
     args = sys.argv[1:]
     if len(args) >= 2 and args[0] == "--pk-backup":
         _pk_backup(args[1:])

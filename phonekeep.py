@@ -354,6 +354,48 @@ RESET_PASSWORD_HELP = (
 )
 
 
+RELEASES_PAGE = "https://github.com/aminyoutb007-hash/PhoneKeep/releases/latest"
+RELEASES_API = "https://api.github.com/repos/aminyoutb007-hash/PhoneKeep/releases/latest"
+
+
+def check_for_updates(timeout: float = 10.0) -> dict:
+    """The one opt-in internet request (S3): one HTTPS GET to the release page, no identifiers.
+    Returns {"current": VERSION, "latest": "5.0.0" or None, "newer": bool, "page": url, "error": str|None}."""
+    import json as _json
+    import urllib.request
+    import netguard
+    out = {"current": VERSION, "latest": None, "newer": False, "page": RELEASES_PAGE, "error": None}
+    try:
+        import ssl
+        try:
+            import certifi                      # the packaged app has no system CA bundle (python.org builds)
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            ctx = ssl.create_default_context()
+        req = urllib.request.Request(RELEASES_API, headers={"User-Agent": "PhoneKeep", "Accept": "application/vnd.github+json"})
+        with netguard.allow("Check for updates"):
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+                data = _json.loads(r.read().decode("utf-8"))
+        tag = str(data.get("tag_name") or "").lstrip("v")
+        out["latest"] = tag or None
+        out["newer"] = bool(tag) and _version_tuple(tag) > _version_tuple(VERSION)
+    except Exception as e:
+        if getattr(e, "code", None) == 404:      # no release published yet
+            out["latest"] = None
+        else:
+            out["error"] = "Couldn't reach the release page. Check your internet connection and try again."
+        out["detail"] = f"{type(e).__name__}: {e}"
+    return out
+
+
+def _version_tuple(v: str) -> tuple:
+    parts = []
+    for x in v.split("."):
+        digits = "".join(ch for ch in x if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
 def password_for_backup(path: Path) -> Optional[str]:
     """The stored password for a backup folder, if its phone has one in the keychain."""
     try:
