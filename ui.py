@@ -881,3 +881,120 @@ class PhotoPicker(tk.Toplevel):
     def _close(self):
         self.worker.stop()
         self.destroy()
+
+
+# ---------------------------------------------------------------------------
+# Password dialogs (S1): choose a backup password, or enter the one the iPhone already uses
+# ---------------------------------------------------------------------------
+
+class PasswordDialog(tk.Toplevel):
+    """One field with show/hide, a strength hint, and the line about the keychain.
+
+    mode = "choose"  : a new password for a phone whose backups aren't encrypted yet.
+                       The main button is the confirmation for writing to the phone ("Turn on encryption").
+    mode = "enter"   : the password the iPhone already uses; offers the Reset All Settings help.
+    mode = "confirm" : the current password, needed before turning encryption off.
+    mode = "change"  : current + new password.
+    Result: self.result = password (str), or (old, new) for "change", or None if cancelled.
+    """
+
+    TEXT = {
+        "choose": ("Choose a backup password", "Turn on encryption",
+                   "Your iPhone will encrypt its backups with this password."),
+        "enter": ("Enter your backup password", "Continue",
+                  "This iPhone already encrypts its backups. PhoneKeep needs the password once."),
+        "confirm": ("Enter your backup password", "Turn off encryption",
+                    "The iPhone needs the current password to turn encryption off."),
+        "change": ("Change the backup password", "Change password",
+                   "Your iPhone will switch its backups to the new password."),
+    }
+
+    def __init__(self, parent, mode: str = "choose", phone_name: str = "your iPhone",
+                 keychain_available: bool = True, help_text: str = ""):
+        super().__init__(parent, bg=CARD)
+        import keychain as kc
+        self.kc, self.mode, self.result = kc, mode, None
+        title, verb, sub = self.TEXT[mode]
+        self.title(f"{title} — {phone_name}")
+        self.resizable(False, False)
+        self.transient(parent)
+        body = tk.Frame(self, bg=CARD)
+        body.pack(fill="both", expand=True, padx=28, pady=22)
+        tk.Label(body, text="🔒", bg=CARD, font=font(28)).pack()
+        tk.Label(body, text=title, bg=CARD, fg=INK, font=font(17, "bold")).pack(pady=(2, 4))
+        tk.Label(body, text=sub, bg=CARD, fg=MUTED, font=font(12), wraplength=400, justify="center").pack()
+
+        self.vars = []
+        labels = ["Current password", "New password"] if mode == "change" else [""]
+        for lab in labels:
+            if lab:
+                tk.Label(body, text=lab, bg=CARD, fg=INK, font=font(12), anchor="w").pack(fill="x", pady=(12, 2))
+            row = tk.Frame(body, bg=CARD)
+            row.pack(fill="x", pady=(14 if not lab else 0, 0))
+            var = tk.StringVar()
+            ent = ttk.Entry(row, textvariable=var, show="•", font=font(14), width=28)
+            ent.pack(side="left", fill="x", expand=True, ipady=4)
+            eye = tk.Label(row, text="Show", bg=CARD, fg=GREEN, font=font(11), cursor="hand2")
+            eye.pack(side="left", padx=(8, 0))
+            eye.bind("<Button-1>", lambda e, en=ent, ey=eye: self._toggle(en, ey))
+            self.vars.append(var)
+        self.entry_first = body.winfo_children()[-1].winfo_children()[0]
+
+        self.hint = tk.Label(body, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w")
+        self.hint.pack(fill="x", pady=(4, 0))
+        if mode in ("choose", "change"):
+            self.vars[-1].trace_add("write", lambda *_: self._strength())
+        note = ("Saved in your Keychain. You won't need to type it again.\nIf you forget it, the backup can't be opened."
+                if sys.platform == "darwin" else
+                "Saved in Windows Credential Manager. You won't need to type it again.\nIf you forget it, the backup can't be opened.")
+        if not keychain_available:
+            note = "This computer has no keychain, so PhoneKeep will ask for the password when it needs it.\nIf you forget it, the backup can't be opened."
+        tk.Label(body, text=note, bg=CARD, fg=MUTED, font=font(11), justify="left", anchor="w").pack(fill="x", pady=(10, 0))
+        if help_text:
+            lk = tk.Label(body, text="I don't know the password", bg=CARD, fg=GREEN, font=font(11), cursor="hand2", anchor="w")
+            lk.pack(fill="x", pady=(8, 0))
+            lk.bind("<Button-1>", lambda e: messagebox.showinfo("Forgotten backup password", help_text, parent=self))
+
+        btns = tk.Frame(body, bg=CARD)
+        btns.pack(fill="x", pady=(18, 0))
+        self.ok_btn = RoundButton(btns, verb, self._ok, "primary", 190, 40, bg=CARD)
+        self.ok_btn.pack(side="right")
+        RoundButton(btns, "Cancel", self._cancel, "secondary", 100, 40, bg=CARD).pack(side="right", padx=8)
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self._cancel())
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.entry_first.focus_set()
+        self.grab_set()
+
+    def _toggle(self, ent, eye):
+        showing = ent.cget("show") == ""
+        ent.configure(show="•" if showing else "")
+        eye.configure(text="Show" if showing else "Hide")
+
+    def _strength(self):
+        score, word = self.kc.strength(self.vars[-1].get())
+        colour = {0: MUTED, 1: RED, 2: AMBER, 3: GREEN, 4: GREEN}[score]
+        self.hint.configure(text=f"Strength: {word}" if word else "", fg=colour)
+
+    def _ok(self):
+        values = [v.get() for v in self.vars]
+        if any(not v for v in values):
+            self.hint.configure(text="Please type a password.", fg=RED)
+            return
+        if self.mode in ("choose", "change") and self.kc.strength(values[-1])[0] < 1:
+            self.hint.configure(text="Use at least 8 characters.", fg=RED)
+            return
+        self.result = tuple(values) if self.mode == "change" else values[0]
+        self.destroy()
+
+    def _cancel(self):
+        self.result = None
+        self.destroy()
+
+
+def ask_password(parent, mode: str, phone_name: str, help_text: str = ""):
+    """Open a PasswordDialog and wait for it. Returns the result (see PasswordDialog)."""
+    import keychain as kc
+    d = PasswordDialog(parent, mode, phone_name, kc.available(), help_text)
+    parent.wait_window(d)
+    return d.result

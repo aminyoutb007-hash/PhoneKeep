@@ -27,6 +27,7 @@ from pathlib import Path
 from tkinter import messagebox, simpledialog, ttk
 from typing import Callable, Optional
 
+import keychain
 import phonekeep as wv
 import sections as sx
 import ui
@@ -281,6 +282,8 @@ class PhoneWindow(tk.Toplevel):
         self.sub = tk.Label(head, text=f"iOS {self.device.get('ProductVersion', '?')} · connected by {how}",
                             bg=GREEN, fg="#d7efe9", font=font(12))
         self.sub.pack(side="left", pady=12)
+        self.lock_badge = tk.Label(head, text="", bg=GREEN, fg="#d7efe9", font=font(12, "bold"))
+        self.lock_badge.pack(side="left", padx=(14, 0), pady=12)
         RoundButton(head, "📂  Saved files", lambda: (self.out_root.mkdir(parents=True, exist_ok=True),
                                                       reveal(self.out_root)), "ghost", 150, 34, 12).pack(side="right", padx=(6, 16))
         self.refresh_btn = RoundButton(head, "⟳  Refresh from iPhone", self.refresh, "ghost", 210, 34, 12)
@@ -407,10 +410,14 @@ class PhoneWindow(tk.Toplevel):
                         ("Back up now", self.refresh))
             return
         info = wv.backup_info(self.backup_path)
+        self.lock_badge.configure(text="🔒 Encrypted · on this computer" if info["encrypted"] else "")
+        typed = False
         if info["encrypted"] and password is None:
-            password = getattr(self.app, "_backup_password", None) or simpledialog.askstring(
-                wv.APP_NAME, f"The backup of “{info['name']}” is encrypted.\nEnter the backup password:",
-                show="•", parent=self)
+            # silently from the keychain (S1); only ask if it isn't there yet
+            password = keychain.get_password(self.udid or "") or getattr(self.app, "_backup_password", None)
+            if not password:
+                password = ui.ask_password(self, "enter", info["name"], wv.RESET_PASSWORD_HELP)
+                typed = True
             if not password:
                 self.data_error = "The backup is encrypted. Click Messages (or any app) to enter the password."
                 self._update_src_line()
@@ -424,6 +431,8 @@ class PhoneWindow(tk.Toplevel):
             self.data, self.data_error = data, None
             if password:
                 self.app._backup_password = password   # remembered until PhoneKeep is closed
+                if typed and self.udid:
+                    keychain.set_password(self.udid, password)   # it opened the backup, so keep it
             self.banner("")
             self._update_src_line()
             self.counts = {}
@@ -438,6 +447,8 @@ class PhoneWindow(tk.Toplevel):
             msg = describe_error(e)
             if "password" in msg.lower():
                 self.app._backup_password = None
+                if self.udid:
+                    keychain.delete_password(self.udid)   # a stored password that no longer opens the backup
                 if messagebox.askretrycancel(wv.APP_NAME, msg, parent=self):
                     self._open_backup()
                     return

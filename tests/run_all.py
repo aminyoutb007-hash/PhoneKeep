@@ -16,6 +16,7 @@ STEPS = [
     ("Rich photo backup (months, Live Photo, video, thumbnails)", "make_rich.py", False),
     ("Security: script injection, path escapes, spreadsheet formulas", "test_security.py", False),
     ("Phone window with a simulated iPhone", "test_phone_window.py", True),   # needs a display
+    ("S1: encryption by default, keychain, no password on command lines or in logs", "test_s1_encryption.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)

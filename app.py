@@ -14,6 +14,8 @@ import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+import keychain
+import phone_write
 import phonekeep as wv
 import sections as sx
 import ui
@@ -248,6 +250,8 @@ class App(tk.Tk):
         self.dev_line.pack(fill="x", pady=(2, 0))
         self.dev_last = tk.Label(info, text="", bg=CARD, fg=MUTED, font=font(13), anchor="w")
         self.dev_last.pack(fill="x")
+        self.dev_lock = tk.Label(info, text="", bg=CARD, fg=GREEN, font=font(12, "bold"), anchor="w")
+        self.dev_lock.pack(fill="x", pady=(2, 0))
         btns = tk.Frame(inner, bg=CARD)
         btns.pack(side="right", anchor="n", before=info)
         self.open_btn = ui.RoundButton(btns, "Open iPhone  ›", self.open_phone, "primary", 160, 38, 13)
@@ -476,6 +480,7 @@ class App(tk.Tk):
                 info = wv.backup_info(Path(self.s["backup_dir"]) / self.udid) \
                     if (Path(self.s["backup_dir"]) / self.udid / "Manifest.db").exists() else None
                 self.dev_last.configure(text=f"Last backup: {info['date']}" if info else "Not backed up with PhoneKeep yet")
+                self.dev_lock.configure(text=self.lock_badge(info))
                 self.open_btn.set_enabled(True)
             else:
                 self.device = self.udid = None
@@ -484,6 +489,7 @@ class App(tk.Tk):
                 self.dev_line.configure(text=err or "Plug in your iPhone (or use Wi-Fi sync), unlock it and tap “Trust”.",
                                         fg=RED if err else MUTED)
                 self.dev_last.configure(text="")
+                self.dev_lock.configure(text="")
                 self.open_btn.set_enabled(False)
         if not silent:
             self.phone.set_state("searching")
@@ -594,7 +600,7 @@ class App(tk.Tk):
         info = wv.backup_info(path)
         pw = None
         if info["encrypted"]:
-            pw = self._ask(f"The backup of “{info['name']}” is encrypted.\nEnter the backup password:")
+            pw = self.password_for(path, info["name"])
             if not pw:
                 raise wv.PhoneKeepError("Cancelled: the backup password is needed to read an encrypted backup.")
         secs = self.s.sections()
@@ -622,6 +628,9 @@ class App(tk.Tk):
         t0 = [None]
 
         def work():
+            self.call(lambda: self.steps["backup"].set(
+                "active", detail="Checking that your backups are encrypted…"))
+            self.ensure_encryption()
             self.call(lambda: self.steps["backup"].set(
                 "active", detail="Connecting… Keep your iPhone unlocked and nearby. If it asks for its "
                                  "passcode, enter it. Your chats appear for you to choose as soon as "
@@ -674,32 +683,126 @@ class App(tk.Tk):
     def open_settings(self, focus: str = None):
         SettingsWindow(self, focus)
 
-    # ------------------------------------------------------------------ encryption
-    def encryption(self, parent):
-        on = messagebox.askyesnocancel(
-            wv.APP_NAME,
-            "Encrypted backups are protected by a password and also include call history, "
-            "Safari history, Health data and saved Wi-Fi networks.\n\n"
-            "Yes = turn encryption ON (choose a new password)\nNo = turn encryption OFF (needs the current password)",
-            parent=parent)
+    # ------------------------------------------------------------------ encryption (S1)
+    @staticmethod
+    def lock_badge(info) -> str:
+        if not info:
+            return ""
+        return "🔒 Encrypted · on this computer" if info.get("encrypted") else "⚠ Not encrypted"
+
+    def _on_ui(self, fn):
+        """Run fn on the UI thread and wait for its result (for dialogs opened from a worker)."""
+        if threading.current_thread() is threading.main_thread():
+            return fn()
+        box, ev = {}, threading.Event()
+
+        def go():
+            try:
+                box["v"] = fn()
+            finally:
+                ev.set()
+        self.call(go)
+        ev.wait()
+        return box.get("v")
+
+    def password_for(self, path: Path, phone_name: str) -> str | None:
+        """The password for an encrypted backup: silently from the keychain, otherwise asked once and offered
+        to the keychain. Never logged."""
+        pw = wv.password_for_backup(path)
+        if pw:
+            return pw
+        pw = self._on_ui(lambda: ui.ask_password(self, "enter", phone_name, wv.RESET_PASSWORD_HELP))
+        if pw:
+            keychain.set_password(Path(path).name, pw)
+        return pw
+
+    def ensure_encryption(self):
+        """Before a backup: make sure the iPhone encrypts its backups and that the password is in the keychain.
+        Runs on the worker thread; dialogs are shown on the UI thread. Writes to the phone only through
+        phone_write, and only after the owner clicked the dialog's "Turn on encryption" button."""
+        if not self.udid:
+            return
+        name = (self.device or {}).get("DeviceName") or "your iPhone"
+        on = wv.backup_will_encrypt(self.udid)
         if on is None:
+            self.log("Couldn't check whether backups are encrypted; carrying on.")
             return
         if on:
-            pw = simpledialog.askstring(wv.APP_NAME, "New backup password:", show="•", parent=parent)
-            if not pw:
-                return
-            if pw != simpledialog.askstring(wv.APP_NAME, "Type the password again:", show="•", parent=parent):
-                messagebox.showerror(wv.APP_NAME, "The passwords don't match.", parent=parent)
-                return
-            messagebox.showinfo(wv.APP_NAME, "Write this password down. If you lose it, encrypted backups "
-                                             "can't be opened and Apple can't recover it.", parent=parent)
-        else:
-            pw = simpledialog.askstring(wv.APP_NAME, "Current backup password:", show="•", parent=parent)
-            if not pw:
-                return
-        self.log("Changing backup encryption. Your iPhone may ask for its passcode.")
-        self._run(lambda: wv.set_backup_encryption(bool(on), pw, self.udid, self.log),
-                  lambda r: r is None or messagebox.showinfo(wv.APP_NAME, "Backup encryption updated."))
+            if not keychain.get_password(self.udid):
+                pw = self._on_ui(lambda: ui.ask_password(self, "enter", name, wv.RESET_PASSWORD_HELP))
+                if pw:
+                    keychain.set_password(self.udid, pw)
+                    self.log("Backup password saved to the keychain.")
+            return
+        pw = self._on_ui(lambda: ui.ask_password(self, "choose", name))
+        if not pw:
+            raise wv.PhoneKeepError("Backups are encrypted by default. Choose a backup password to continue.")
+        self.log("Turning on backup encryption. Your iPhone may ask for its passcode.")
+        phone_write.turn_on_encryption(self.udid, name, pw, confirmed=True, log=self.log)
+        keychain.set_password(self.udid, pw)
+        self.log("Backup encryption is on; the password is in the keychain.")
+
+    def encryption_off(self, parent):
+        if not self.udid:
+            messagebox.showinfo(wv.APP_NAME, "Connect your iPhone first.", parent=parent)
+            return
+        name = (self.device or {}).get("DeviceName") or "your iPhone"
+        ok = messagebox.askokcancel(
+            f"Turn off encryption for {name}?",
+            "Unencrypted backups leave out saved passwords, Health data, Wi-Fi networks and call history, "
+            "and anyone who can use this computer can read everything in them.\n\n"
+            "Turn encryption off?", icon="warning", parent=parent)
+        if not ok:
+            return
+        pw = keychain.get_password(self.udid) or ui.ask_password(parent, "confirm", name, wv.RESET_PASSWORD_HELP)
+        if not pw:
+            return
+        self.log("Turning off backup encryption. Your iPhone may ask for its passcode.")
+
+        def done(r):
+            if r is not None:
+                keychain.delete_password(self.udid)
+                messagebox.showinfo(wv.APP_NAME, "Backup encryption is off.", parent=parent)
+                self.detect(silent=True)
+        self._run(lambda: (phone_write.turn_off_encryption(self.udid, name, pw, confirmed=True, log=self.log), True)[1], done)
+
+    def encryption_on(self, parent):
+        if not self.udid:
+            messagebox.showinfo(wv.APP_NAME, "Connect your iPhone first.", parent=parent)
+            return
+        name = (self.device or {}).get("DeviceName") or "your iPhone"
+        pw = ui.ask_password(parent, "choose", name)
+        if not pw:
+            return
+        self.log("Turning on backup encryption. Your iPhone may ask for its passcode.")
+
+        def done(r):
+            if r is not None:
+                keychain.set_password(self.udid, pw)
+                messagebox.showinfo(wv.APP_NAME, "Backup encryption is on. The password is in your keychain.", parent=parent)
+                self.detect(silent=True)
+        self._run(lambda: (phone_write.turn_on_encryption(self.udid, name, pw, confirmed=True, log=self.log), True)[1], done)
+
+    def change_password(self, parent):
+        if not self.udid:
+            messagebox.showinfo(wv.APP_NAME, "Connect your iPhone first.", parent=parent)
+            return
+        name = (self.device or {}).get("DeviceName") or "your iPhone"
+        res = ui.ask_password(parent, "change", name, wv.RESET_PASSWORD_HELP)
+        if not res:
+            return
+        old, new = res
+        if not messagebox.askokcancel(f"Change the backup password on {name}?",
+                                      f"{name} will use the new password for all its backups from now on. "
+                                      "Older backups keep the old password.", parent=parent):
+            return
+        self.log("Changing the backup password. Your iPhone may ask for its passcode.")
+
+        def done(r):
+            if r is not None:
+                keychain.set_password(self.udid, new)
+                messagebox.showinfo(wv.APP_NAME, "Backup password changed and saved to your keychain.", parent=parent)
+        self._run(lambda: (phone_write.change_password(self.udid, name, old, new, confirmed=True, log=self.log), True)[1], done)
 
 
 class SettingsWindow(tk.Toplevel):
@@ -751,12 +854,30 @@ class SettingsWindow(tk.Toplevel):
         ui.Chip(op, "Copy photos straight from the iPhone (works with iCloud Photos)", self.direct,
                 lambda: self.s.__setitem__("direct_photos", self.direct.get()), size=12, bg=CARD).pack(anchor="w", pady=3)
 
-        # security
-        sec = section("Backup encryption",
-                      "Protects your backups with a password. Encrypted backups also include call history, "
-                      "Safari history and Wi-Fi networks. Apple can't recover a lost password.")
-        ui.RoundButton(sec, "🔒  Turn encryption on or off…", lambda: app.encryption(self), "secondary",
-                       280, 38, 13, bg=CARD).pack(anchor="w")
+        # security (S1)
+        info = None
+        if app.udid and (Path(self.s["backup_dir"]) / app.udid / "Manifest.db").exists():
+            info = wv.backup_info(Path(self.s["backup_dir"]) / app.udid)
+        stored = bool(app.udid and keychain.get_password(app.udid))
+        where = "your Keychain" if sys.platform == "darwin" else "Windows Credential Manager"
+        status = ("Backups are encrypted. The password is in " + where + "." if info and info["encrypted"] and stored
+                  else "Backups are encrypted. The password isn't in " + where + " yet; you'll be asked for it once."
+                  if info and info["encrypted"]
+                  else "Backups are not encrypted." if info
+                  else "Encryption is turned on with your first backup.")
+        sec = section("Security", status)
+        tk.Label(sec, text=("🔒 Encrypted · on this computer" if (info and info["encrypted"]) else ""),
+                 bg=CARD, fg=GREEN, font=font(12, "bold")).pack(anchor="w", pady=(0, 6))
+        row = tk.Frame(sec, bg=CARD)
+        row.pack(anchor="w")
+        if info and not info["encrypted"]:
+            ui.RoundButton(row, "🔒  Turn encryption on…", lambda: app.encryption_on(self), "primary",
+                           220, 38, 13, bg=CARD).pack(side="left")
+        else:
+            ui.RoundButton(row, "Change password…", lambda: app.change_password(self), "secondary",
+                           180, 38, 13, bg=CARD).pack(side="left")
+            ui.RoundButton(row, "Turn encryption off…", lambda: app.encryption_off(self), "secondary",
+                           200, 38, 13, bg=CARD).pack(side="left", padx=8)
 
         # folders
         fo = section("Folders")
