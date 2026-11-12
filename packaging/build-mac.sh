@@ -38,8 +38,9 @@ printf 'BUILD_LABEL = ""\n' > build_label.py          # keep the committed file 
 dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-launch-check | grep -q "PKLAUNCH ok"
 echo "Launch check: ok ($LABEL)"
 
-if pgrep -x PhoneKeep >/dev/null || pgrep -f "phonekeep-cli --pk-helper" >/dev/null; then
-  echo "PhoneKeep is running — quit it (and the menu bar helper) first, then run this again." >&2; exit 1
+if pgrep -x PhoneKeep >/dev/null || pgrep -f "phonekeep-cli" >/dev/null; then
+  echo "PhoneKeep is still running (the window, the menu bar helper or a backup helper)." >&2
+  echo "Quit it, then:  pkill -f phonekeep-cli   and run this again." >&2; exit 1
 fi
 rm -rf /Applications/PhoneKeep.app
 cp -R dist/PhoneKeep.app /Applications/
