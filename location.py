@@ -112,9 +112,10 @@ def usage(path: Path) -> dict:
 
 
 def human(n: float) -> str:
-    gb = n / 1e9
-    if gb >= 1:
-        return f"{gb:.1f} GB"
+    if n >= 1e12:
+        return f"{n / 1e12:.1f} TB"
+    if n >= 1e9:
+        return f"{n / 1e9:.1f} GB"
     return f"{n / 1e6:.1f} MB"
 
 

@@ -153,6 +153,7 @@ check(w and w.startswith("Not enough space on ") and "needed" in w and "free." i
 check(loc.space_warning(W, needed=1) is None, "no warning when there's room")
 check(loc.estimate_needed(sn.current_dir(new_root, UD), None) >= 2_000_000_000, "incremental estimate is at least 2 GB")
 check(loc.estimate_needed(None, 60_000_000_000) == 63_000_000_000, "first backup estimate ≈ the phone's used space")
+check(loc.human(1_386_700_000_000) == "1.4 TB" and loc.human(53_900_000_000) == "53.9 GB" and loc.human(170_800_000) == "170.8 MB", "sizes read as MB / GB / TB")
 u = loc.usage(new_root)
 check(u["used"] > 0 and u["free"] > 0 and u["drive"], f"usage: backups use {loc.human(u['used'])}, {loc.human(u['free'])} free on {u['drive']}")
 
