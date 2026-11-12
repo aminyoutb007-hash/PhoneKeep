@@ -21,7 +21,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | E2 | Menu bar / system tray helper | Menu, Back up now, notifications, progress ring, start at login | Done | [05-ease-of-use.md](05-ease-of-use.md#e2-menu-bar-and-system-tray-helper) |
 | B2 | Scheduled automatic backups (needs E2) | Daily / Weekly at a time, only when charging; from the helper | Done | [03-backup.md](03-backup.md#b2-scheduled-automatic-backups) |
 | B3 | Snapshots over time | Content store; timeline; keep forever / rename / delete; keep N or until 90% full | Done | [03-backup.md](03-backup.md#b3-snapshots-over-time) |
-| B4 | Backups on any drive or NAS; move backups | Folder setting only | Partial | [03-backup.md](03-backup.md#b4-backup-location-and-moving-backups) |
+| B4 | Backups on any drive or NAS; move backups | Location screen; verified move; space warning; waits for an unplugged drive | Done | [03-backup.md](03-backup.md#b4-backup-location-and-moving-backups) |
 | X2 | Backup redaction tool (for the regression library; before B5) | Not available | To build | [12-engineering.md](12-engineering.md#x2-backup-redaction-tool) |
 | B5 | Open any backup and browse its files | Latest PhoneKeep backup only | Partial | [03-backup.md](03-backup.md#b5-open-any-backup-and-browse-its-files) |
 | M1 | Browse Messages (iMessage, SMS) | Works | Done | [06-messages.md](06-messages.md#m1-browse-messages) |

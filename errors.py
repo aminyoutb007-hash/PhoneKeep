@@ -30,7 +30,7 @@ class Problem:
     button: str                   # the one button's label
     action: str                   # what the button does (keys above)
     details: str = ""             # the technical text, behind "Show details"
-    failure: bool = True          # red banner only for real failures
+    failure: bool = True          # red banner only for real failures (waiting for a drive is amber)
 
 
 # (key, patterns to look for in the technical text (lower-case), message, button label, action)

@@ -198,8 +198,11 @@ class Helper:
             pr = errors.explain(e) if not isinstance(e, wv.PhoneKeepError) else None
             msg = pr.message if pr else str(e)
             self.last_error = msg
-            self.write_health(udid, ok=False, reason=msg)
-            self.notify("Backup didn't finish", msg)
+            if getattr(e, "key", "") == "drive_unavailable":
+                self.log(msg)                        # the backup drive is unplugged: wait quietly, the menu says so (B4);
+            else:                                    # nothing is written anywhere while it's away
+                self.write_health(udid, ok=False, reason=msg)
+                self.notify("Backup didn't finish", msg)
         finally:
             self.busy, self.progress = False, None
             self.on_change()

@@ -249,7 +249,11 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
     name = next((d.get("DeviceName") for d in devices
                  if (d.get("UniqueDeviceID") or d.get("Identifier")) == udid), udid)
 
+    import location as _loc
     backup_root = Path(backup_root)
+    if not _loc.is_available(backup_root):
+        # the drive is unplugged: not an error, just waiting (B4)
+        raise PhoneKeepError(_loc.connect_message(backup_root), button="Try again", action="try_again", key="drive_unavailable")
     backup_root.mkdir(parents=True, exist_ok=True)
     try:
         _snaps.check_filesystem(backup_root)
@@ -266,6 +270,10 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
     live.mkdir(parents=True, exist_ok=True)
     target = _snaps.current_dir(backup_root, udid)
     existing = (target / "Manifest.db").exists()
+    warning = _loc.space_warning(backup_root, _loc.estimate_needed(target if existing else None,
+                                                                    None if existing else phone_used_bytes(udid)))
+    if warning:
+        raise PhoneKeepError(warning, button="Change location", action="change_location", key="disk_full")
 
     log(f"Backing up '{name}' to {target}")
     log("Incremental backup (only changes since last time)." if existing
@@ -383,6 +391,23 @@ def set_wifi_sync(on: bool, udid: Optional[str] = None, log: Log = _print) -> No
     if r.returncode != 0 or "PKDONE" not in out:
         raise PhoneKeepError.from_problem(out)
     log(f"Wi-Fi backups turned {'on' if on else 'off'} on the iPhone.")
+
+
+def phone_used_bytes(udid: Optional[str] = None) -> Optional[int]:
+    """How much of the iPhone's storage is in use (for the first-backup space estimate), or None."""
+    try:
+        check_pmd3()
+        cmd = _launcher_cmd() + ["--pk-storage"] + (["--udid", udid] if udid else [])
+        env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+        r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
+                           timeout=60, **_NOWIN)
+        for line in (r.stdout or "").splitlines():
+            if line.startswith("PKSTORAGE "):
+                kv = dict(x.split("=") for x in line.split()[1:])
+                return int(kv.get("used", 0)) or None
+    except Exception:
+        pass
+    return None
 
 
 def battery_state(udid: Optional[str] = None) -> Optional[dict]:
