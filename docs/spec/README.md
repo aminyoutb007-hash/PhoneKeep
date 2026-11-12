@@ -46,7 +46,7 @@ A feature is done only when **all** of these are true:
 - It has **automated tests** in the repository (see [12-engineering.md](12-engineering.md)), and all existing tests still pass.
 - It follows every rule in [01-principles.md](01-principles.md) and the interaction patterns in [00-user-experience.md](00-user-experience.md).
 - None of the five journeys in [00-user-experience.md](00-user-experience.md) got slower or longer.
-- The installers build on GitHub Actions without errors, and the pull request links to that run and quotes the installer sizes.
+- The installers build on GitHub Actions without errors: proven by one on-demand Build installers run for the pull request's branch (Apple Silicon at least), linked from the pull request with the installer sizes; the release tag builds all three.
 - The README's user section describes it in one or two plain sentences.
 - The pull request follows the layout in [12-engineering.md](12-engineering.md#pull-requests) (hardware it needs, on-device checklist, status block).
 

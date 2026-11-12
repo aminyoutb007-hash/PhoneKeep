@@ -13,9 +13,26 @@
 #   WIN_CERT_PFX (base64 of the .pfx), WIN_CERT_PASSWORD
 name: Build installers
 
+# Cost (agreed 12 Nov, in case the repository goes private): installers are NOT built on every pull
+# request. Run this by hand from the Actions tab (pick the targets) or push a release tag (builds all three).
 on:
   workflow_dispatch:
-  pull_request:
+    inputs:
+      ref_note:
+        description: "Branch or PR to build (just a note for the summary; run the workflow on that branch)"
+        default: ""
+      apple_silicon:
+        description: "Build Mac (Apple Silicon)"
+        type: boolean
+        default: true
+      intel:
+        description: "Build Mac (Intel)"
+        type: boolean
+        default: false
+      windows:
+        description: "Build Windows"
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -39,22 +56,40 @@ jobs:
             echo "label=" >> "$GITHUB_OUTPUT"; exit 0
           fi
           next=$(tr -d '[:space:]' < packaging/next-release.txt)
-          title="${{ github.event.pull_request.title }}"
-          id=$(echo "$title" | awk '{print $1}' | tr -cd 'A-Za-z0-9')
-          [[ -z "$id" ]] && id=$(echo "${GITHUB_REF_NAME}" | tr -cs 'A-Za-z0-9' '-' | cut -c1-20)
+          # the feature ID from the branch name (e.g. b3-snapshots -> B3), else the branch name
+          id=$(echo "${GITHUB_REF_NAME}" | sed -E 's/^([a-zA-Z][0-9]+)-.*/\1/' | tr '[:lower:]' '[:upper:]')
+          [[ "$id" == "${GITHUB_REF_NAME^^}" ]] && id=$(echo "${GITHUB_REF_NAME}" | tr -cs 'A-Za-z0-9' '-' | cut -c1-20)
           echo "label=${next}-dev+${id}" >> "$GITHUB_OUTPUT"
+
+  targets:
+    name: Which installers
+    runs-on: ubuntu-latest
+    outputs:
+      mac: ${{ steps.pick.outputs.mac }}
+      windows: ${{ steps.pick.outputs.windows }}
+    steps:
+      - id: pick
+        shell: bash
+        run: |
+          # a release tag builds everything; a manual run builds what was ticked
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo 'mac=[{"runner":"macos-15","arch":"AppleSilicon"},{"runner":"macos-15-intel","arch":"Intel"}]' >> "$GITHUB_OUTPUT"
+            echo "windows=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          mac="[]"
+          [[ "${{ inputs.apple_silicon }}" == "true" ]] && mac='[{"runner":"macos-15","arch":"AppleSilicon"}]'
+          [[ "${{ inputs.intel }}" == "true" ]] && mac=$(echo "$mac" | sed 's/\]$/,{"runner":"macos-15-intel","arch":"Intel"}]/' | sed 's/^\[,/[/')
+          echo "mac=$mac" >> "$GITHUB_OUTPUT"
+          echo "windows=${{ inputs.windows }}" >> "$GITHUB_OUTPUT"
 
   mac:
     name: Mac (${{ matrix.arch }})
-    needs: label
+    needs: [label, targets]
+    if: needs.targets.outputs.mac != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - runner: macos-15          # Apple Silicon (M1/M2/M3/M4...)
-            arch: AppleSilicon
-          - runner: macos-15-intel    # Intel Macs
-            arch: Intel
+        include: ${{ fromJson(needs.targets.outputs.mac) }}
     runs-on: ${{ matrix.runner }}
     env:
       BUILD_LABEL: ${{ needs.label.outputs.label }}
@@ -146,7 +181,8 @@ jobs:
 
   windows:
     name: Windows
-    needs: label
+    needs: [label, targets]
+    if: needs.targets.outputs.windows == 'true'
     runs-on: windows-latest
     env:
       BUILD_LABEL: ${{ needs.label.outputs.label }}

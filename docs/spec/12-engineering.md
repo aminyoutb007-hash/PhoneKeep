@@ -33,7 +33,7 @@ Talks to the iPhone through **pymobiledevice3** (open source); decrypts backups 
 
 ## Tests
 
-- Test scripts live in `tests/` and run on every push and pull request in GitHub Actions (Mac and Windows), through `tests/run_all.py`. A failing test blocks the pull request.
+- Test scripts live in `tests/` and run on every push and pull request in GitHub Actions through `tests/run_all.py`, on Linux (with a virtual display) to keep the Actions bill small; Mac and Windows runs are started by hand from the Actions tab when a change is platform-specific, and always on a release tag. A failing test blocks the pull request.
 - In the repository today: full fake backup of every kind of data; WhatsApp + WhatsApp Business backup; rich photo backup (months, Live Photos, videos, thumbnails); security tests (script injection, path escapes, spreadsheet formulas); phone-window actions with a simulated iPhone (`test_phone_window.py`).
 - Every feature adds tests for its **Done when** points that can be automated.
 - Keep a library of **anonymised real backups** from several iOS versions for regression tests; never commit real personal data. They are made with the redaction tool (X2, below) and live in a separate private repository, never in this public one.
@@ -67,7 +67,7 @@ Every feature pull request is named with its ID (`B3 Snapshots over time`) and c
 ## Build and release
 
 - Version number lives in `phonekeep.py` (`VERSION`), `packaging/PhoneKeep.spec` and `packaging/PhoneKeep.iss`; change all three together, and only in a release pull request ("Release 5.0") that also tags `vX.Y.Z`. Between releases the version stays as it is.
-- **Test builds:** every pull request builds installers labelled `<next release>-dev+<feature ID>` (next release from `packaging/next-release.txt`, ID from the first word of the pull request title). The label is written into `build_label.py` at build time, and shown in the About box (click the version in the window header) and by `phonekeep-cli --version`, so the build being tested is never in doubt. The installers are downloadable from the run; the run summary lists each installer's size, SHA-256 and whether it was signed.
+- **Test builds:** installers are built on demand (Actions tab → Build installers → tick the targets; Apple Silicon by default) and on every release tag (all three), not on every pull request, to keep the Actions bill small. A test build is labelled `<next release>-dev+<feature ID>` (next release from `packaging/next-release.txt`, ID from the branch name, e.g. `b3-snapshots` → B3). The label is written into `build_label.py` at build time, and shown in the About box (click the version in the window header) and by `phonekeep-cli --version`, so the build being tested is never in doubt. The installers are downloadable from the run; the run summary lists each installer's size, SHA-256 and whether it was signed.
 - Every installer build runs a **launch check**: the packaged app opens its real window, prints `PKLAUNCH ok <version>` and quits. A build whose app doesn't start fails.
 - **Build installers** workflow: also runs from the Actions tab or by pushing a tag `vX.Y.Z` (which publishes a GitHub Release with installers and SHA-256 checksums in the notes).
 - Releases follow the definition of done in [README.md](README.md) and the checklist in [docs/release.md](../release.md), including the usability test in [00-user-experience.md](00-user-experience.md).
