@@ -613,16 +613,38 @@ def write_chats_pdf(chats: list[dict], out: Path, app_title: str, log: Callable[
     return folder
 
 
-def print_pdf(path: Path) -> None:
-    """Send a PDF to the system print dialog (the printed page is the saved page)."""
+def print_pdf(path: Path) -> str:
+    """Show the system print dialog for a PDF; nothing is printed unless the owner clicks Print there.
+    Returns what happened, in words for the banner.
+
+    Mac: the standard print panel from PDFKit, run by PhoneKeep itself. (Asking Preview by script to
+    'print with print dialog' printed straight away instead, and a printer that was off made macOS
+    relaunch the print queue again and again — owner's Mac, 12 Nov. Never script another app to print.)
+    If PDFKit isn't available, the PDF opens in Preview and the owner presses ⌘P.
+    Windows: the PDF opens in the default PDF app, whose Print (Ctrl+P) shows the dialog."""
     import os
     import subprocess
+    path = Path(path)
     if sys.platform == "darwin":
-        script = f'tell application "Preview"\nactivate\nprint (POSIX file "{path}") with print dialog\nend tell'
-        r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
-        if r.returncode != 0:  # Preview's scripting refused: open it so ⌘P is one key away
-            subprocess.run(["open", "-a", "Preview", str(path)])
-    elif os.name == "nt":
-        os.startfile(str(path), "print")  # type: ignore[attr-defined]
-    else:
-        subprocess.Popen(["xdg-open", str(path)])
+        try:
+            import Quartz  # noqa: F401  (pyobjc-framework-Quartz: PDFKit)
+            from AppKit import NSPrintInfo
+            from Foundation import NSURL
+            from Quartz import PDFDocument
+            doc = PDFDocument.alloc().initWithURL_(NSURL.fileURLWithPath_(str(path)))
+            if doc is None:
+                raise RuntimeError("PDFKit couldn't read the PDF")
+            info = NSPrintInfo.sharedPrintInfo()
+            op = doc.printOperationForPrintInfo_scalingMode_autoRotate_(info, 1, True)  # 1 = scale down to fit
+            op.setShowsPrintPanel_(True)
+            op.setShowsProgressPanel_(True)
+            op.runOperation()               # the owner chooses Print or Cancel in the panel
+            return "Print dialog shown."
+        except Exception:
+            subprocess.Popen(["open", "-a", "Preview", str(path)])
+            return "The PDF is open in Preview — press ⌘P to print it."
+    if os.name == "nt":
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return "The PDF is open — press Ctrl+P to print it."
+    subprocess.Popen(["xdg-open", str(path)])
+    return "The PDF is open — use its Print command."

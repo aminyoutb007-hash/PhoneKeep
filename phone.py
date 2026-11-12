@@ -946,9 +946,9 @@ class PhoneWindow(tk.Toplevel):
                 if not pdfs:
                     self.banner("Couldn't make the PDF to print.", color="#fdecea")
                     return
-                self.banner(f"Opening the print dialog for {pdfs[0].name}…")
                 try:
-                    chat_pdf.print_pdf(pdfs[0])
+                    said = chat_pdf.print_pdf(pdfs[0])
+                    self.banner(said, ("Show the PDF", lambda: reveal(pdfs[0])))
                 except Exception as e:
                     self.banner(f"Couldn't print: {describe_error(e)}", color="#fdecea")
             self.export_section(key, {"pdf"}, chooser=lambda lists, pv: sel, dates=dates, pdf_combined=True,

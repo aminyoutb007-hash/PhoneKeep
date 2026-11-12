@@ -148,5 +148,20 @@ if txt is not None:
     names = [p.stem for p in per_chat]
     check(all(n.split(",")[0] in txt for n in names), f"the combined PDF has each chat's name at the top ({names})")
 
+# Print only ever shows a dialog: never a script that tells another app to print, never "print" verbs that
+# print straight away (12 Nov: scripting Preview printed at once and macOS kept relaunching the queue)
+src = (HERE.parent / "chat_pdf.py").read_text(encoding="utf-8") + (HERE.parent / "phone.py").read_text(encoding="utf-8")
+check("osascript" not in src and 'startfile(str(path), "print")' not in src and "lpr" not in src.split(),
+      "Print never scripts another app or prints without a dialog")
+opened = []
+real_popen = subprocess.Popen
+subprocess.Popen = lambda args, **k: opened.append(args)
+try:
+    said = cp.print_pdf(out) if sys.platform.startswith("linux") else "skipped"
+finally:
+    subprocess.Popen = real_popen
+if sys.platform.startswith("linux"):
+    check(opened and opened[0][0] == "xdg-open" and "Print" in said, f"on Linux it opens the PDF and says how to print: {said!r}")
+
 print("\nM3 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)
