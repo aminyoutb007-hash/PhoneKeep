@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -904,10 +905,13 @@ class PhoneWindow(tk.Toplevel):
             folder = self.out_dir(key)              # ask where, like every other Save (usability test, 12 Nov)
             if folder is None:
                 return
-            tmp = Path(tempfile.mkdtemp(prefix="phonekeep-pdf-"))
+            # built in PhoneKeep's own Saved files folder, where photos copied out of the backup earlier are
+            # reused (copying them again each time made Save/Print slow); then only the PDF goes to the folder
+            started = time.time() - 1
+            build = self.out_root / LABEL[key] / "PDF"
 
             def then(_index):
-                made = sorted((tmp / LABEL[key] / "PDF").glob("*.pdf"))
+                made = sorted(p for p in build.glob("*.pdf") if p.stat().st_mtime >= started)
                 if not made:
                     self.banner("Couldn't make the PDF.", color="#fdecea")
                     return
@@ -916,16 +920,15 @@ class PhoneWindow(tk.Toplevel):
                     dest, k = folder / f.name, 2
                     while dest.exists():
                         dest, k = folder / f"{f.stem} ({k}){f.suffix}", k + 1
-                    shutil.move(str(f), str(dest))
-                    saved.append(dest)
-                shutil.rmtree(tmp, ignore_errors=True)
+                    shutil.copy2(str(f), str(dest)) if folder.resolve() != build.resolve() else None
+                    saved.append(dest if folder.resolve() != build.resolve() else f)
                 what = saved[0].name if len(saved) == 1 else f"{len(saved):,} PDFs"
                 self.banner(f"✓ Saved {what} to {folder}",
                             ("Open" if len(saved) == 1 else ("Show in Finder" if sys.platform == "darwin" else "Show folder"),
                              (lambda: open_file(saved[0])) if len(saved) == 1 else (lambda: reveal(folder))))
                 reveal(saved[0] if len(saved) == 1 else folder)      # show it straight away: the result is visible
             self.export_section(key, {"pdf"}, chooser=lambda lists, pv: sel, dates=dates, pdf_combined=combined,
-                                then=then, out=tmp)
+                                then=then)
 
         def print_chats():
             """Print makes the same PDF (all ticked chats in one file) and opens the system print dialog."""
@@ -933,11 +936,13 @@ class PhoneWindow(tk.Toplevel):
             if sel is None:
                 return
             dates = sel.pop("_dates", None)
-            tmp = Path(tempfile.mkdtemp(prefix="phonekeep-print-"))
+            started = time.time() - 1
+            build = self.out_root / LABEL[key] / "PDF"
 
             def then(_index):
                 import chat_pdf
-                pdfs = sorted((tmp / LABEL[key] / "PDF").glob("*.pdf"))
+                pdfs = sorted((p for p in build.glob("*.pdf") if p.stat().st_mtime >= started),
+                              key=lambda p: p.stat().st_mtime, reverse=True)
                 if not pdfs:
                     self.banner("Couldn't make the PDF to print.", color="#fdecea")
                     return
@@ -947,7 +952,7 @@ class PhoneWindow(tk.Toplevel):
                 except Exception as e:
                     self.banner(f"Couldn't print: {describe_error(e)}", color="#fdecea")
             self.export_section(key, {"pdf"}, chooser=lambda lists, pv: sel, dates=dates, pdf_combined=True,
-                                then=then, out=tmp)
+                                then=then)
         RoundButton(panel.foot, "Save as web page", lambda: export({"web"}), "secondary", 170, 38, 12).pack(side="right")
         RoundButton(panel.foot, "CSV", lambda: export({"csv"}), "secondary", 80, 38, 12).pack(side="right", padx=6)
         RoundButton(panel.foot, "Excel", lambda: export({"excel"}), "secondary", 90, 38, 12).pack(side="right")
