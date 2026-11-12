@@ -71,7 +71,18 @@ def _print(msg: str) -> None:
 
 
 class PhoneKeepError(Exception):
-    """An error with a message that is safe to show to the user."""
+    """An error with a message that is safe to show to the user.
+    `details` keeps the technical text for "Show details"; `button`/`action` come from errors.py."""
+
+    def __init__(self, message: str, details: str = "", button: str = "", action: str = "", key: str = ""):
+        super().__init__(message)
+        self.details, self.button, self.action, self.key = details, button, action, key
+
+    @classmethod
+    def from_problem(cls, output: str, where=None, needed_bytes=None) -> "PhoneKeepError":
+        import errors
+        pr = errors.explain(output, where, needed_bytes)
+        return cls(pr.message, pr.details, pr.button, pr.action, pr.key)
 
 
 class PasswordRequired(PhoneKeepError):
@@ -96,18 +107,16 @@ _NOWIN = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if os.nam
 
 
 def _explain(output: str) -> str:
-    """Turn helper output into a short, useful message."""
+    """Turn helper output into the one-sentence message from the errors table (E3)."""
+    import errors
+    return errors.explain(output).message
+
+
+def _tail_error(output: str) -> str:
+    """The most telling line of helper output, for "Show details"."""
     lines = [l for l in output.strip().splitlines() if l.strip()]
     err = next((l for l in reversed(lines) if " ERROR " in l or "Error" in l), lines[-1] if lines else "")
-    err = re.sub(r"^\S+ \S+ \S+ \S+\[\d+\] ERROR ", "", err)
-    low = output.lower()
-    if "usbmuxd" in low:
-        return ("Can't reach Apple's USB service. "
-                + ("Install iTunes or the Apple Devices app (Microsoft Store), then try again."
-                   if os.name == "nt" else "Reconnect the cable, unlock the iPhone and try again."))
-    if "pairing" in low or "trust" in low or "passwordprotected" in low:
-        return "The iPhone isn't paired: unlock it, tap 'Trust This Computer', enter the passcode, then try again."
-    return err or "Unknown error from the iPhone helper."
+    return re.sub(r"^\S+ \S+ \S+ \S+\[\d+\] ERROR ", "", err)
 
 
 def _pmd3(args: list[str]) -> subprocess.CompletedProcess:
@@ -130,7 +139,7 @@ def list_devices() -> list[dict]:
     check_pmd3()
     r = _pmd3(["usbmux", "list"])
     if r.returncode != 0:
-        raise PhoneKeepError(_explain(r.stdout + r.stderr))
+        raise PhoneKeepError.from_problem(r.stdout + r.stderr)
     out = r.stdout.strip()
     start = out.find("[")
     try:
@@ -289,7 +298,7 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
         stop.set()
 
     if code != 0 or not (target / "Manifest.db").exists():
-        raise PhoneKeepError("Backup failed: " + _explain("\n".join(tail)))
+        raise PhoneKeepError.from_problem("\n".join(tail), where=backup_root)
     if progress:
         progress(100.0)
     took = int(time.time() - t_start)
@@ -308,7 +317,7 @@ def set_backup_encryption(on: bool, password: str, udid: Optional[str] = None, l
                        encoding="utf-8", errors="replace", **_NOWIN)
     out = (r.stdout + r.stderr).strip()
     if r.returncode != 0:
-        raise PhoneKeepError("Could not change backup encryption: " + _explain(out))
+        raise PhoneKeepError.from_problem(out)
     log(f"Backup encryption turned {'on' if on else 'off'}. "
         + ("Keep this password safe; Apple cannot recover it." if on else ""))
 
@@ -340,7 +349,7 @@ def change_backup_password(old: str, new: str, udid: Optional[str] = None, log: 
                        encoding="utf-8", errors="replace", **_NOWIN)
     out = (r.stdout + r.stderr).strip()
     if r.returncode != 0 or "PKDONE" not in out:
-        raise PhoneKeepError("Could not change the backup password: " + _explain(out))
+        raise PhoneKeepError.from_problem(out)
     log("Backup password changed.")
 
 
@@ -461,7 +470,7 @@ def sync_photos(dest: Path | str, udid: Optional[str] = None, log: Log = _print,
             args += ["--udid", udid]
         r = _pmd3(args)
         if r.returncode != 0:
-            raise PhoneKeepError("Photo copy failed: " + _explain(r.stdout + r.stderr))
+            raise PhoneKeepError.from_problem(r.stdout + r.stderr)
         log("Photos copied.")
     if progress:
         progress(100.0)
@@ -482,6 +491,17 @@ def backup_search_roots() -> list[Path]:
             roots.append(Path(os.environ["APPDATA"]) / "Apple Computer/MobileSync/Backup")
         roots.append(home / "Apple/MobileSync/Backup")  # Microsoft Store iTunes / Apple Devices
     return roots
+
+
+def backup_incomplete(path: Path) -> bool:
+    """A backup folder the phone started but never finished: blob folders or a Snapshot folder, no Manifest.db."""
+    p = Path(path)
+    if (p / "Manifest.db").exists():
+        return False
+    try:
+        return (p / "Snapshot").is_dir() or any(c.is_dir() and len(c.name) == 2 for c in p.iterdir())
+    except OSError:
+        return False
 
 
 def backup_info(path: Path) -> dict:
@@ -567,7 +587,7 @@ class BackupReader:
                 self._enc = EncryptedBackup(backup_directory=str(self.path), passphrase=password)
                 self._enc.save_manifest_file(str(manifest))
             except Exception as e:
-                raise PhoneKeepError(f"Could not unlock the backup. Is the password right? ({e})")
+                raise PhoneKeepError.from_problem(f"Could not unlock the backup: {type(e).__name__}: {e}")
             self.manifest = manifest
         else:
             self.manifest = self.path / "Manifest.db"

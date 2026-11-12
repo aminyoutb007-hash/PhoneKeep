@@ -14,12 +14,13 @@ import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+import errors
 import keychain
 import phone_write
 import phonekeep as wv
 import sections as sx
 import ui
-from ui import BG, CARD, GREEN, GREEN_SOFT, INK, LINE, MUTED, RED, font
+from ui import AMBER, BG, CARD, GREEN, GREEN_SOFT, INK, LINE, MUTED, RED, font
 
 SETTINGS_FILE = wv.DEFAULT_HOME / "settings.json"
 
@@ -232,6 +233,16 @@ class App(tk.Tk):
         ver.pack(side="right", padx=(0, 4))
         ver.bind("<Button-1>", lambda e: self.open_about())
 
+        # problem banner (E3): one sentence, one button, Show details. Packed only when needed.
+        self.bar_frame = tk.Frame(self, bg="#fdecea")
+        self.bar_text = tk.Label(self.bar_frame, text="", bg="#fdecea", fg=INK, font=font(13), anchor="w",
+                                 justify="left", wraplength=560)
+        self.bar_text.pack(side="left", padx=16, pady=10, fill="x", expand=True)
+        self.bar_btn = None
+        self.bar_details = tk.Label(self.bar_frame, text="Show details", bg="#fdecea", fg=MUTED, font=font(11), cursor="hand2")
+        self.bar_details_text = ""
+        self.bar_details.bind("<Button-1>", lambda e: messagebox.showinfo("Details for support", self.bar_details_text, parent=self))
+
         self.body = tk.Frame(self, bg=BG)
         self.body.pack(fill="both", expand=True, padx=22, pady=16)
 
@@ -431,26 +442,70 @@ class App(tk.Tk):
             result, err = None, None
             try:
                 result = fn()
-            except wv.PhoneKeepError as e:
-                err = str(e)
             except Exception as e:
-                err = f"{type(e).__name__}: {e}"
-            self.call(lambda: self._finish(result, err, done, quiet))
+                err = e
+            self.call(lambda: self._finish(result, err, done, quiet, fn))
         threading.Thread(target=worker, daemon=True).start()
 
-    def _finish(self, result, err, done, quiet):
+    def _finish(self, result, err, done, quiet, fn=None):
         self.busy = False
         self.go.set_enabled(True)
         self.go.configure_text("Back up again" if not err and self.last_index else "Back up now")
-        if err:
+        if err is not None:
+            pr = self.problem_of(err)
             for r in self.steps.values():
                 if r.state == "active":
-                    r.set("error", detail=err)
-            self.log("ERROR: " + err)
+                    r.set("error", detail=pr.message)
+            self.log("ERROR: " + pr.message + (f"  [{pr.details}]" if pr.details else ""))
             if not quiet:
-                messagebox.showerror(wv.APP_NAME, err)
+                self.show_problem(pr, retry=(lambda: self._run(fn, done)) if fn else None)
+        else:
+            self.hide_problem()
         if done:
-            done(None if err else result)
+            done(None if err is not None else result)
+
+    # ------------------------------------------------------------------ problems (E3)
+    @staticmethod
+    def problem_of(err) -> errors.Problem:
+        """Every error shown in this window comes through the one table in errors.py."""
+        if isinstance(err, wv.PhoneKeepError) and err.button:
+            return errors.Problem(err.key, str(err), err.button, err.action, err.details)
+        if isinstance(err, wv.PhoneKeepError):
+            return errors.Problem("plain", str(err), "Try again", errors.TRY_AGAIN, err.details, failure=True)
+        return errors.explain(err)
+
+    def show_problem(self, pr: errors.Problem, retry=None):
+        """Inline banner at the top: one sentence + one button; red only for real failures."""
+        colour = "#fdecea" if pr.failure else "#fff4e0"
+        self.bar_frame.configure(bg=colour)
+        self.bar_text.configure(text=pr.message, bg=colour)
+        self.bar_details.configure(bg=colour)
+        if self.bar_btn is not None:
+            self.bar_btn.destroy()
+            self.bar_btn = None
+        cmd = None
+        if pr.action == errors.TRY_AGAIN and retry:
+            cmd = lambda: (self.hide_problem(), retry())
+        elif pr.action == errors.CHANGE_LOCATION:
+            cmd = lambda: self.open_settings("backup_dir")
+        elif pr.action == errors.INSTALL_APPLE_DEVICES:
+            cmd = lambda: webbrowser.open("https://apps.microsoft.com/detail/9NP83LWLPZ9K")
+        elif pr.action == errors.SHOW_DETAILS:
+            cmd = lambda: messagebox.showinfo("Details for support", pr.details or pr.message, parent=self)
+        elif pr.action == errors.ENTER_PASSWORD and retry:
+            cmd = lambda: (self.hide_problem(), retry())
+        if cmd:
+            self.bar_btn = ui.RoundButton(self.bar_frame, pr.button, cmd, "secondary", 170, 32, 12, bg=colour)
+            self.bar_btn.pack(side="right", padx=12, pady=6)
+        self.bar_details_text = pr.details
+        self.bar_details.pack_forget()
+        if pr.details and pr.action != errors.SHOW_DETAILS:
+            self.bar_details.pack(side="right", padx=(0, 6))
+        if not self.bar_frame.winfo_ismapped():
+            self.bar_frame.pack(fill="x", before=self.body)
+
+    def hide_problem(self):
+        self.bar_frame.pack_forget()
 
     # ------------------------------------------------------------------ device
     def _auto_detect(self):
@@ -479,7 +534,10 @@ class App(tk.Tk):
                                         fg=MUTED)
                 info = wv.backup_info(Path(self.s["backup_dir"]) / self.udid) \
                     if (Path(self.s["backup_dir"]) / self.udid / "Manifest.db").exists() else None
-                self.dev_last.configure(text=f"Last backup: {info['date']}" if info else "Not backed up with PhoneKeep yet")
+                half = (not info) and wv.backup_incomplete(Path(self.s["backup_dir"]) / self.udid)
+                self.dev_last.configure(text=f"Last backup: {info['date']}" if info else
+                                        "The last backup didn't finish. Back up again to complete it." if half else
+                                        "Not backed up with PhoneKeep yet", fg=AMBER if half else MUTED)
                 self.dev_lock.configure(text=self.lock_badge(info))
                 self.open_btn.set_enabled(True)
             else:

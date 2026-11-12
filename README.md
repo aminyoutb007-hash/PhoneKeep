@@ -77,6 +77,8 @@ Default locations (in your home folder):
 
 If **iCloud Photos** is on, iOS leaves the photo library out of backups. Keep **"Copy photos directly from the phone"** ticked: PhoneKeep then copies the camera roll straight off the iPhone, and only new photos on later runs. If the phone is set to **Optimize iPhone Storage**, some originals only exist in iCloud. To get those, switch the phone to **Download and Keep Originals** first (Settings → Photos), or download them from icloud.com.
 
+When something goes wrong, PhoneKeep says so in one plain sentence at the top of the window, with one button that fixes it ("Unlock your iPhone to continue" → **Try again**); **Show details** reveals the technical text for support.
+
 ## Command line (optional)
 
 ```
