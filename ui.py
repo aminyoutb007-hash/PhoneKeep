@@ -282,6 +282,7 @@ class ChatPanel(tk.Frame):
 
     def __init__(self, parent, lists: dict, preview=None, select_all: bool = True, preview_limit: int = 80):
         super().__init__(parent, bg=BG)
+        _attach_app_menu(self)
         self.preview = preview
         self.preview_limit = preview_limit
         self.rows = [(k, label, c) for k, (label, chats) in lists.items() for c in chats]
@@ -578,11 +579,21 @@ class ChatPanel(tk.Frame):
         return out
 
 
+def _attach_app_menu(win: tk.Toplevel) -> None:
+    """Give a dialog the app's menu bar (macOS shows Tk's default File menu otherwise)."""
+    w = win.master
+    while w is not None and not hasattr(w, "attach_menu"):
+        w = getattr(w, "master", None)
+    if w is not None:
+        w.attach_menu(win)
+
+
 class ChatPicker(tk.Toplevel):
     """Pick chats from WhatsApp, WhatsApp Business and Messages before an export."""
 
     def __init__(self, parent, lists: dict, preview=None):
         super().__init__(parent, bg=BG)
+        _attach_app_menu(self)
         self.title("Choose chats to export")
         self.geometry("1040x660")
         self.minsize(820, 480)
@@ -635,6 +646,7 @@ class PhotoPanel(tk.Frame):
 
     def __init__(self, parent, source, items: list, select_all: bool = True, on_open=None):
         super().__init__(parent, bg=BG)
+        _attach_app_menu(self)
         from photos import human_size
         self.human_size = human_size
         self.on_open = on_open
@@ -847,6 +859,7 @@ class PhotoPicker(tk.Toplevel):
 
     def __init__(self, parent, source, items: list):
         super().__init__(parent, bg=BG)
+        _attach_app_menu(self)
         self.title("Choose photos & videos")
         self.geometry("1040x700")
         self.minsize(820, 520)
@@ -912,6 +925,7 @@ class PasswordDialog(tk.Toplevel):
     def __init__(self, parent, mode: str = "choose", phone_name: str = "your iPhone",
                  keychain_available: bool = True, help_text: str = ""):
         super().__init__(parent, bg=CARD)
+        _attach_app_menu(self)
         import keychain as kc
         self.kc, self.mode, self.result = kc, mode, None
         title, verb, sub = self.TEXT[mode]
@@ -998,6 +1012,7 @@ class TextDialog(tk.Toplevel):
 
     def __init__(self, parent, title: str, prompt: str, initial: str = "", ok: str = "Save"):
         super().__init__(parent, bg=CARD)
+        _attach_app_menu(self)
         self.result = None
         self.title(title)
         self.resizable(False, False)

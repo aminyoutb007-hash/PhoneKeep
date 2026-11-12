@@ -254,6 +254,8 @@ class PhoneWindow(tk.Toplevel):
         """A phone window: for a connected phone (device + udid), or for any backup folder (B5: `backup`),
         PhoneKeep's own or one made by Finder / iTunes, with no phone connected at all."""
         super().__init__(app, bg=BG)
+        if hasattr(app, "attach_menu"):
+            app.attach_menu(self)
         self.app = app
         self.device = device or {}
         self.opened_backup = Path(backup) if backup else None

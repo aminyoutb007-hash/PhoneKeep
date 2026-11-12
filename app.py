@@ -577,6 +577,16 @@ class App(_dnd_root()):
         self._timers["detect"] = self.after(3000 if self.guide is not None else 15000, self._auto_detect)
 
     # ------------------------------------------------------------------ the menu and Open backup (B5)
+    def attach_menu(self, win) -> None:
+        """Give a PhoneKeep window the app's menu bar. On macOS every window shows its own menu, and a
+        Toplevel without one shows Tk's default File menu ("Source…", "Run Widget Demo") — seen 12 Nov."""
+        bar = getattr(self, "menubar", None)
+        if bar is not None:
+            try:
+                win.configure(menu=bar)
+            except tk.TclError:
+                pass
+
     def quit_app(self):
         """Quit from the menu (Cmd+Q), the red button or the Dock: close every window and end the process.
         Background threads (phone readers, a helper being watched) must never keep a windowless PhoneKeep
@@ -603,6 +613,7 @@ class App(_dnd_root()):
         helpm = tk.Menu(bar, tearoff=0)
         helpm.add_command(label=f"About {wv.APP_NAME}", command=self.open_about)
         bar.add_cascade(label="Help", menu=helpm)
+        self.menubar = bar
         self.configure(menu=bar)
         self.bind_all("<Command-o>" if sys.platform == "darwin" else "<Control-o>", lambda e: self.open_backup_dialog())
         try:
@@ -1288,6 +1299,7 @@ class OpenBackupDialog(tk.Toplevel):
 class SettingsWindow(tk.Toplevel):
     def __init__(self, app: App, focus: str = None):
         super().__init__(app, bg=BG)
+        app.attach_menu(self)
         self.app, self.s = app, app.s
         self.title("PhoneKeep settings")
         self.geometry("680x760")
