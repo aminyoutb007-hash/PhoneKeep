@@ -365,7 +365,10 @@ class FirstRunGuide(tk.Frame):
                 self.app.s["first_run_done"] = True
                 self.show_step(4)
                 self.app.detect(silent=True)
-            else:
+            else:                                   # refused or failed: the banner says why; reset this step
+                self.bar.pack_forget()
+                self.eta.pack_forget()
+                self.status.configure(text="")
                 self.backup_btn.set_enabled(True)
         app._run(work, done)
 
