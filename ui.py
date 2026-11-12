@@ -579,6 +579,41 @@ class ChatPanel(tk.Frame):
         return out
 
 
+class Eta:
+    """Progress → 'NN% · about M min left'. The time left comes from the speed over the last few minutes
+    (settles quickly, follows changes such as many small files then big videos); until there is enough to
+    go on it says 'working out time left…'. Used by every transfer PhoneKeep shows (01-principles.md)."""
+
+    def __init__(self, window: float = 300.0, settle: float = 10.0):
+        import time as _t
+        self._t, self.window, self.settle = _t, window, settle
+        self.points: list = []
+
+    @staticmethod
+    def fmt(seconds: float) -> str:
+        if seconds < 90:
+            return "under 2 min left"
+        m = int(seconds // 60)
+        return f"about {m} min left" if m < 90 else f"about {m // 60} h {m % 60:02d} min left"
+
+    def feed(self, pct: float) -> str:
+        """Record a percentage and return the text to show."""
+        now = self._t.time()
+        pct = max(0.0, min(100.0, float(pct)))
+        self.points.append((now, pct))
+        while len(self.points) > 2 and now - self.points[0][0] > self.window:
+            self.points.pop(0)
+        if pct >= 100:
+            return "100%"
+        first = self.points[0]
+        eta = ""
+        if pct > first[1] + 0.5 and now - first[0] >= self.settle:
+            rate = (pct - first[1]) / (now - first[0])
+            if rate > 0:
+                eta = self.fmt((100 - pct) / rate)
+        return f"{pct:.0f}%" + (f" · {eta}" if eta else " · working out time left…")
+
+
 def _attach_app_menu(win: tk.Toplevel) -> None:
     """Give a dialog the app's menu bar (macOS shows Tk's default File menu otherwise)."""
     w = win.master

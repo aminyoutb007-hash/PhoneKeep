@@ -21,6 +21,7 @@ Every feature must follow these rules. When a feature and a rule disagree, the r
 3. **Plain words.** Say "your iPhone", "backup", "save"; never "UDID", "domain", "manifest", "AFC", "lockdown". Technical detail goes behind "Show details".
 4. **Every error says what to do.** One sentence on what happened, one action to fix it ("Unlock your iPhone and tap Trust").
 5. **Long jobs show progress.** Percentage, time left, and what is happening now. They can run in the background and notify when done.
+6a. **Every transfer shows progress and a realistic time left.** A backup, an export, a save, a move, the redaction tool: each shows the percentage and "about N min left" worked out from the speed over the last few minutes (never from the first second), or "working out time left…" until there is enough to go on. (Owner's rule, 12 Nov 2026.)
 6. **Nothing blocks the window.** Loading happens in the background; the window stays responsive; a cancel button is always available for long jobs.
 7. **Remember choices.** Last folder, chosen formats, selected options persist between runs.
 

@@ -789,13 +789,20 @@ class PhoneWindow(tk.Toplevel):
         out = self.out_root
         data = self.data
 
+        eta = ui.Eta()
+
+        def progress(p):
+            text = eta.feed(p)
+            self.after(0, lambda: self.banner(f"Exporting {LABEL[key]}… {text}"))
+
         def go():
             return sx.export_all(data.path, out, data.password, [key], include_media=True,
-                                 log=lambda m: None, chooser=chooser, formats=formats, dates=dates)
+                                 log=lambda m: None, chooser=chooser, formats=formats, dates=dates,
+                                 progress=progress)
 
         def ok(index):
             self.banner(f"✓ Exported {LABEL[key]} to {out}", ("Open", lambda: open_file(Path(index))))
-        self.banner(f"Exporting {LABEL[key]}…")
+        self.banner(f"Exporting {LABEL[key]}… working out time left…")
         self.backup_runner.submit(go, ok, lambda e: self.banner(f"Couldn't export: {describe_error(e)}",
                                                                  color="#fdecea"))
 

@@ -26,6 +26,7 @@ import re
 import shutil
 import sqlite3
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Optional
@@ -245,7 +246,7 @@ KNOWN_DBS = list(KNOWN_DBS)
 STRUCTURE = re.compile(r"(^Media/.*\.(AAE|aae)$)")
 
 
-def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=print) -> Counter:
+def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=print, progress=None) -> Counter:
     src, out = Path(src), Path(out)
     if out.exists() and any(out.iterdir()):
         raise SystemExit(f"{out} is not empty.")
@@ -287,9 +288,18 @@ def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=prin
     rows = con.execute("SELECT fileID, domain, relativePath, flags, file FROM Files").fetchall()
     tmp = out / "_tmp"
     tmp.mkdir(exist_ok=True)
+    total = sum(1 for r in rows if r[3] == 1) or 1
+    started = time.time()
+    done = 0
     for fid, domain, rel, flags, blob in rows:
         if flags != 1 or not re.fullmatch(r"[0-9a-f]{40}", fid or ""):
             continue
+        done += 1
+        if progress and (done % 200 == 0 or done == total):
+            elapsed = time.time() - started
+            left = (total - done) * elapsed / done
+            progress(f"{done:,} of {total:,} files · {100 * done // total}% · "
+                     + ("under 2 min left" if left < 90 else f"about {int(left // 60)} min left"))
         dest = out / fid[:2] / fid
         dest.parent.mkdir(exist_ok=True)
         src_tmp = tmp / fid
@@ -345,7 +355,9 @@ def main(argv=None) -> int:
     pw = None
     if wv.backup_info(Path(a.backup))["encrypted"]:
         pw = sys.stdin.readline().rstrip("\r\n") if a.password_stdin else getpass.getpass("Backup password: ")
-    report = redact_backup(Path(a.backup), Path(a.out), pw)
+    report = redact_backup(Path(a.backup), Path(a.out), pw,
+                           progress=lambda line: print("\r" + line + " " * 12, end="", flush=True))
+    print()
     print("\nRedaction report")
     for k in sorted(report):
         print(f"  {report[k]:>7,}  {k}")

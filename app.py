@@ -835,7 +835,10 @@ class App(_dnd_root()):
         self._run(work, done)
 
     def _progress_backup_simple(self, pct):
-        self.call(lambda: (self.bar.set(pct), self.steps["backup"].set("active", right=f"{pct:.0f}%")))
+        if not hasattr(self, "_simple_eta") or pct < 1:
+            self._simple_eta = ui.Eta()
+        right = self._simple_eta.feed(pct)
+        self.call(lambda: (self.bar.set(pct), self.steps["backup"].set("active", right=right)))
 
     # ------------------------------------------------------------------ automatic backups (B2)
     def set_schedule(self, mode: str, hour_text: str, day_text: str):
@@ -987,12 +990,16 @@ class App(_dnd_root()):
         self.call(lambda: (self.bar.set(pct), self.steps["backup"].set("active", right=right)))
 
     def _progress_build(self, pct: float):
+        if not hasattr(self, "_build_eta") or pct < 1:
+            self._build_eta = ui.Eta()
+        right = self._build_eta.feed(pct)
+
         def ui_update():
             if self.steps["choose"].state == "active":
                 self.steps["choose"].set("done", detail="")
                 self.steps["build"].set("active")
             self.bar.set(pct)
-            self.steps["build"].set("active", right=f"{int(pct)}%")
+            self.steps["build"].set("active", right=right)
         self.call(ui_update)
 
     def _export(self, path: Path) -> Path:
