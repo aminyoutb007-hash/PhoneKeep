@@ -73,11 +73,11 @@ jobs:
         run: |
           # a release tag builds everything; a manual run builds what was ticked
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo 'mac=[{"runner":"macos-15","arch":"AppleSilicon"},{"runner":"macos-15-intel","arch":"Intel"}]' >> "$GITHUB_OUTPUT"
+            echo 'mac=[{"runner":"macos-latest","arch":"AppleSilicon"},{"runner":"macos-15-intel","arch":"Intel"}]' >> "$GITHUB_OUTPUT"
             echo "windows=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           mac="[]"
-          [[ "${{ inputs.apple_silicon }}" == "true" ]] && mac='[{"runner":"macos-15","arch":"AppleSilicon"}]'
+          [[ "${{ inputs.apple_silicon }}" == "true" ]] && mac='[{"runner":"macos-latest","arch":"AppleSilicon"}]'
           [[ "${{ inputs.intel }}" == "true" ]] && mac=$(echo "$mac" | sed 's/\]$/,{"runner":"macos-15-intel","arch":"Intel"}]/' | sed 's/^\[,/[/')
           echo "mac=$mac" >> "$GITHUB_OUTPUT"
           echo "windows=${{ inputs.windows }}" >> "$GITHUB_OUTPUT"
