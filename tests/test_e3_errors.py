@@ -46,6 +46,10 @@ CASES = [
      "Can't reach your iPhone over Wi-Fi. Make sure it's on the same network, or use a cable.", "Try again"),
     ("Disk full (helper text)", "OSError: [Errno 28] No space left on device: '/Volumes/Backup Drive/x'",
      "Not enough space on ", "Change location"),
+    ("Disk full (the iPhone's refusal, which begins with its passcode prompt)",
+     "Please enter the device passcode to continue the backup\npymobiledevice3.exceptions.NotEnoughDiskSpaceError: Device refused the backup: "
+     "it needs more than 59487910309 bytes free at /Users/af/PhoneKeep/Backups/x/current to back up; host reported 45522085096 (13967059214 more needed).",
+     "Not enough space on ", "Change location"),
     ("Wrong backup password", "Could not unlock the backup: ValueError: incorrect password (bad decrypt)",
      "That password doesn't open this backup.", "Try again"),
     ("Backup didn't finish", "incomplete backup: no Manifest.db in the backup folder",
@@ -59,6 +63,9 @@ for name, text, message, button in CASES:
     check(ok, f"{name}: {pr.message!r} / {pr.button}" + ("" if ok else f"  (expected {message!r} / {button})"))
     check(errors.is_plain(pr.message), f"{name}: no technical words in the message")
     check(pr.details == text, f"{name}: technical text kept for Show details")
+
+pr = errors.explain("NotEnoughDiskSpaceError: Device refused the backup: it needs more than 59487910309 bytes free at /x; host reported 45522085096")
+check("59.5 GB needed" in pr.message, f"the iPhone's own figure is shown: {pr.message!r}")
 
 # disk full from a real Python exception, with the amount needed
 e = OSError(28, "No space left on device")
