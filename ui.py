@@ -301,6 +301,7 @@ class ChatPanel(tk.Frame):
         self.q.trace_add("write", lambda *_: self._fill())
         ent = ttk.Entry(bar, textvariable=self.q, width=28)
         ent.pack(side="left", padx=(4, 10))
+        self.search_hint = tk.Label(bar, text="", bg=BG, fg=MUTED, font=font(11))
         self.app_var = tk.StringVar(value="All apps")
         if len(self.apps) > 1:
             cb = ttk.Combobox(bar, textvariable=self.app_var, values=["All apps"] + self.apps,
@@ -309,6 +310,7 @@ class ChatPanel(tk.Frame):
             cb.bind("<<ComboboxSelected>>", lambda e: self._fill())
         RoundButton(bar, "Select none", lambda: self._set_all(False), "secondary", 120, 32, 12).pack(side="right")
         RoundButton(bar, "Select all", lambda: self._set_all(True), "secondary", 110, 32, 12).pack(side="right", padx=6)
+        self.search_hint.pack(side="left", padx=(10, 0))
 
         dbar = tk.Frame(self, bg=BG)
         dbar.pack(fill="x", padx=16, pady=(0, 8))
@@ -381,6 +383,8 @@ class ChatPanel(tk.Frame):
         self.text.tag_configure("day", justify="center", foreground=MUTED, font=font(11, "bold"),
                                 spacing1=12, spacing3=4)
         self.text.tag_configure("sys", justify="center", foreground=AMBER, font=font(11), spacing1=6)
+        self.text.tag_configure("hit", background="#ffe58f", foreground=INK)
+        self.text.tag_raise("hit")
         body.add(right, minsize=300)
 
         self.foot = tk.Frame(self, bg=BG)
@@ -399,9 +403,19 @@ class ChatPanel(tk.Frame):
         q = self.q.get().strip().lower()
         app = self.app_var.get()
         self.tree.delete(*self.tree.get_children())
+        # the search finds chats by name AND by what was said in them (usability test, 12 Nov:
+        # "find a message containing 'merci'" found nothing)
+        self.hits = {}
+        if q and self.preview is not None and len(q) >= 2:
+            for key in {k for k, _l, _c in self.rows}:
+                for cid, n in self.preview.matching(key, q).items():
+                    self.hits[(key, cid)] = n
+        n_hit_chats = 0
         for i, (key, label, c) in enumerate(self.rows):
-            if q and q not in c["name"].lower():
+            if q and q not in c["name"].lower() and (key, c["id"]) not in self.hits:
                 continue
+            if (key, c["id"]) in self.hits:
+                n_hit_chats += 1
             if app != "All apps" and label != app:
                 continue
             n_in = self._n_in(c)
@@ -414,6 +428,13 @@ class ChatPanel(tk.Frame):
             vals += (f"{n_in:,}", c["last"])
             self.tree.insert("", "end", iid=str(i), values=vals, tags=("dim",) if n_in == 0 else ())
         self.tree.tag_configure("dim", foreground=MUTED)
+        if hasattr(self, "search_hint"):
+            total = sum(self.hits.values())
+            self.search_hint.configure(text=(f"“{self.q.get().strip()}” is in {total:,} message{'s' if total != 1 else ''} "
+                                             f"across {n_hit_chats:,} chat{'s' if n_hit_chats != 1 else ''}") if q and total
+                                       else (f"No message contains “{self.q.get().strip()}”" if q and len(q) >= 2 and not
+                                             any(q in c['name'].lower() for _k, _l, c in self.rows) else ""))
+        self.current = None
         self._update_count()
 
     def _toggle(self, iid):
@@ -497,7 +518,9 @@ class ChatPanel(tk.Frame):
             return
         self.current = (key, c["id"])
         self.worker.clear()
-        msgs, total = self.preview.messages(key, c["id"], self.preview_limit)
+        q = self.q.get().strip()
+        around = q if (key, c["id"]) in getattr(self, "hits", {}) else None
+        msgs, total = self.preview.messages(key, c["id"], self.preview_limit, around=around)
         self.pv_title.configure(text=c["name"])
         shown = f"latest {len(msgs)} of {total:,} messages" if total > len(msgs) else f"{total:,} messages"
         self.pv_sub.configure(text=f"{label} · {shown}" + (" · group" if c["group"] else ""))
@@ -536,8 +559,20 @@ class ChatPanel(tk.Frame):
             t.insert("end", (when.strftime("%H:%M") if when else "") + "\n", (tag, "meta"))
         if not msgs:
             t.insert("end", "No messages to show.\n", "day")
+        t.tag_remove("hit", "1.0", "end")
+        first = None
+        if around:
+            pos = "1.0"
+            while True:
+                pos = t.search(around, pos, stopindex="end", nocase=True)
+                if not pos:
+                    break
+                end = f"{pos}+{len(around)}c"
+                t.tag_add("hit", pos, end)
+                first = first or pos
+                pos = end
         t.configure(state="disabled")
-        t.see("end")
+        t.see(first or "end")
 
     def _put_image(self, path, mark, cur):
         if cur != self.current or not path:

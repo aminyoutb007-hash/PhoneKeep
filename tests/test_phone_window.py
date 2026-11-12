@@ -202,6 +202,46 @@ for key, label, *_r in phone.APPS:
           + (f" (error: {errs[0][:80]})" if errs and not empty_ok else ""))
     check(len(win.content.winfo_children()) > 0, f"{label} screen shows content")
 
+# usability task 3: "find a message containing a given word" — the chat search looks inside messages,
+# opens the chat at the match and highlights it (12 Nov: it only matched chat names)
+win.open_app("whatsapp")
+pump(root, lambda: not still_loading(win), 90, "WhatsApp screen")
+def _find(w, cls):
+    for x in w.winfo_children():
+        if isinstance(x, cls):
+            return x
+        r = _find(x, cls)
+        if r is not None:
+            return r
+panel = _find(win.content, phone.ui.ChatPanel)
+check(panel is not None, "WhatsApp opens the chat panel")
+if panel is not None:
+    sample = None
+    for c in win.data.preview._chats("whatsapp"):
+        for m in c["messages"]:
+            words = [w for w in (m.get("text") or "").split() if len(w) > 4 and w.isalpha()]
+            if words and words[0].lower() not in c["name"].lower():
+                sample, chat_name = words[0], c["name"]
+                break
+        if sample:
+            break
+    check(sample is not None, f"a word from inside a message to search for: {sample!r}")
+    panel.q.set(sample)
+    root.update()
+    shown = [panel.tree.item(i, "values")[1].replace("👥 ", "") for i in panel.tree.get_children()]
+    check(chat_name in shown, f"searching {sample!r} lists the chat that contains it ({chat_name!r} in {shown[:5]})")
+    check(panel.search_hint.cget("text").startswith(f"“{sample}” is in "), f"says how many messages match: {panel.search_hint.cget('text')!r}")
+    iid = next(i for i in panel.tree.get_children() if panel.tree.item(i, "values")[1].replace("👥 ", "") == chat_name)
+    panel._show(iid)
+    root.update()
+    ranges = panel.text.tag_ranges("hit")
+    check(len(ranges) >= 2 and panel.text.get(ranges[0], ranges[1]).lower() == sample.lower(), "the match is highlighted in the chat")
+    panel.q.set("zzqqxxnotthere")
+    root.update()
+    check(not panel.tree.get_children() and panel.search_hint.cget("text").startswith("No message contains"),
+          f"a word nowhere says so: {panel.search_hint.cget('text')!r}")
+    panel.q.set("")
+
 # photos came from the backup because the cable was 'unplugged'
 check(isinstance(win.photo_src, ph.BackupPhotoSource), "Photos fell back to the backup when the iPhone wasn't reachable")
 

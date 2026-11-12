@@ -1160,11 +1160,37 @@ class ChatPreview:
         loaded = self.ctx.cache.get(key)
         return loaded if key == "messages" else (loaded or {}).get("chats", [])
 
-    def messages(self, key: str, chat_id, limit: int = 80) -> tuple[list[dict], int]:
+    def messages(self, key: str, chat_id, limit: int = 80, around: Optional[str] = None) -> tuple[list[dict], int]:
+        """The latest `limit` messages of a chat; with `around`, the window that starts at the first
+        message containing that text (so a search result is on screen, not the last 80 messages)."""
         for c in self._chats(key):
             if c["id"] == chat_id:
-                return c["messages"][-limit:], len(c["messages"])
+                msgs = c["messages"]
+                if around:
+                    q = around.lower()
+                    for i, m in enumerate(msgs):
+                        if q in _msg_text(m):
+                            start = max(0, i - 3)
+                            return msgs[start:start + limit], len(msgs)
+                return msgs[-limit:], len(msgs)
         return [], 0
+
+    def matching(self, key: str, query: str) -> dict:
+        """{chat id: number of messages containing query} for one app (case-insensitive, text and captions)."""
+        q = (query or "").strip().lower()
+        if not q:
+            return {}
+        if not hasattr(self, "_index"):
+            self._index = {}
+        idx = self._index.get(key)
+        if idx is None:
+            idx = self._index[key] = {c["id"]: [_msg_text(m) for m in c["messages"]] for c in self._chats(key)}
+        out = {}
+        for cid, texts in idx.items():
+            n = sum(1 for t in texts if q in t)
+            if n:
+                out[cid] = n
+        return out
 
     def thumbnail(self, key: str, m: dict) -> Optional[Path]:
         """Small JPEG of a message's photo, or None."""
@@ -1186,6 +1212,10 @@ class ChatPreview:
             if not self.ctx.copy(domain, rel, src, keep_time=False):
                 return None
         return thumb if self.ctx.web_image(src, thumb, 260) else None
+
+
+def _msg_text(m: dict) -> str:
+    return ((m.get("text") or "") + "\n" + (m.get("caption") or "")).lower()
 
 
 def _chat_summary(c: dict) -> dict:
