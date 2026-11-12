@@ -365,6 +365,23 @@ def set_wifi_sync(on: bool, udid: Optional[str] = None, log: Log = _print) -> No
     log(f"Wi-Fi backups turned {'on' if on else 'off'} on the iPhone.")
 
 
+def battery_state(udid: Optional[str] = None) -> Optional[dict]:
+    """{"charging": bool, "level": int} from the phone, or None if it couldn't be asked."""
+    try:
+        check_pmd3()
+        cmd = _launcher_cmd() + ["--pk-battery"] + (["--udid", udid] if udid else [])
+        env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+        r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
+                           timeout=60, **_NOWIN)
+        for line in (r.stdout or "").splitlines():
+            if line.startswith("PKBATTERY "):
+                kv = dict(x.split("=") for x in line.split()[1:])
+                return {"charging": kv.get("charging") == "1", "level": int(kv.get("level", -1))}
+    except Exception:
+        pass
+    return None
+
+
 RESET_PASSWORD_HELP = (
     "If you don't know the backup password, your iPhone can remove it without losing anything:\n\n"
     "1. On the iPhone open Settings → General → Transfer or Reset iPhone → Reset.\n"

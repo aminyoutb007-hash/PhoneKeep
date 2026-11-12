@@ -86,6 +86,10 @@ def run_mac(helper: hc.Helper):
         def every_five_minutes(self, _):
             helper.refresh_devices()
 
+        @rumps.timer(60)
+        def every_minute(self, _):
+            threading.Thread(target=helper.tick, daemon=True).start()
+
     app = App()
     helper.on_change = lambda: threading.Thread(target=app.refresh, daemon=True).start()
     helper.refresh_devices(force=True)
@@ -127,10 +131,17 @@ def run_tray(helper: hc.Helper):
     helper.on_change = changed
 
     def poll():
+        import time
+        n = 0
         while True:
-            import time
-            time.sleep(300)
-            helper.refresh_devices()
+            time.sleep(60)
+            n += 1
+            try:
+                helper.tick()
+                if n % 5 == 0:
+                    helper.refresh_devices()
+            except Exception:
+                pass
     threading.Thread(target=poll, daemon=True).start()
     helper.refresh_devices(force=True)
     icon.run()
