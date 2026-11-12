@@ -250,6 +250,8 @@ def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int,
             continue
         if line.startswith("PKERR "):
             line = line[6:]
+        if "passcode" in line.lower() and "enter" in line.lower():
+            line = "Enter your passcode on the iPhone to continue."      # the phone's own prompt, in our words
         tail.append(line)
         tail = tail[-15:]
         if "--udid" in line and "no such option" in line.lower():
