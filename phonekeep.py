@@ -297,7 +297,9 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
             mins = int((time.time() - t_start) // 60)
             took = f" · {mins} min so far" if mins else ""
             if seen["pct"] is None or seen["pct"] < 0.5:
-                if copied < 1_000_000:
+                # Info.plist (with app icons) alone is ~20 MB and lands before the phone has even
+                # built its snapshot; only real file data means copying has started
+                if copied < 50_000_000:
                     status("Your iPhone is getting the backup ready. This can take a few minutes "
                            "before copying starts. Keep it unlocked." + took)
                 else:
