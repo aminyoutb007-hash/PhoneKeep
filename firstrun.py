@@ -229,8 +229,11 @@ class FirstRunGuide(tk.Frame):
         self.bar.pack(fill="x")
         self.eta = tk.Label(right, text="", bg=CARD, fg=MUTED, font=font(12), anchor="w")
         self.eta.pack(fill="x", pady=(4, 0))
-        self.backup_btn = ui.RoundButton(right, "Back up now", self.do_backup, "primary", 190, 42, bg=CARD)
-        self.backup_btn.pack(anchor="w", pady=(16, 0))
+        btns = tk.Frame(right, bg=CARD)
+        btns.pack(anchor="w", pady=(16, 0))
+        self.backup_btn = ui.RoundButton(btns, "Back up now", self.do_backup, "primary", 190, 42, bg=CARD)
+        self.backup_btn.pack(side="left")
+        self.cancel_btn = ui.RoundButton(btns, "Cancel", self.cancel_backup, "secondary", 110, 42, bg=CARD)
         self.bar.pack_forget()
         self.eta.pack_forget()
 
@@ -360,6 +363,9 @@ class FirstRunGuide(tk.Frame):
         self.bar.pack(fill="x")
         self.eta.pack(fill="x", pady=(4, 0))
         self.status.configure(text="Your iPhone is getting the backup ready, keep it unlocked.")
+        self.cancel_btn.configure_text("Cancel")
+        self.cancel_btn.set_enabled(True)
+        self.cancel_btn.pack(side="left", padx=(10, 0))
         t0 = [None]
         app = self.app
 
@@ -376,6 +382,7 @@ class FirstRunGuide(tk.Frame):
                                   keep=app.s["snapshots_keep"], until_disk_full=app.s["snapshots_until_full"])
 
         def done(result):
+            self.cancel_btn.pack_forget()
             if result is not None:
                 self.backup_done = True
                 self.app.s["first_run_done"] = True
@@ -387,6 +394,11 @@ class FirstRunGuide(tk.Frame):
                 self.status.configure(text="")
                 self.backup_btn.set_enabled(True)
         app._run(work, done)
+
+    def cancel_backup(self):
+        if wv.cancel_backup():
+            self.cancel_btn.configure_text("Cancelling…")
+            self.cancel_btn.set_enabled(False)
 
     def answer(self, key, yes, label):
         label.configure(text=("Turning on…" if key == "wifi" else "Yes") if yes else "Not now")

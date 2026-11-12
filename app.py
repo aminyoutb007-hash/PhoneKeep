@@ -337,6 +337,8 @@ class App(_dnd_root()):
         # main button
         self.go = ui.RoundButton(self.body, "Back up now", self.backup_and_export, "primary", 400, 54, 17)
         self.go.pack(fill="x")
+        # Cancel is always available for a long job (01-principles.md, 6); shown only while a backup runs
+        self.cancel_btn = ui.RoundButton(self.body, "Cancel backup", self.cancel_backup, "secondary", 400, 40, 14)
 
         # progress
         self.prog = ui.card(self.body)
@@ -474,6 +476,7 @@ class App(_dnd_root()):
         self.busy = True
         self.go.set_enabled(False)
         self.go.configure_text("Working…")
+        self._watch_cancel()
 
         def worker():
             result, err = None, None
@@ -484,9 +487,30 @@ class App(_dnd_root()):
             self.call(lambda: self._finish(result, err, done, quiet, fn))
         threading.Thread(target=worker, daemon=True).start()
 
+    def _watch_cancel(self):
+        """Show the Cancel button while the backup helper runs, hide it otherwise."""
+        if not self.winfo_exists():
+            return
+        running = wv.backup_running() and bool(self.go.winfo_manager())     # the guide has its own Cancel
+        if running and not self.cancel_btn.winfo_manager():
+            self.cancel_btn.configure_text("Cancel backup")
+            self.cancel_btn.set_enabled(True)
+            self.cancel_btn.pack(fill="x", pady=(6, 0), after=self.go)
+        elif not running and self.cancel_btn.winfo_manager():
+            self.cancel_btn.pack_forget()
+        if self.busy:
+            self.after(500, self._watch_cancel)
+
+    def cancel_backup(self):
+        if wv.cancel_backup():
+            self.cancel_btn.configure_text("Cancelling…")
+            self.cancel_btn.set_enabled(False)
+            self.log("Cancelling the backup…")
+
     def _finish(self, result, err, done, quiet, fn=None):
         self.busy = False
         self.go.set_enabled(True)
+        self.cancel_btn.pack_forget()
         self.go.configure_text("Back up again" if not err and self.last_index else "Back up now")
         if err is not None:
             pr = self.problem_of(err)
@@ -507,7 +531,7 @@ class App(_dnd_root()):
         """Every error shown in this window comes through the one table in errors.py."""
         if isinstance(err, wv.PhoneKeepError) and err.button:
             return errors.Problem(err.key, str(err), err.button, err.action, err.details,
-                                  failure=err.key not in ("drive_unavailable",))
+                                  failure=err.key not in ("drive_unavailable", "cancelled"))
         if isinstance(err, wv.PhoneKeepError):
             return errors.Problem("plain", str(err), "Try again", errors.TRY_AGAIN, err.details, failure=True)
         return errors.explain(err)

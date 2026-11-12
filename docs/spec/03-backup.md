@@ -10,6 +10,7 @@
 - Works over a cable and over Wi-Fi (Wi-Fi sync enabled on the phone).
 - The first backup is full; later ones copy only changes.
 - Progress comes from the phone's own percentage; time left is estimated from the last 5 minutes.
+- A **Cancel** button is there while a backup runs (main window and first-run guide; principle 6). Cancelling stops the helper; the half-copied backup is left as "didn't finish" (amber, not red: "Backup cancelled. Back up again whenever you like; it carries on from here.") and the next backup completes it. The helper records no failed day for a cancel.
 - An interrupted backup resumes next time without losing what was copied.
 
 **Done when**

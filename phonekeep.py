@@ -182,11 +182,41 @@ def _folder_bytes(folder: Path) -> int:
     return total
 
 
+_backup_proc: dict = {"proc": None, "cancelled": False}
+
+
+class BackupCancelled(PhoneKeepError):
+    """The owner pressed Cancel. Not a failure: the half-copied backup is finished next time."""
+
+    def __init__(self):
+        super().__init__("Backup cancelled. Back up again whenever you like; it carries on from here.",
+                         button="Back up now", action="try_again", key="cancelled")
+
+
+def cancel_backup() -> bool:
+    """Stop the running backup (from any thread). True if one was running."""
+    proc = _backup_proc["proc"]
+    if proc is None or proc.poll() is not None:
+        return False
+    _backup_proc["cancelled"] = True
+    try:
+        proc.terminate()
+    except OSError:
+        pass
+    return True
+
+
+def backup_running() -> bool:
+    proc = _backup_proc["proc"]
+    return proc is not None and proc.poll() is None
+
+
 def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int, list[str]]:
     """Run a backup helper, forwarding progress. Returns (exit code, last output lines)."""
     env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="utf-8", errors="replace", env=env, bufsize=1, **_NOWIN)
+    _backup_proc["proc"], _backup_proc["cancelled"] = proc, False
     last_pct, tail = -1, []
     assert proc.stdout is not None
     for raw in proc.stdout:  # universal newlines also split \r progress updates
@@ -322,7 +352,11 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
                 code, tail = _stream_backup([*_helper(), *args], log, progress, seen)
     finally:
         stop.set()
+        _backup_proc["proc"] = None
 
+    if _backup_proc["cancelled"]:
+        log("Backup cancelled by the owner. The next backup carries on from here.")
+        raise BackupCancelled()
     if code != 0 or not (target / "Manifest.db").exists():
         raise PhoneKeepError.from_problem("\n".join(tail), where=backup_root)
     took = int(time.time() - t_start)
