@@ -6,6 +6,7 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas, binaries, hiddenimports = [], [], []
 for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl", "certifi", "keyring", "tkinterdnd2", "send2trash",
+            "reportlab", "arabic_reshaper", "bidi",                       # M3: chats to PDF
             *(("rumps",) if sys.platform == "darwin" else ("pystray",))):
     try:
         d, b, h = collect_all(pkg)
@@ -21,13 +22,14 @@ for pkg in ("typer", "rich", "click", "construct", "asn1", "srptools", "pycrashr
         pass
 hiddenimports += ["sections", "phonekeep", "app", "ui", "photos", "tables", "phone", "device", "build_label",
                   "keychain", "phone_write", "netguard", "certifi", "errors", "firstrun", "helper_core", "helper_ui", "login_item",
-                  "scheduler", "snapshots", "location",
+                  "scheduler", "snapshots", "location", "chat_pdf",
                   *(["Foundation", "AppKit", "objc", "PyObjCTools"] if sys.platform == "darwin" else []),   # rumps
                   "keyring", "keyring.backends.macOS", "keyring.backends.Windows",
                   "keyring.backends.fail", "keyring.backends.null", "tkinter",
                   "PIL.ImageOps", "PIL.ImageTk", "PIL._tkinter_finder"]
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))  # project folder
+datas += [(os.path.join(ROOT, "assets", "fonts"), os.path.join("assets", "fonts"))]   # PDF fonts (M3)
 ICON = os.path.join(SPECPATH, "icon.ico" if sys.platform == "win32" else "icon.png")
 
 a = Analysis([os.path.join(ROOT, "launcher.py")], pathex=[ROOT], binaries=binaries, datas=datas,

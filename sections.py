@@ -181,7 +181,8 @@ class Ctx:
         self.progress = progress
         self.names: dict[str, str] = {}
         self.chat_filter: dict[str, set] = {}  # section key -> chat ids to export (absent = all)
-        self.formats: set = {"web"}            # chat exports: web, excel, csv
+        self.formats: set = {"web"}            # chat exports: web, excel, csv, pdf
+        self.pdf_combined: bool = False         # PDF: one file with all chosen chats, or one per chat (M3)
         self.cache: dict = {}                  # section key -> chats already read (for the picker)
         self.photo_source = None               # photos.PhotoSource; None = the backup's camera roll
         self.photo_selection: Optional[set] = None  # photo ids to copy (None = all)
@@ -550,7 +551,11 @@ def sec_messages(ctx: Ctx) -> dict:
         import tables as tb
         tb.write_chats_csv(chats, out / "CSV", ctx.log)
         main = main or "CSV/_All chats.csv"
-    extra = [f for f, on in (("Excel", "excel" in ctx.formats), ("CSV", "csv" in ctx.formats)) if on]
+    if "pdf" in ctx.formats:
+        import chat_pdf
+        pdf = chat_pdf.write_chats_pdf(chats, out, "Messages", ctx.log, combined=ctx.pdf_combined)
+        main = main or pdf.relative_to(out).as_posix()
+    extra = [f for f, on in (("PDF", "pdf" in ctx.formats), ("Excel", "excel" in ctx.formats), ("CSV", "csv" in ctx.formats)) if on]
     return {"count": n, "link": "Messages/" + main,
             "detail": f"{len(chats):,} conversations · {n:,} messages" + (f" · {' + '.join(extra)}" if extra else "")}
 
@@ -563,7 +568,7 @@ def sec_whatsapp(ctx: Ctx) -> dict:
     r = wv.export_whatsapp(ctx.reader, ctx.out / "WhatsApp", ctx.include_media, False, ctx.log,
                            None, ctx.binfo, ctx.name_for, hub=True, strict=True,
                            only_chats=ctx.chat_filter.get("whatsapp"), formats=ctx.formats,
-                           loaded=ctx.cache.get("whatsapp"), dates=ctx.dates)
+                           loaded=ctx.cache.get("whatsapp"), dates=ctx.dates, pdf_combined=ctx.pdf_combined)
     r["link"] = "WhatsApp/" + r.pop("main")
     return r
 
@@ -572,7 +577,7 @@ def sec_whatsapp_business(ctx: Ctx) -> dict:
     r = wv.export_whatsapp(ctx.reader, ctx.out / "WhatsApp Business", ctx.include_media, True, ctx.log,
                            None, ctx.binfo, ctx.name_for, hub=True, strict=True,
                            only_chats=ctx.chat_filter.get("whatsappbusiness"), formats=ctx.formats,
-                           loaded=ctx.cache.get("whatsappbusiness"), dates=ctx.dates)
+                           loaded=ctx.cache.get("whatsappbusiness"), dates=ctx.dates, pdf_combined=ctx.pdf_combined)
     r["link"] = "WhatsApp Business/" + r.pop("main")
     return r
 
@@ -1234,14 +1239,15 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
                chooser: Optional[Callable] = None, chat_names: Optional[list[str]] = None,
                formats: Optional[set] = None, photo_source: Optional[str] = None,
                udid: Optional[str] = None, photo_chooser: Optional[Callable] = None,
-               dates=None) -> Path:
+               dates=None, pdf_combined: bool = False) -> Path:
     """Build the archive.
     dates: (from, to) - keep only chat messages in this period (either end may be None).
         A chooser may also return it under the key "_dates".
     chooser(lists, preview): lists = {section: (label, [chat summary])} for WhatsApp, WhatsApp
         Business and Messages; returns {section: set(chat ids)}, or None to cancel.
     chat_names: instead of a chooser, keep chats whose name contains one of these words.
-    formats: chat exports to write - any of "web", "excel", "csv" (default: web).
+    formats: chat exports to write - any of "web", "excel", "csv", "pdf" (default: web).
+    pdf_combined: with "pdf", one PDF with all the chosen chats instead of one per chat.
     photo_source: "device" copies photos straight off the iPhone (works with iCloud Photos);
         otherwise they come from the backup.
     photo_chooser(source, items): returns the set of photo ids to copy (None or empty = skip photos)."""
@@ -1253,6 +1259,7 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
     with wv.BackupReader(backup_path, password, log) as reader:
         ctx = Ctx(reader, out, log, include_media, binfo, None)
         ctx.formats = set(formats or {"web"})
+        ctx.pdf_combined = pdf_combined
         ctx.dates = dates if dates and any(dates) else None
         people = []
         try:

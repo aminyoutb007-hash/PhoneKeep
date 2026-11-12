@@ -21,6 +21,7 @@ STEPS = [
     ("S3: no network during backup + export + phone window", "test_s3_no_network.py", True),
     ("E3: plain-language errors, each situation reproduced", "test_e3_errors.py", True),
     ("B1: a running backup can be cancelled (engine, main window, guide, helper)", "test_b1_cancel.py", True),
+    ("M3: chats to PDF (2,000 messages with photos in under 30 s; Arabic, French, emoji)", "test_m3_chat_pdf.py", True),
     ("E1: first-run guide walked end to end with a stub iPhone", "test_e1_first_run.py", True),
     ("E2: menu bar / tray helper backs up and notifies with no window open", "test_e2_helper.py", True),
     ("B2: scheduled automatic backups with a fake clock", "test_b2_schedule.py", False),

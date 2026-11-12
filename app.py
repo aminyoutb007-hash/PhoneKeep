@@ -228,7 +228,7 @@ class App(_dnd_root()):
         self.udid = None
         self.backups: list[dict] = []
         self.preset = tk.StringVar(value=self.s["preset"])
-        self.fmt = {f: tk.BooleanVar(value=f in self.s["formats"]) for f in ("web", "excel", "csv")}
+        self.fmt = {f: tk.BooleanVar(value=f in self.s["formats"]) for f in ("web", "excel", "csv", "pdf")}
         self.pick_chats = tk.BooleanVar(value=self.s["pick_chats"])
         self.pick_photos = tk.BooleanVar(value=self.s["pick_photos"])
         for name, var in (("pick_chats", self.pick_chats), ("pick_photos", self.pick_photos)):
@@ -325,7 +325,7 @@ class App(_dnd_root()):
         opts = tk.Frame(wc, bg=CARD)
         opts.pack(fill="x", padx=18, pady=(12, 4))
         tk.Label(opts, text="Save chats as", bg=CARD, fg=MUTED, font=font(12)).pack(side="left", padx=(0, 8))
-        for f, label in (("web", "Web pages"), ("excel", "Excel"), ("csv", "CSV")):
+        for f, label in (("web", "Web pages"), ("pdf", "PDF"), ("excel", "Excel"), ("csv", "CSV")):
             ui.Chip(opts, label, self.fmt[f], bg=CARD).pack(side="left", padx=3)
         opts2 = tk.Frame(wc, bg=CARD)
         opts2.pack(fill="x", padx=18, pady=(6, 16))
@@ -1082,7 +1082,7 @@ class App(_dnd_root()):
                 self.steps[k].set("done", detail="", right="")
         self.bar.set(100)
         self.last_index = Path(index)
-        fm = " + ".join(lbl for f, lbl in (("web", "web pages"), ("excel", "Excel"), ("csv", "CSV")) if self.fmt[f].get())
+        fm = " + ".join(lbl for f, lbl in (("web", "web pages"), ("pdf", "PDF"), ("excel", "Excel"), ("csv", "CSV")) if self.fmt[f].get())
         notes = ["You chose " + " and ".join(self.notes) + "."] if self.notes else []
         where = self.s["archive_dir"].replace(str(Path.home()), "~", 1)
         self.done_sub.configure(text=f"Saved in {where}  ·  chats as {fm}"

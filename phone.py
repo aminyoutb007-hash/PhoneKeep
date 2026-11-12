@@ -817,9 +817,11 @@ class PhoneWindow(tk.Toplevel):
         (runner or self.backup_runner).submit(fn, lambda paths: self.saved(paths, folder, what),
                                               lambda e: self.banner(f"Couldn't save: {describe_error(e)}", color="#fdecea"))
 
-    def export_section(self, key: str, formats: set, chooser=None, dates=None):
-        """Full export of one app through the same code as the main 'Back up' button."""
-        out = self.out_root
+    def export_section(self, key: str, formats: set, chooser=None, dates=None, pdf_combined: bool = False,
+                       then=None, out: Optional[Path] = None, quiet: bool = False):
+        """Full export of one app through the same code as the main 'Back up' button.
+        then(index): called on the UI thread when done (Print uses it); out: another folder (Print: a temp one)."""
+        out = out or self.out_root
         data = self.data
 
         eta = ui.Eta()
@@ -836,10 +838,18 @@ class PhoneWindow(tk.Toplevel):
         def go():
             return sx.export_all(data.path, out, data.password, [key], include_media=True,
                                  log=lambda m: None, chooser=chooser, formats=formats, dates=dates,
-                                 progress=progress)
+                                 progress=progress, pdf_combined=pdf_combined)
 
         def ok(index):
             state["finished"] = True
+            if then is not None:
+                then(index)
+                return
+            pdfs = out / LABEL[key] / "PDF"
+            if formats == {"pdf"} and pdfs.exists():
+                self.banner(f"✓ Saved PDF to {pdfs}", ("Show in Finder" if sys.platform == "darwin" else "Show folder",
+                                                       lambda: reveal(pdfs)))
+                return
             self.banner(f"✓ Exported {LABEL[key]} to {out}", ("Open", lambda: open_file(Path(index))))
 
         def err(e):
@@ -867,9 +877,58 @@ class PhoneWindow(tk.Toplevel):
                 return
             dates = sel.pop("_dates", None)
             self.export_section(key, fmts, chooser=lambda lists, pv: sel, dates=dates)
+        def ticked():
+            sel = panel.selection(confirm_empty=False)
+            if sel is None:
+                return None
+            if not any(v for k, v in sel.items() if k != "_dates"):
+                messagebox.showinfo(wv.APP_NAME, "Tick the chats you want first (or Select all).", parent=self)
+                return None
+            return sel
+
+        def n_ticked(sel) -> int:
+            return sum(len(v) if hasattr(v, "__len__") else 1 for k, v in sel.items() if k != "_dates")
+
+        def export_pdf():
+            sel = ticked()
+            if sel is None:
+                return
+            combined = False
+            if n_ticked(sel) > 1:
+                ans = messagebox.askyesnocancel(wv.APP_NAME, f"{n_ticked(sel):,} chats ticked.\n\nYes = one PDF with all of them\n"
+                                                "No = one PDF for each chat", parent=self)
+                if ans is None:
+                    return
+                combined = bool(ans)
+            dates = sel.pop("_dates", None)
+            self.export_section(key, {"pdf"}, chooser=lambda lists, pv: sel, dates=dates, pdf_combined=combined)
+
+        def print_chats():
+            """Print makes the same PDF (all ticked chats in one file) and opens the system print dialog."""
+            sel = ticked()
+            if sel is None:
+                return
+            dates = sel.pop("_dates", None)
+            tmp = Path(tempfile.mkdtemp(prefix="phonekeep-print-"))
+
+            def then(_index):
+                import chat_pdf
+                pdfs = sorted((tmp / LABEL[key] / "PDF").glob("*.pdf"))
+                if not pdfs:
+                    self.banner("Couldn't make the PDF to print.", color="#fdecea")
+                    return
+                self.banner(f"Opening the print dialog for {pdfs[0].name}…")
+                try:
+                    chat_pdf.print_pdf(pdfs[0])
+                except Exception as e:
+                    self.banner(f"Couldn't print: {describe_error(e)}", color="#fdecea")
+            self.export_section(key, {"pdf"}, chooser=lambda lists, pv: sel, dates=dates, pdf_combined=True,
+                                then=then, out=tmp)
         RoundButton(panel.foot, "Save as web page", lambda: export({"web"}), "secondary", 170, 38, 12).pack(side="right")
         RoundButton(panel.foot, "CSV", lambda: export({"csv"}), "secondary", 80, 38, 12).pack(side="right", padx=6)
-        RoundButton(panel.foot, "Save ticked as Excel", lambda: export({"excel"}), "primary", 190, 38, 12).pack(side="right")
+        RoundButton(panel.foot, "Excel", lambda: export({"excel"}), "secondary", 90, 38, 12).pack(side="right")
+        RoundButton(panel.foot, "Print", print_chats, "secondary", 90, 38, 12).pack(side="right", padx=6)
+        RoundButton(panel.foot, "Save ticked as PDF", export_pdf, "primary", 180, 38, 12).pack(side="right")
 
     # photos ---------------------------------------------------------------------
     def _load_photos(self, holder):

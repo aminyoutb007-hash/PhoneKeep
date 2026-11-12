@@ -10,3 +10,6 @@ pyobjc-framework-Cocoa>=10; sys_platform == "darwin"   # rumps needs Foundation/
 pystray>=0.19; sys_platform != "darwin"
 send2trash>=1.8
 tkinterdnd2>=0.4
+reportlab>=4.0          # chats to PDF (M3)
+arabic-reshaper>=3.0    # Arabic letter forms in PDFs
+python-bidi>=0.4        # right-to-left order in PDFs
