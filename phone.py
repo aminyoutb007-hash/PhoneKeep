@@ -24,7 +24,7 @@ import tempfile
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 import keychain
@@ -771,7 +771,25 @@ class PhoneWindow(tk.Toplevel):
 
     # saving -------------------------------------------------------------------
     def out_dir(self, key: str) -> Path:
-        d = self.out_root / LABEL[key]
+        """Where a save goes. Asks the owner (a folder dialog, starting at the last folder they chose, or
+        PhoneKeep's Saved files folder); raises Cancelled if they close the dialog. Usability test of 12 Nov:
+        'save it to the Desktop' needs a choice, not a fixed folder."""
+        default = self.out_root / LABEL[key]
+        s = getattr(self.app, "s", {})
+        start = Path(s.get("last_save_dir") or default)
+        if not start.exists():
+            start = default
+            start.mkdir(parents=True, exist_ok=True)
+        chosen = filedialog.askdirectory(parent=self, title=f"Save {LABEL[key]} to…", initialdir=str(start), mustexist=True)
+        if not chosen:
+            return None                      # the owner closed the dialog: nothing to save, nothing to say
+        d = Path(chosen)
+        try:
+            s["last_save_dir"] = str(d)
+            if hasattr(self.app, "save"):
+                self.app.save()
+        except Exception:
+            pass
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -892,6 +910,8 @@ class PhoneWindow(tk.Toplevel):
                 messagebox.showinfo(wv.APP_NAME, "Click the photos you want to save first (or Select all).", parent=self)
                 return
             folder = self.out_dir("photos")
+            if folder is None:
+                return
 
             def go():
                 done = []
@@ -966,6 +986,8 @@ class PhoneWindow(tk.Toplevel):
         def save(kind):
             vis = selected() or shown()
             folder = self.out_dir(key)
+            if folder is None:
+                return
             stamp = dt.datetime.now().strftime("%Y-%m-%d %H%M")
             path = unique_path(folder / f"{LABEL[key]} {stamp}.{'xlsx' if kind == 'excel' else 'csv'}")
 
@@ -1174,6 +1196,8 @@ class PhoneWindow(tk.Toplevel):
                 messagebox.showinfo(wv.APP_NAME, "Click a file or a folder first (Cmd/Ctrl-click for several).", parent=self)
                 return
             out = self.out_dir("allfiles")
+            if out is None:
+                return
             data = self.data
 
             def go():
@@ -1254,6 +1278,8 @@ class PhoneWindow(tk.Toplevel):
                 messagebox.showinfo(wv.APP_NAME, "This note is locked with your Notes password.", parent=self)
                 return
             folder = self.out_dir("notes")
+            if folder is None:
+                return
             p = unique_path(folder / (sx.safe_name(n["title"], 80) + ".txt"))
             p.write_text(n["text"] or "", encoding="utf-8")
             self.saved([p], folder, "note")
@@ -1283,6 +1309,8 @@ class PhoneWindow(tk.Toplevel):
                                     "Cmd/Ctrl-A for all).", parent=self)
                 return
             folder = self.out_dir(key)
+            if folder is None:
+                return
 
             def go():
                 done = []
@@ -1451,7 +1479,10 @@ class PhoneWindow(tk.Toplevel):
                 messagebox.showinfo(wv.APP_NAME, "Select files or folders to save first.", parent=self)
                 return
             a = by_id[state["app"]]
-            folder = self.out_dir("files") / sx.safe_name(a.name, 60)
+            folder = self.out_dir("files")
+            if folder is None:
+                return
+            folder = folder / sx.safe_name(a.name, 60)
             app_id = state["app"]
 
             def go():
