@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -65,14 +66,39 @@ def connect_message(path: Path) -> str:
     return f"Connect {drive_name(path)} to back up."
 
 
-def usage(path: Path) -> dict:
-    """{'used': bytes used by backups, 'free': bytes free on the drive, 'total': drive size, 'drive': name}."""
-    p = Path(path)
-    used = 0
+_UDID = re.compile(r"^([0-9A-Fa-f]{8}-[0-9A-Fa-f]{16}|[0-9A-Fa-f]{40})$")
+_OURS = ("format.json", "current", "store", "snapshots", "snapshots.json", "Manifest.db", "Info.plist")
+
+
+def phone_dirs(root: Path) -> list[Path]:
+    """The folders PhoneKeep owns inside the backup root: one per phone (<root>/<UDID>/). Nothing else in
+    the root is ours — the owner may have chosen the top of a drive that also holds their own files, so
+    sizes, moves and clean-ups must never walk the whole drive."""
+    root = Path(root)
+    out = []
     try:
-        used = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
+        for d in root.iterdir():
+            if not d.is_dir() or d.name.startswith("."):
+                continue
+            if _UDID.match(d.name) or any((d / x).exists() for x in _OURS):
+                out.append(d)
     except OSError:
         pass
+    return sorted(out)
+
+
+def _folder_bytes(p: Path) -> int:
+    try:
+        return sum(f.stat().st_size for f in Path(p).rglob("*") if f.is_file())
+    except OSError:
+        return 0
+
+
+def usage(path: Path) -> dict:
+    """{'used': bytes used by backups, 'free': bytes free on the drive, 'total': drive size, 'drive': name}.
+    'used' counts only PhoneKeep's own phone folders, never the rest of the drive."""
+    p = Path(path)
+    used = sum(_folder_bytes(d) for d in phone_dirs(p))
     free = total = 0
     try:
         q = p
@@ -126,8 +152,9 @@ def _sha(path: Path) -> str:
 
 def move_backups(old_root: Path, new_root: Path, log: Callable[[str], None] = lambda m: None,
                  progress: Optional[Callable[[float], None]] = None, verify: bool = True) -> dict:
-    """Copy every file from old_root to new_root, verify count and checksums, then remove the old copy.
-    Returns {'files': n, 'bytes': b}. Raises on any failure, leaving the old copy in place."""
+    """Copy PhoneKeep's phone folders (<old_root>/<UDID>/…) to new_root, verify count and checksums, then
+    remove the old copies. Only those folders are touched: anything else the owner keeps in old_root
+    stays where it is. Returns {'files': n, 'bytes': b}. Raises on any failure, leaving the old copy in place."""
     old_root, new_root = Path(old_root), Path(new_root)
     if not old_root.exists():
         return {"files": 0, "bytes": 0}
@@ -137,7 +164,8 @@ def move_backups(old_root: Path, new_root: Path, log: Callable[[str], None] = la
         raise ValueError("The new folder can't be inside the old one.")
     import snapshots as sn
     sn.check_filesystem(new_root)
-    files = [f for f in old_root.rglob("*") if f.is_file()]
+    ours = phone_dirs(old_root)
+    files = [f for d in ours for f in d.rglob("*") if f.is_file()]
     total = sum(f.stat().st_size for f in files)
     if usage(new_root)["total"] and usage(new_root)["free"] < total + 500_000_000:
         raise OSError(f"Not enough space on {drive_name(new_root)}: {human(total)} needed, {human(usage(new_root)['free'])} free.")
@@ -154,7 +182,7 @@ def move_backups(old_root: Path, new_root: Path, log: Callable[[str], None] = la
             progress(90.0 * done_bytes / total)
     if verify:
         log("Checking the copy…")
-        new_files = [f for f in new_root.rglob("*") if f.is_file()]
+        new_files = [f for d in ours for f in (new_root / d.name).rglob("*") if f.is_file()]
         if len(new_files) < len(files):
             raise OSError(f"The copy has {len(new_files):,} files, the original {len(files):,}; the original was kept.")
         for i, f in enumerate(files):
@@ -163,7 +191,8 @@ def move_backups(old_root: Path, new_root: Path, log: Callable[[str], None] = la
                 raise OSError(f"{f.relative_to(old_root)} didn't copy correctly; the original was kept.")
             if progress and i % 50 == 0:
                 progress(90.0 + 10.0 * i / max(1, len(files)))
-    shutil.rmtree(old_root)
+    for d in ours:
+        shutil.rmtree(d)
     if progress:
         progress(100.0)
     log("Done. The old copy has been removed.")

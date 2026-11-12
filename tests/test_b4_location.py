@@ -45,11 +45,22 @@ shutil.copytree(fake, sn.current_dir(old_root, UD))
 snap = sn.make_snapshot(old_root, UD)
 check(sn.has_backup(old_root, UD), "a phone with a snapshot in the old location")
 
+# the owner may pick the top of a drive that also holds their own files: those are never ours
+theirs = old_root / "Holiday photos"
+theirs.mkdir()
+(theirs / "big.bin").write_bytes(b"\0" * 5_000_000)
+(old_root / "notes.txt").write_text("mine")
+check([d.name for d in loc.phone_dirs(old_root)] == [UD], f"only the phone folder counts as ours: {[d.name for d in loc.phone_dirs(old_root)]}")
+check(loc.usage(old_root)["used"] < 5_000_000, "'Backups use' leaves the owner's own files out")
+
 # -- moving: copy, verify, remove old -----------------------------------------------------------------------------
 new_root = W / "External Drive" / "PhoneKeep Backups"
 logs = []
 r = loc.move_backups(old_root, new_root, log=logs.append)
-check(r["files"] > 0 and not old_root.exists(), f"moved {r['files']} files; the old copy is gone only after the check")
+check(r["files"] > 0 and not (old_root / UD).exists(), f"moved {r['files']} files; the old copy is gone only after the check")
+check((theirs / "big.bin").exists() and (old_root / "notes.txt").exists() and not (new_root / "Holiday photos").exists(),
+      "the owner's own files in the old folder are neither moved nor removed")
+shutil.rmtree(theirs); (old_root / "notes.txt").unlink(); old_root.rmdir()
 check(any("Checking the copy" in l for l in logs), "the copy was verified")
 check(sn.has_backup(new_root, UD) and sn.list_snapshots(new_root, UD)[0].id == snap.id, "the snapshot is there in the new location")
 reader = wv.BackupReader(sn.list_snapshots(new_root, UD)[0].path, None, lambda m: None)
