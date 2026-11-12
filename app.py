@@ -1048,6 +1048,7 @@ class App(_dnd_root()):
         self._run(lambda: self._export(path), self._exported)
 
     def _exported(self, index):
+        self.detect(silent=True)          # the phone card: a backup may have been made even if the export stopped
         if not index:
             return
         for k in ("choose", "build"):
