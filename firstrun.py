@@ -49,7 +49,10 @@ class Picture(tk.Canvas):
         self.create_line(x + w // 2, y + h, x + w // 2, y + h + 8, 230, y + h + 8, 230, 100, 300, 100,
                          width=5, fill="#8a949a", smooth=True)
         self.create_rectangle(x + w // 2 - 7, y + h - 2, x + w // 2 + 7, y + h + 8, fill="#c9cfd3", outline="")
-        self.create_text(x + w // 2, y + h // 2 + 6, text="📱", font=font(30))
+        # a simple app grid on the screen (no emoji: large emoji glyphs in a Tk canvas can abort Tk on macOS)
+        for r in range(4):
+            for c in range(3):
+                self.create_rounded(x + 14 + c * 20, y + 30 + r * 24, 14, GREEN_SOFT if (r + c) % 2 else "#fff4e0")
 
     def _trust(self):
         x, y, w, h = self._phone(screen="#cfe3dd")
@@ -63,22 +66,30 @@ class Picture(tk.Canvas):
         self.create_text(bx + 3 * bw // 4, by + 55, text="Don't", font=font(8), fill="#0a84ff")
         self.create_oval(bx + bw // 4 - 12, by + 43, bx + bw // 4 + 12, by + 67, outline=GREEN, width=2)
 
+    def create_rounded(self, x, y, size, fill):
+        self.create_rectangle(x, y, x + size, y + size, fill=fill, outline="")
+
+    def _lock(self, cx, cy, s):
+        """A padlock drawn with shapes."""
+        self.create_rectangle(cx - s * 0.5, cy - s * 0.05, cx + s * 0.5, cy + s * 0.6, fill=GREEN, outline="")
+        self.create_arc(cx - s * 0.35, cy - s * 0.65, cx + s * 0.35, cy + s * 0.15, start=0, extent=180, style="arc", outline=GREEN, width=max(2, int(s * 0.12)))
+        self.create_oval(cx - s * 0.08, cy + s * 0.15, cx + s * 0.08, cy + s * 0.31, fill="white", outline="")
+
     def _password(self):
-        self.create_text(150, 70, text="🔒", font=font(54))
+        self._lock(150, 70, 60)
         self.create_text(150, 135, text="Encrypted · on this computer", font=font(12, "bold"), fill=GREEN)
 
     def _backup(self):
         x, y, w, h = self._phone(x=40, y=30, w=60, h=120)
-        self.create_text(x + w // 2, y + h // 2, text="📱", font=font(22))
         self.create_line(110, 90, 185, 90, width=4, fill=GREEN, arrow="last", arrowshape=(14, 16, 6))
         self.create_rectangle(195, 50, 290, 130, fill="#e8ecef", outline=LINE)
         self.create_rectangle(203, 58, 282, 112, fill="#ffffff", outline=LINE)
         self.create_rectangle(225, 130, 260, 140, fill="#c9cfd3", outline="")
-        self.create_text(242, 86, text="🔒", font=font(18))
+        self._lock(242, 86, 22)
 
     def _done(self):
         self.create_oval(100, 30, 200, 130, fill=GREEN_SOFT, outline="")
-        self.create_text(150, 80, text="✅", font=font(44))
+        self.create_line(125, 82, 143, 100, 178, 62, width=8, fill=GREEN, capstyle="round", joinstyle="round")
         self.create_text(150, 160, text="Your iPhone is safely backed up", font=font(12, "bold"), fill=INK)
 
 
