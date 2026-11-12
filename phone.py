@@ -113,6 +113,10 @@ class Runner:
     def submit(self, fn: Callable, ok: Callable = None, err: Callable = None):
         self.jobs.put((fn, ok, err))
 
+    def on_ui(self, fn: Callable):
+        """Run fn on the UI thread soon (safe to call from the worker: progress updates and the like)."""
+        self.done.put((lambda _r: fn(), None, None, None))
+
     def stop(self):
         self.alive = False
         self.jobs.put(None)
@@ -790,10 +794,15 @@ class PhoneWindow(tk.Toplevel):
         data = self.data
 
         eta = ui.Eta()
+        state = {"finished": False}
 
         def progress(p):
             text = eta.feed(p)
-            self.after(0, lambda: self.banner(f"Exporting {LABEL[key]}… {text}"))
+
+            def show():
+                if not state["finished"]:           # a late update must not cover the "✓ Exported" line
+                    self.banner(f"Exporting {LABEL[key]}… {text}")
+            self.backup_runner.on_ui(show)
 
         def go():
             return sx.export_all(data.path, out, data.password, [key], include_media=True,
@@ -801,10 +810,14 @@ class PhoneWindow(tk.Toplevel):
                                  progress=progress)
 
         def ok(index):
+            state["finished"] = True
             self.banner(f"✓ Exported {LABEL[key]} to {out}", ("Open", lambda: open_file(Path(index))))
+
+        def err(e):
+            state["finished"] = True
+            self.banner(f"Couldn't export: {describe_error(e)}", color="#fdecea")
         self.banner(f"Exporting {LABEL[key]}… working out time left…")
-        self.backup_runner.submit(go, ok, lambda e: self.banner(f"Couldn't export: {describe_error(e)}",
-                                                                 color="#fdecea"))
+        self.backup_runner.submit(go, ok, err)
 
     # chats ----------------------------------------------------------------------
     def v_chats(self, key, value):

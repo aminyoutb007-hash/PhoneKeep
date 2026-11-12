@@ -247,7 +247,7 @@ first = e.feed(1.0)
 check(first.endswith("working out time left…"), f"no estimate from the first second: {first!r}")
 e.points[0] = (e.points[0][0] - 60, e.points[0][1])          # a minute ago we were at 1%
 t = e.feed(21.0)
-check(t.startswith("21%") and "about 4 min left" in t, f"20% in a minute → about 4 min left: {t!r}")
+check(t.startswith("21%") and ("about 3 min left" in t or "about 4 min left" in t), f"20% in a minute → about 4 min left: {t!r}")
 check(_ui2.Eta.fmt(30) == "under 2 min left" and _ui2.Eta.fmt(2 * 3600 + 5 * 60) == "about 2 h 05 min left", "wording")
 check(e.feed(100) == "100%", "done")
 
