@@ -90,8 +90,22 @@ def run_mac(helper: hc.Helper):
         def every_minute(self, _):
             threading.Thread(target=helper.tick, daemon=True).start()
 
+        # AppKit (menu titles, the icon) may only be touched on the main thread. Worker threads mark the
+        # menu dirty; this timer, which rumps runs on the main thread, applies the change. (Refreshing
+        # from the backup thread killed the helper silently on a real Mac, 12 Nov.)
+        dirty = False
+
+        @rumps.timer(1)
+        def apply_changes(self, _):
+            if self.dirty:
+                self.dirty = False
+                self.refresh()
+
     app = App()
-    helper.on_change = lambda: threading.Thread(target=app.refresh, daemon=True).start()
+
+    def changed():
+        app.dirty = True
+    helper.on_change = changed
     helper.refresh_devices(force=True)
     app.run()
 
