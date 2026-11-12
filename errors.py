@@ -36,6 +36,9 @@ class Problem:
 # (key, patterns to look for in the technical text (lower-case), message, button label, action)
 # Order matters: the first row that matches wins.
 TABLE = [
+    ("backup_incomplete",
+     ["backup didn't finish", "incomplete backup", "no manifest.db", "manifest.db missing"],
+     "The last backup didn't finish. Back up again to complete it.", "Back up now", TRY_AGAIN),
     ("wrong_password",
      ["could not unlock the backup", "wrong password", "incorrect password", "invalid password",
       "bad decrypt", "that password doesn't open", "keybag", "unlock failed"],

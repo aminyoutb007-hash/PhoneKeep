@@ -404,6 +404,10 @@ class PhoneWindow(tk.Toplevel):
         if self.backup_path is None or not (self.backup_path / "Manifest.db").exists():
             self.data_error = "No backup yet. Messages, chats, calls & notes appear after the first backup."
             self._update_src_line()
+            if wv.backup_incomplete(Path(self.app.s["backup_dir"]) / (self.udid or "-")):
+                self.banner("The last backup didn't finish. Back up again to complete it; Photos, Music, Books and "
+                            "App Files work now.", button=("Back up now", self.refresh))
+                return
             self.banner("No backup of this iPhone yet. Photos, Music, Books and App Files work now; "
                         "make a backup to see Messages, WhatsApp, calls, notes and the rest.",
                         ("Back up now", self.refresh))

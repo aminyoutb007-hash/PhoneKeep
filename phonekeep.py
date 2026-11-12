@@ -493,6 +493,17 @@ def backup_search_roots() -> list[Path]:
     return roots
 
 
+def backup_incomplete(path: Path) -> bool:
+    """A backup folder the phone started but never finished: blob folders or a Snapshot folder, no Manifest.db."""
+    p = Path(path)
+    if (p / "Manifest.db").exists():
+        return False
+    try:
+        return (p / "Snapshot").is_dir() or any(c.is_dir() and len(c.name) == 2 for c in p.iterdir())
+    except OSError:
+        return False
+
+
 def backup_info(path: Path) -> dict:
     info = {"path": str(path), "name": path.name, "date": None, "ios": None, "encrypted": False}
     try:

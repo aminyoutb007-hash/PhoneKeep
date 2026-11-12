@@ -47,6 +47,8 @@ CASES = [
      "Not enough space on ", "Change location"),
     ("Wrong backup password", "Could not unlock the backup: ValueError: incorrect password (bad decrypt)",
      "That password doesn't open this backup.", "Try again"),
+    ("Backup didn't finish", "incomplete backup: no Manifest.db in the backup folder",
+     "The last backup didn't finish. Back up again to complete it.", "Back up now"),
     ("Unknown", "Traceback (most recent call last):\n  File x.py line 3\nRuntimeError: frobnicate() went sideways",
      "Something went wrong. Your existing backups are safe.", "Show details"),
 ]
@@ -169,6 +171,12 @@ try:
     fa.destroy()
 except tk.TclError as ex:
     print(f"(window checks skipped: no display: {ex})")
+
+# an interrupted backup folder is recognised
+import tempfile as _tf
+_d = Path(_tf.mkdtemp()) / "00008030-HALF"
+(_d / "Snapshot").mkdir(parents=True); (_d / "1a").mkdir()
+check(wv.backup_incomplete(_d) and not wv.backup_incomplete(Path(_tf.mkdtemp())), "an interrupted backup folder (Snapshot/blobs, no Manifest.db) is recognised")
 
 print("\nE3 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

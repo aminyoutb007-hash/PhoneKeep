@@ -20,7 +20,7 @@ import phone_write
 import phonekeep as wv
 import sections as sx
 import ui
-from ui import BG, CARD, GREEN, GREEN_SOFT, INK, LINE, MUTED, RED, font
+from ui import AMBER, BG, CARD, GREEN, GREEN_SOFT, INK, LINE, MUTED, RED, font
 
 SETTINGS_FILE = wv.DEFAULT_HOME / "settings.json"
 
@@ -534,7 +534,10 @@ class App(tk.Tk):
                                         fg=MUTED)
                 info = wv.backup_info(Path(self.s["backup_dir"]) / self.udid) \
                     if (Path(self.s["backup_dir"]) / self.udid / "Manifest.db").exists() else None
-                self.dev_last.configure(text=f"Last backup: {info['date']}" if info else "Not backed up with PhoneKeep yet")
+                half = (not info) and wv.backup_incomplete(Path(self.s["backup_dir"]) / self.udid)
+                self.dev_last.configure(text=f"Last backup: {info['date']}" if info else
+                                        "The last backup didn't finish. Back up again to complete it." if half else
+                                        "Not backed up with PhoneKeep yet", fg=AMBER if half else MUTED)
                 self.dev_lock.configure(text=self.lock_badge(info))
                 self.open_btn.set_enabled(True)
             else:
