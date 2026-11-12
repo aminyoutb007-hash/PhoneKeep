@@ -92,9 +92,30 @@ r.close()
 personal = {p for p in personal if p and len(p.strip()) > 2 and p not in ("Group update",)}
 check(len(personal) > 15, f"{len(personal)} personal strings collected from the original")
 
+# -- what leaked on a real backup (12 Nov): the owner's folder names in file paths, and quoted text inside
+# WhatsApp's media metadata blobs. Planted (with invented names) into a copy of the fake backup first.
+src = W / "src"
+shutil.copytree(fake, src)
+man = sqlite3.connect(src / "Manifest.db")
+man.execute("INSERT INTO Files(fileID, domain, relativePath, flags, file) VALUES (?,?,?,?,?)",
+            ("a" * 40, "HomeDomain", "Library/Mobile Documents/com~apple~CloudDocs/Desktop/Owner/Zineb paperwork/QCS/Zineb-Tazi.docx", 2, b""))
+man.commit(); man.close()
+personal.add("Zineb paperwork"); personal.add("Zineb-Tazi")
+for fid, rel in sqlite3.connect(src / "Manifest.db").execute("SELECT fileID, relativePath FROM Files WHERE relativePath LIKE '%ChatStorage.sqlite'"):
+    db = src / fid[:2] / fid
+    c = sqlite3.connect(db)
+    c.execute("CREATE TABLE IF NOT EXISTS ZWAMEDIAITEM (Z_PK INTEGER PRIMARY KEY, ZMESSAGE INTEGER, ZMEDIALOCALPATH VARCHAR, ZMETADATA BLOB)")
+    c.execute("INSERT INTO ZWAMEDIAITEM (ZMESSAGE, ZMEDIALOCALPATH, ZMETADATA) VALUES (1, ?, ?)",
+              ("Message/Media/447700900123@s.whatsapp.net/Driss birthday.jpg", b"\x12\x00Your parcel from Driss Lamrani is on its way\x00\x01"))
+    c.commit(); c.close()
+    personal.add("Driss Lamrani"); personal.add("Driss birthday")
+    break
+fake = src
+
 # -- redact ----------------------------------------------------------------------------------------------------
 out = W / "redacted"
 report = rb.redact_backup(fake, out, None, log=lambda m: None)
+check(report.get("file and folder names", 0) >= 2, f"the owner's folder and file names were replaced: {report.get('file and folder names')}")
 check(report["databases redacted"] >= 7, f"databases redacted: {report['databases redacted']}")
 check(report["photos & videos"] >= 3 and report["attachments & voice notes"] >= 1, f"media replaced: photos {report['photos & videos']}, attachments {report['attachments & voice notes']}")
 check(report["names"] >= 3 and report["phone numbers"] >= 3 and report["text passages"] >= 5, f"report: {dict(report)}")

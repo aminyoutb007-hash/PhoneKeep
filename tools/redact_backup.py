@@ -138,10 +138,39 @@ class Mapper:
             out_lines.append(" ".join(words)[:max(1, len(line))].rstrip() if line else "")
         return self._remember("text passages", value, "\n".join(out_lines))
 
+    SYSTEM_SEG = re.compile(r"^([0-9A-Fa-f.\-_]+|(IMG|PXL|VID|DSC|MOV|RPReplay|Screenshot|Photo|Video|AUD|PTT|STK|DOC)[-_ ]?[\w.-]*|"
+                            r"Media|Message|Library|Documents|Desktop|Downloads|Mobile Documents|com~apple~CloudDocs|Attachments|"
+                            r"File Provider Storage|WhatsApp|Profile|Stickers|Thumbnails|\.?[A-Za-z]+)$")
+    PERSONAL_AREA = re.compile(r"(^|/)(Mobile Documents|Documents|Desktop|Downloads|File Provider Storage|Attachments|Message/Media|Media)(/|$)")
+
+    def pathname(self, value: str) -> str:
+        """A file path with the owner's own folder and file names replaced segment by segment (deterministic,
+        so references in the chat databases and Manifest.db stay in step). System-looking segments
+        (IMG_1234.jpg, GUIDs, single words such as Library) are kept."""
+        if not isinstance(value, str) or "/" not in value or not self.PERSONAL_AREA.search(value):
+            return value
+        out = []
+        area = False
+        for seg in value.split("/"):
+            if area and seg and not self.SYSTEM_SEG.match(seg):
+                stem, dot, ext = seg.rpartition(".")
+                if not dot:
+                    stem, ext = seg, ""
+                i = self._idx(stem)
+                fake = f"{FIRST[i % len(FIRST)].lower()}-{(i // 13) % 997}"
+                self._remember("file and folder names", stem, fake)
+                seg = fake + (dot + ext if dot and len(ext) <= 5 else "")
+            out.append(seg)
+            if self.PERSONAL_AREA.search("/" + seg + "/"):
+                area = True
+        return "/".join(out)
+
     def shape(self, value):
-        """Only what the value's shape gives away (for structural columns): numbers, emails, ids, links."""
+        """Only what the value's shape gives away (for structural columns): numbers, emails, ids, links, paths."""
         if not isinstance(value, str) or not value:
             return value
+        if "/" in value and self.PERSONAL_AREA.search(value):
+            return self.pathname(value)
         if EMAIL_RE.match(value):
             return self.email(value)
         if URL_RE.match(value):
@@ -184,7 +213,8 @@ def redact_sqlite(src: Path, dest: Path, mapper: Mapper, report: Counter) -> Non
                    or NAME.search(c[1]) or TEXTY.search(c[1]) or ADDRESS.search(c[1])]
         text_cols = [c for c in stringy if not KEEP.search(c)]      # content: replaced by kind
         keep_cols = [c for c in stringy if KEEP.search(c)]          # structure: only numbers/emails/ids/links inside it
-        blob_cols = [c[1] for c in cols if "BLOB" in (c[2] or "").upper() and (TEXTY.search(c[1]) or c[1].lower() == "attributedbody")]
+        # every BLOB goes: metadata blobs carry quoted text and link previews, image blobs are the owner's photos
+        blob_cols = [c[1] for c in cols if "BLOB" in (c[2] or "").upper()]
         if not text_cols and not blob_cols and not keep_cols:
             continue
         pk = next((c[1] for c in cols if c[5]), "rowid")
@@ -200,7 +230,7 @@ def redact_sqlite(src: Path, dest: Path, mapper: Mapper, report: Counter) -> Non
                 elif c in keep_cols:
                     nv = mapper.shape(v)
                 else:
-                    nv = None if v else v           # rich text blobs (attributedBody, note data) are dropped
+                    nv = (PLACEHOLDER_JPEG if (v and _looks_like_image(v)) else None) if v else v   # blobs are dropped; images become a placeholder
                 changed |= nv != v
                 new.append(nv)
             if changed:
@@ -210,6 +240,22 @@ def redact_sqlite(src: Path, dest: Path, mapper: Mapper, report: Counter) -> Non
     con.execute("VACUUM")
     con.close()
 
+
+def _looks_like_image(b: bytes) -> bool:
+    return bytes(b[:3]) == b"\xff\xd8\xff" or bytes(b[:8]) == b"\x89PNG\r\n\x1a\n"
+
+
+def _placeholder_jpeg() -> bytes:
+    try:
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGB", (64, 64), (120, 160, 140)).save(buf, "JPEG")
+        return buf.getvalue()
+    except Exception:
+        return b"\xff\xd8\xff"
+
+
+PLACEHOLDER_JPEG = _placeholder_jpeg()
 
 MAGIC = {".jpg": b"\xff\xd8\xff", ".jpeg": b"\xff\xd8\xff", ".png": b"\x89PNG\r\n\x1a\n", ".heic": b"\0\0\0\x18ftypheic",
          ".mov": b"\0\0\0\x18ftypqt  ", ".mp4": b"\0\0\0\x18ftypisom", ".m4a": b"\0\0\0\x18ftypM4A ", ".amr": b"#!AMR\n",
@@ -335,7 +381,15 @@ def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=prin
                 con.execute("UPDATE Files SET file=? WHERE fileID=?", (plistlib.dumps(pl, fmt=plistlib.FMT_BINARY), fid))
             except Exception:
                 pass
+    # the owner's own folder and file names (iCloud Drive, app Documents, attachment names) are personal too;
+    # done last because the extraction above looks files up by their real path
+    for fid, rel in con.execute("SELECT fileID, relativePath FROM Files").fetchall():
+        if rel:
+            nrel = mapper.pathname(rel)
+            if nrel != rel:
+                con.execute("UPDATE Files SET relativePath=? WHERE fileID=?", (nrel, fid))
     con.commit()
+    con.execute("VACUUM")
     con.close()
     shutil.rmtree(tmp, ignore_errors=True)
     reader.close()
