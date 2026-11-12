@@ -42,7 +42,7 @@ from typing import Callable, Optional
 from tables import csv_safe as _csv_safe
 
 APP_NAME = "PhoneKeep"
-VERSION = "4.0.1"
+VERSION = "5.0.0"
 
 try:
     from build_label import BUILD_LABEL   # "5.0-dev+B3" on a test build, "" on a release

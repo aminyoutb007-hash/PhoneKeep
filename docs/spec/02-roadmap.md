@@ -4,7 +4,7 @@ Every feature in one list. **Work P1 first, top to bottom, then P2. P3 only when
 
 Status: **Done** (works, keep it working) · **Partial** (some of it exists; finish the rest) · **To build** · **Out of scope** (see [12-engineering.md](12-engineering.md)).
 
-P1 ships as two releases so features can be tested in batches: **5.0** then **5.1**. Within each release, work top to bottom. The version number stays at 4.0.1 until the release pull request; test builds carry a label such as `5.0-dev+B3` (see [12-engineering.md](12-engineering.md#build-and-release)).
+P1 ships as two releases so features can be tested in batches: **5.0** then **5.1**. Within each release, work top to bottom. The version number stays at the last release until the release pull request; test builds carry a label such as `5.0-dev+B3` (see [12-engineering.md](12-engineering.md#build-and-release)).
 
 ## P1: must have
 
