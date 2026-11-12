@@ -253,6 +253,11 @@ class BackupData:
 # the window
 # ---------------------------------------------------------------------------
 
+def ask_save_folder(parent, title: str, start: Path):
+    """The folder dialog for a save (one place, so tests can stand in for it)."""
+    return filedialog.askdirectory(parent=parent, title=title, initialdir=str(start), mustexist=True)
+
+
 class PhoneWindow(tk.Toplevel):
     def __init__(self, app, device: dict, udid: Optional[str], backup: Optional[Path] = None):
         """A phone window: for a connected phone (device + udid), or for any backup folder (B5: `backup`),
@@ -775,19 +780,25 @@ class PhoneWindow(tk.Toplevel):
         PhoneKeep's Saved files folder); raises Cancelled if they close the dialog. Usability test of 12 Nov:
         'save it to the Desktop' needs a choice, not a fixed folder."""
         default = self.out_root / LABEL[key]
-        s = getattr(self.app, "s", {})
-        start = Path(s.get("last_save_dir") or default)
+        s = getattr(self.app, "s", None)
+        last = None
+        try:
+            last = s["last_save_dir"] if s is not None else None
+        except (KeyError, TypeError):
+            last = None
+        start = Path(last) if last else default
         if not start.exists():
             start = default
             start.mkdir(parents=True, exist_ok=True)
-        chosen = filedialog.askdirectory(parent=self, title=f"Save {LABEL[key]} to…", initialdir=str(start), mustexist=True)
+        chosen = ask_save_folder(self, f"Save {LABEL[key]} to…", start)
         if not chosen:
             return None                      # the owner closed the dialog: nothing to save, nothing to say
         d = Path(chosen)
         try:
-            s["last_save_dir"] = str(d)
-            if hasattr(self.app, "save"):
-                self.app.save()
+            if s is not None:
+                s["last_save_dir"] = str(d)
+                if hasattr(self.app, "save"):
+                    self.app.save()
         except Exception:
             pass
         d.mkdir(parents=True, exist_ok=True)

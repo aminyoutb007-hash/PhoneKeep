@@ -147,7 +147,8 @@ win.allfiles_preview()               # what Space and double-click call
 a.update()
 check(opened and Path(opened[0]).name == "sms.db" and Path(opened[0]).stat().st_size > 0, "preview: the file is copied to a private temp folder and opened")
 
-# save keeps the folder structure
+# save keeps the folder structure (the folder dialog is answered with the default folder here)
+phone.ask_save_folder = lambda parent, title, start: str(start)
 tree.selection_set(db)
 btn = next(w for w in win.content.winfo_children()[-1].winfo_children() if hasattr(w, "text") and w.text == "Save selected")
 btn.command()
