@@ -6,6 +6,7 @@ Single entry point for the packaged PhoneKeep app (.app / .exe).
   PhoneKeep -m pymobiledevice3 …  -> internal: the iPhone helper the app runs for backups
 """
 import multiprocessing
+import os
 import sys
 
 
@@ -247,7 +248,10 @@ def main() -> None:
         import phonekeep
         sys.exit(phonekeep.main(args))
     import app
-    app.App().mainloop()
+    try:
+        app.App().mainloop()
+    finally:
+        os._exit(0)          # never leave a windowless process behind (see App.quit_app)
 
 
 if __name__ == "__main__":

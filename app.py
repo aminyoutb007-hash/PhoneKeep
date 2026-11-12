@@ -577,7 +577,19 @@ class App(_dnd_root()):
         self._timers["detect"] = self.after(3000 if self.guide is not None else 15000, self._auto_detect)
 
     # ------------------------------------------------------------------ the menu and Open backup (B5)
+    def quit_app(self):
+        """Quit from the menu (Cmd+Q), the red button or the Dock: close every window and end the process.
+        Background threads (phone readers, a helper being watched) must never keep a windowless PhoneKeep
+        alive — macOS would then 'open' the invisible one instead of starting the app (found 12 Nov)."""
+        try:
+            self.destroy()
+        finally:
+            os._exit(0)
+
     def _build_menu(self):
+        if sys.platform == "darwin":
+            self.createcommand("tk::mac::Quit", self.quit_app)
+        self.protocol("WM_DELETE_WINDOW", self.quit_app)
         bar = tk.Menu(self)
         filem = tk.Menu(bar, tearoff=0)
         filem.add_command(label="Open backup…", command=self.open_backup_dialog, accelerator="Cmd+O" if sys.platform == "darwin" else "Ctrl+O")
