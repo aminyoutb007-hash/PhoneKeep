@@ -11,9 +11,12 @@ LABEL = "app.phonekeep.helper"
 
 
 def helper_command() -> list[str]:
-    """How to start the helper process: the packaged app with --pk-helper, or python launcher.py."""
+    """How to start the helper process. In the packaged app it is the bundled `phonekeep-cli` binary (the
+    same code, a separate executable): if the helper were the app's own binary, macOS would treat a later
+    click on PhoneKeep as "already running" and show no window. Otherwise python launcher.py."""
     if getattr(sys, "frozen", False):
-        return [sys.executable, "--pk-helper"]
+        import phonekeep as wv
+        return [wv._launcher_cmd()[0], "--pk-helper"]
     return [sys.executable, str(Path(__file__).with_name("launcher.py")), "--pk-helper"]
 
 

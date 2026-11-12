@@ -135,6 +135,19 @@ check(pl["ProgramArguments"][-1] == "--pk-helper" and pl["RunAtLoad"] is True, "
 login_item.remove(home=home)
 check(not login_item.installed(home=home), "LaunchAgent removed")
 check(login_item.helper_command()[-1] == "--pk-helper", "helper command ends in --pk-helper")
+# the packaged helper must be a different executable from the app window (macOS 'already running')
+import phonekeep as wv_
+sys_frozen, sys_exe = getattr(sys, "frozen", False), sys.executable
+try:
+    sys.frozen = True
+    sys.executable = "/Applications/PhoneKeep.app/Contents/MacOS/PhoneKeep"
+    cmd = login_item.helper_command()
+    check(cmd[0] != sys.executable and cmd[0].endswith("phonekeep-cli") or cmd[0] == sys.executable and not Path(sys.executable).with_name("phonekeep-cli").exists(),
+          f"packaged helper runs through phonekeep-cli, not the app binary: {cmd}")
+finally:
+    if sys_frozen is False:
+        del sys.frozen
+    sys.executable = sys_exe
 
 # ago / size wording
 import datetime as dt
