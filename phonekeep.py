@@ -185,6 +185,32 @@ def _folder_bytes(folder: Path) -> int:
 _backup_proc: dict = {"proc": None, "cancelled": False}
 
 
+def _pid_alive(pid: int) -> bool:
+    try:
+        if os.name == "nt":
+            import ctypes
+            h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if not h:
+                return False
+            code = ctypes.c_ulong()
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(code))
+            ctypes.windll.kernel32.CloseHandle(h)
+            return bool(ok) and code.value == 259
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def _marker_owner(marker: Path) -> Optional[int]:
+    """The pid of a live process that holds this backup marker, else None (a stale marker is ignored)."""
+    try:
+        pid = int(marker.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid != os.getpid() and _pid_alive(pid) else None
+
+
 class BackupCancelled(PhoneKeepError):
     """The owner pressed Cancel. Not a failure: the half-copied backup is finished next time."""
 
@@ -307,6 +333,17 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
     if warning:
         raise PhoneKeepError(warning, button="Change location", action="change_location", key="disk_full")
 
+    # one backup of a phone at a time, across processes (the window and the menu bar helper)
+    marker = _snaps.phone_dir(backup_root, udid) / "backup.lock"
+    other = _marker_owner(marker)
+    if other:
+        raise PhoneKeepError("A backup of this iPhone is already running (from the menu bar helper or another window). "
+                             "Wait for it to finish, then try again.", button="Try again", action="try_again", key="busy")
+    try:
+        marker.write_text(str(os.getpid()), encoding="utf-8")
+    except OSError:
+        pass
+
     log(f"Backing up '{name}' to {target}")
     log("Incremental backup (only changes since last time)." if existing
         else "First backup: this copies everything and can take a while.")
@@ -355,6 +392,10 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
     finally:
         stop.set()
         _backup_proc["proc"] = None
+        try:
+            marker.unlink()
+        except OSError:
+            pass
 
     if _backup_proc["cancelled"]:
         log("Backup cancelled by the owner. The next backup carries on from here.")

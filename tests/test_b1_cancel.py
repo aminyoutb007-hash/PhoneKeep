@@ -84,6 +84,19 @@ check(not wv.backup_running() and not wv.cancel_backup(), "nothing left running;
 check(wv.backup_incomplete(root / UD / "current" / UD) or not (root / UD / "current" / UD / "Manifest.db").exists(),
       "the half backup is left as 'didn't finish' (the next backup completes it)")
 
+# one backup of a phone at a time, across processes: a live marker from another process refuses plainly
+marker = root / UD / "backup.lock"
+other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+marker.write_text(str(other.pid), encoding="utf-8")
+try:
+    wv.make_backup(root, UD, log=lambda m: None)
+    check(False, "a second backup while another process backs up is refused")
+except wv.PhoneKeepError as e2:
+    check(e2.key == "busy" and str(e2).startswith("A backup of this iPhone is already running"), f"refused plainly: {e2}")
+other.kill(); other.wait()
+check(wv._marker_owner(marker) is None, "a marker from a dead process is ignored")
+marker.unlink()
+
 # the helper (E2/B2) treats a cancel like waiting, not a failed day
 import helper_core as hc
 hc.LOCK_FILE, hc.PORT_FILE, hc.SETTINGS_FILE = W / "helper.lock", W / "app.port", W / "settings.json"
