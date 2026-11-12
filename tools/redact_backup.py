@@ -401,6 +401,8 @@ def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=prin
 def main(argv=None) -> int:
     import argparse
     import getpass
+    import logging
+    logging.basicConfig(level=logging.WARNING)      # the decrypt library's per-file INFO lines would bury the progress line
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("backup", help="the real backup folder (never modified)")
     p.add_argument("out", help="an empty folder for the anonymised copy")
