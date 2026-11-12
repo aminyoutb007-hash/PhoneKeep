@@ -141,6 +141,8 @@ exp2 = W / "export2"
 sx.export_all(fake, exp2, None, ["messages"], include_media=True, log=lambda m: None, formats={"pdf"}, pdf_combined=True)
 one = sorted((exp2 / "Messages" / "PDF").glob("*.pdf"))
 check(len(one) == 1 and pdf_pages(one[0]) >= len(per_chat), f"or one PDF with all chats, each from a new page ({[p.name for p in one]})")
+check(one and one[0].name.endswith(f" and {len(per_chat) - 1} more chat.pdf" if len(per_chat) == 2 else " more chats.pdf"),
+      f"the combined PDF is named after its chats: {[p.name for p in one]}")
 txt = pdf_text(one[0]) if one else None
 if txt is not None:
     names = [p.stem for p in per_chat]

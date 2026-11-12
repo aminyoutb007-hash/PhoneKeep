@@ -593,7 +593,10 @@ def write_chats_pdf(chats: list[dict], out: Path, app_title: str, log: Callable[
     folder.mkdir(parents=True, exist_ok=True)
     started = time.time()
     if combined:
-        dest = write_pdf(chats, folder / f"{_safe_name(app_title)} chats.pdf", out, app_title, progress)
+        # named after what's in it, so it can be found (usability test, 12 Nov: "WhatsApp chats.pdf" wasn't)
+        first = _safe_name(chats[0].get("name") or "Chat", 60) if chats else "Chats"
+        name = first if len(chats) == 1 else f"{first} and {len(chats) - 1} more chat{'s' if len(chats) > 2 else ''}"
+        dest = write_pdf(chats, folder / f"{name}.pdf", out, app_title, progress)
         log(f"PDF: {len(chats):,} chats in one file ({time.time() - started:.0f} s).")
         return dest
     used: set = set()
