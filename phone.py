@@ -901,7 +901,31 @@ class PhoneWindow(tk.Toplevel):
                     return
                 combined = bool(ans)
             dates = sel.pop("_dates", None)
-            self.export_section(key, {"pdf"}, chooser=lambda lists, pv: sel, dates=dates, pdf_combined=combined)
+            folder = self.out_dir(key)              # ask where, like every other Save (usability test, 12 Nov)
+            if folder is None:
+                return
+            tmp = Path(tempfile.mkdtemp(prefix="phonekeep-pdf-"))
+
+            def then(_index):
+                made = sorted((tmp / LABEL[key] / "PDF").glob("*.pdf"))
+                if not made:
+                    self.banner("Couldn't make the PDF.", color="#fdecea")
+                    return
+                saved = []
+                for f in made:
+                    dest, k = folder / f.name, 2
+                    while dest.exists():
+                        dest, k = folder / f"{f.stem} ({k}){f.suffix}", k + 1
+                    shutil.move(str(f), str(dest))
+                    saved.append(dest)
+                shutil.rmtree(tmp, ignore_errors=True)
+                what = saved[0].name if len(saved) == 1 else f"{len(saved):,} PDFs"
+                self.banner(f"✓ Saved {what} to {folder}",
+                            ("Open" if len(saved) == 1 else ("Show in Finder" if sys.platform == "darwin" else "Show folder"),
+                             (lambda: open_file(saved[0])) if len(saved) == 1 else (lambda: reveal(folder))))
+                reveal(saved[0] if len(saved) == 1 else folder)      # show it straight away: the result is visible
+            self.export_section(key, {"pdf"}, chooser=lambda lists, pv: sel, dates=dates, pdf_combined=combined,
+                                then=then, out=tmp)
 
         def print_chats():
             """Print makes the same PDF (all ticked chats in one file) and opens the system print dialog."""

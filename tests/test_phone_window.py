@@ -7,7 +7,7 @@ save produces a file, and that the window closes cleanly.
 
 Needs a display: on Mac and Windows there is one; on Linux run it under `xvfb-run`.
 """
-import datetime as dt, io, shutil, subprocess, sys, time
+import datetime as dt, io, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -241,6 +241,26 @@ if panel is not None:
     check(not panel.tree.get_children() and panel.search_hint.cget("text").startswith("No message contains"),
           f"a word nowhere says so: {panel.search_hint.cget('text')!r}")
     panel.q.set("")
+
+    # M3 from the phone window: tick a chat → Save ticked as PDF → asked where → the PDF is there and shown
+    dest_dir = Path(tempfile.mkdtemp(prefix="pk-pdf-dest-"))
+    asked, shown_paths = [], []
+    real_ask, real_reveal = phone.ask_save_folder, phone.reveal
+    phone.ask_save_folder = lambda parent, title, start: asked.append(title) or str(dest_dir)
+    phone.reveal = lambda p: shown_paths.append(Path(p))
+    try:
+        first = panel.tree.get_children()[0]
+        panel._toggle(first)
+        btn = next(w for w in panel.foot.winfo_children() if getattr(w, "text", "") == "Save ticked as PDF")
+        btn.command()
+        pump(root, lambda: list(dest_dir.glob("*.pdf")) and shown_paths, 60, "PDF saved")
+        pdfs = list(dest_dir.glob("*.pdf"))
+        check(asked and pdfs and pdfs[0].read_bytes().startswith(b"%PDF"), f"Save ticked as PDF asks where and saves there: {[p.name for p in pdfs]}")
+        check(shown_paths and shown_paths[0] == pdfs[0], "and shows the new PDF in Finder straight away")
+        check(win.bar_text.cget("text").startswith("✓ Saved ") and pdfs[0].name in win.bar_text.cget("text"),
+              f"the banner names the file: {win.bar_text.cget('text')!r}")
+    finally:
+        phone.ask_save_folder, phone.reveal = real_ask, real_reveal
 
 # photos came from the backup because the cable was 'unplugged'
 check(isinstance(win.photo_src, ph.BackupPhotoSource), "Photos fell back to the backup when the iPhone wasn't reachable")
