@@ -99,6 +99,26 @@
 - [ ] A Finder-made encrypted backup opens and its Messages appear.
 - [ ] A single file can be previewed and saved from All files.
 
+## B8. Choose which iPhone when several are reachable
+
+**Why (owner, 13 Nov):** with two iPhones nearby, PhoneKeep takes the one on the cable, or else the first one the computer reports over Wi-Fi, without saying so. Unplugging one phone silently switched the window to the other phone over Wi-Fi.
+
+**What the user sees and does:** when more than one iPhone is reachable, the main window says "2 iPhones nearby" and lists them: name, model, **cable** or **Wi-Fi**, last backup. One click picks the phone; the window shows that phone until the owner picks another or it disappears. The phone in the window never changes by itself: if the chosen phone goes away, the window says "*iPhone Amin* is no longer connected" and lists the others to pick from. Settings → Automatic backups has a tick box per phone ("Back up automatically"); the menu bar helper backs up each ticked phone in turn and names the phone in its notifications.
+
+**Requirements**
+- A phone reachable over both cable and Wi-Fi is listed once, as **cable**.
+- With one phone reachable, nothing changes from today (no list, no extra click).
+- The choice is remembered by the phone's ID; a phone seen for the first time is never backed up automatically until it is ticked.
+- A backup always names its phone at the start ("Backing up *iPhone Amin* (cable)…").
+- Two backups never run at once; the second waits for the first and says so.
+
+**Done when**
+- [ ] Two real iPhones, one on the cable and one on Wi-Fi: both listed with the right connection; picking either backs up that one.
+- [ ] Unplugging the chosen phone does not switch the window to the other phone.
+- [ ] With both ticked for automatic backups, the helper backs up both, one after the other, each named in its notification.
+
+Related: [E5](05-ease-of-use.md#e5-all-phones-and-backups-in-one-list) (a card per phone ever backed up, P2) builds on this list.
+
 ## B6. Restore a backup to an iPhone
 
 **What the user sees and does:** in the snapshot list, **Restore to iPhone…** → choose the phone → a confirmation: "Restore *Amin's iPhone* from 3 Nov? Everything on this iPhone will be replaced with the data from that day." The main button says **Restore**. Progress, then "Restore finished. Your iPhone will restart."
@@ -107,6 +127,8 @@
 - Checks Find My is off first and explains how to turn it off if not.
 - Encrypted backups restore with their password (from the keychain).
 - Logged in the activity log.
+- Writes to the phone, so it follows the standing rule: nothing is written to an iPhone without the owner confirming first, every time. The confirmation names the phone and the snapshot date, and its button says **Restore**, never OK.
+- Tested on a spare iPhone only (a restore replaces everything on the phone), never on the owner's own.
 
 **Done when**
 - [ ] A test phone restored from a snapshot shows that snapshot's messages and photos.
