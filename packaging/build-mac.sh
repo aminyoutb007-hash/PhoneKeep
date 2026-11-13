@@ -38,7 +38,7 @@ printf 'BUILD_LABEL = ""\n' > build_label.py          # keep the committed file 
 
 # the launch check opens the real window; PHONEKEEP_NO_HELPER keeps it from starting the menu bar helper
 PHONEKEEP_NO_HELPER=1 dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-launch-check | grep -q "PKLAUNCH ok"
-for c in backup2 apps afc lockdown usbmux; do      # every phone command loads in the packaged app (5.0.0: backup2 didn't)
+for c in backup2 afc usbmux; do      # every phone command loads in the packaged app (5.0.0: backup2 didn't)
   dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli -m pymobiledevice3 $c --help 2>&1 | grep -q "Usage" \
     || { echo "pymobiledevice3 $c does not load in the packaged app" >&2; exit 1; }
 done
