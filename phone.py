@@ -383,15 +383,33 @@ class PhoneWindow(tk.Toplevel):
         row = tk.Frame(self.timeline, bg=BG)
         row.pack(fill="x")
         current = self.snapshot.id if self.snapshot else snaps[0].id
-        titles = sn.timeline_titles(snaps[:8])
-        for i, snap in enumerate(snaps[:8]):
-            lab = tk.Label(row, text=(("🔒 " if snap.locked else "") + titles[i]), bg=GREEN if snap.id == current else CARD,
-                           fg="white" if snap.id == current else INK, font=font(11), padx=8, pady=3, cursor="hand2")
-            lab.grid(row=i // 3, column=i % 3, padx=(0, 4), pady=2, sticky="w")     # wraps, 3 a row
-            lab.bind("<Button-1>", lambda e, s_=snap: self.open_snapshot(s_))
-            lab.bind("<Button-3>", lambda e, s_=snap: self._snapshot_menu(e, s_))
-            lab.bind("<Button-2>", lambda e, s_=snap: self._snapshot_menu(e, s_))
-            lab.bind("<Control-Button-1>", lambda e, s_=snap: self._snapshot_menu(e, s_))
+        # one line per day: the day, then its snapshots as small buttons (the time when a day has several),
+        # three to a line, so nothing runs off the edge (owner's Mac, 13 Nov)
+        days: list = []
+        for snap in snaps[:8]:
+            if days and days[-1][0] == snap.when.date():
+                days[-1][1].append(snap)
+            else:
+                days.append((snap.when.date(), [snap]))
+        r = 0
+        for _d, group in days:
+            several = len(group) > 1
+            if several:
+                tk.Label(row, text=group[0].title, bg=BG, fg=MUTED, font=font(11), anchor="w").grid(
+                    row=r, column=0, sticky="nw", padx=(0, 6), pady=3)
+            for n, snap in enumerate(group):
+                text = (snap.label or snap.when.strftime("%H:%M")) if several else snap.title
+                lab = tk.Label(row, text=("🔒 " if snap.locked else "") + text, bg=GREEN if snap.id == current else CARD,
+                               fg="white" if snap.id == current else INK, font=font(11), padx=7, pady=2, cursor="hand2")
+                if several:
+                    lab.grid(row=r + n // 3, column=1 + n % 3, padx=(0, 4), pady=2, sticky="w")
+                else:
+                    lab.grid(row=r, column=0, columnspan=4, padx=(0, 4), pady=2, sticky="w")
+                lab.bind("<Button-1>", lambda e, s_=snap: self.open_snapshot(s_))
+                lab.bind("<Button-3>", lambda e, s_=snap: self._snapshot_menu(e, s_))
+                lab.bind("<Button-2>", lambda e, s_=snap: self._snapshot_menu(e, s_))
+                lab.bind("<Control-Button-1>", lambda e, s_=snap: self._snapshot_menu(e, s_))
+            r += (len(group) + 2) // 3 if several else 1
         if len(snaps) > 8:
             more = tk.Label(self.timeline, text=f"+ {len(snaps) - 8} older…", bg=BG, fg=GREEN, font=font(11), cursor="hand2", anchor="w")
             more.pack(fill="x")
