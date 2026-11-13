@@ -136,6 +136,14 @@ def app_icon(key: str, small: bool = False, size: int = 0):
     """PhoneKeep's own drawn icon for an app (tools/make_app_icons.py), or None (then the emoji is shown).
     small = the 28 px version; size=48 the main screen's choice icons."""
     k = (key, small, size)
+    if _ICON_CACHE.get(k) is not None:
+        try:
+            _ICON_CACHE[k].width()          # still belongs to a live window (a closed one invalidates it)
+            ok = _ICON_CACHE[k].tk is tk._default_root.tk if tk._default_root else True
+        except (tk.TclError, RuntimeError):
+            ok = False
+        if not ok:
+            del _ICON_CACHE[k]
     if k not in _ICON_CACHE:
         img = None
         p = ICON_DIR / (f"{key}-28.png" if small else f"{key}-{size}.png" if size else f"{key}.png")
