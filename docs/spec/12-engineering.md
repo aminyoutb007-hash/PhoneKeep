@@ -49,6 +49,7 @@ A script, `tools/redact_backup.py`, that makes an anonymised copy of a real back
 - Prints a report of everything it replaced, by kind and count, so the owner can check a copy before it goes anywhere.
 - Approved copies go in a separate private repository.
 - Ready before B5, which is the first feature that needs real Finder/iTunes backups.
+- How it decides: known databases (Messages, Contacts, Calls, Notes, Calendar, Voicemail, Safari, WhatsApp, Voice Memos, Photos) are copied and rewritten column by column (content columns replaced by kind: name, number, email, address, link, text; structural columns kept, except values shaped like a number, email, id or link); rich-text blobs are dropped; every other file becomes a placeholder of the same type and size (zero-filled); Info.plist and Manifest.plist lose their identifiers; the copy is unencrypted.
 
 **Done when**
 - [ ] A redacted copy of a real backup opens in PhoneKeep with every screen populated, and a search of the copy for any name, number or sentence from the original finds nothing.
