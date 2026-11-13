@@ -189,5 +189,23 @@ try:
 except tk.TclError as ex:
     print(f"(window checks skipped: no display: {ex})")
 
+# progress during an update backup (13 Nov, 5.0.1): the phone rewrites files that are already there, so the
+# folder hardly grows; what was written since the start is what counts
+upd = W / "update-backup"
+upd.mkdir(parents=True, exist_ok=True)
+old_file = upd / "aa" / "old"
+old_file.parent.mkdir(exist_ok=True)
+old_file.write_bytes(b"x" * 3_000_000)
+os.utime(old_file, (time.time() - 3600, time.time() - 3600))
+rewritten = upd / "bb" / "rewritten"
+rewritten.parent.mkdir(exist_ok=True)
+rewritten.write_bytes(b"y" * 1_000_000)
+os.utime(rewritten, (time.time() - 3600, time.time() - 3600))
+t0 = time.time()
+rewritten.write_bytes(b"z" * 1_000_000)          # same size: the folder doesn't grow
+(upd / "bb" / "new").write_bytes(b"n" * 500_000)
+check(wv._bytes_written_since(upd, t0 - 2) == 1_500_000,
+      f"an update backup counts rewritten and new files, not folder growth ({wv._bytes_written_since(upd, t0 - 2):,} bytes)")
+
 print("\nB1 CANCEL TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

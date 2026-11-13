@@ -182,6 +182,22 @@ def _folder_bytes(folder: Path) -> int:
     return total
 
 
+def _bytes_written_since(folder: Path, since: float) -> int:
+    """Bytes in files written to `folder` since `since` (a time.time()). An update backup rewrites
+    files that are already there, so the folder hardly grows while gigabytes arrive (13 Nov: the
+    window said "getting ready" all through a backup); new and rewritten files both count here."""
+    total = 0
+    for root, _dirs, files in os.walk(folder):
+        for f in files:
+            try:
+                st = os.stat(os.path.join(root, f))
+            except OSError:
+                continue
+            if st.st_mtime >= since:
+                total += st.st_size
+    return total
+
+
 _backup_proc: dict = {"proc": None, "cancelled": False}
 
 
@@ -352,7 +368,6 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
     # a small watcher that reports how much has been copied, so there is always a sign of life
     seen: dict = {"pct": None, "connected": False}
     stop = threading.Event()
-    start_bytes = _folder_bytes(target) if target.exists() else 0
     t_start = time.time()
 
     def watch():
@@ -360,7 +375,7 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
             if not status:
                 continue
             try:
-                copied = max(0, _folder_bytes(target) - start_bytes) if target.exists() else 0
+                copied = _bytes_written_since(target, t_start - 2) if target.exists() else 0
             except Exception:
                 continue
             mins = int((time.time() - t_start) // 60)
