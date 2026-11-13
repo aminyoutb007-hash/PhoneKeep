@@ -250,7 +250,7 @@ class FirstRunGuide(tk.Frame):
         q = [("wifi", "Back up over Wi-Fi from now on?")]
         if self.app.has_feature("scheduler"):
             q.insert(0, ("auto_daily", "Back up automatically every day?"))
-        if self.app.has_feature("app_lock") and sys.platform == "darwin" and not getattr(self.app, "has_touch_id", lambda: False)():
+        if self.app.has_feature("app_lock") and getattr(self.app, "lock_kind", lambda: None)() == "password":   # S2: a Mac without Touch ID
             q.append(("app_lock", "Lock PhoneKeep with your computer password?"))
         for key, text in q:
             fr = tk.Frame(right, bg=CARD)

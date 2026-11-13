@@ -15,6 +15,7 @@ import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
+import applock
 import errors
 import keychain
 import phone_write
@@ -73,6 +74,7 @@ class Settings:
         "auto_backup": "off",        # E1 step 5 / B2: "daily" | "weekly" | "off"
         "wifi_sync": False,          # E1 step 5: the owner turned on Wi-Fi backups
         "app_lock": None,            # E1 step 5 / S2: None = decide by hardware
+        "lock_idle_minutes": 10,     # S2: hide phone windows after this many idle minutes
         "start_at_login": False,     # E2: the helper starts at login (asked once in E1 step 5)
         "auto_backup_paused": False, # E2: Pause automatic backups
         "auto_backup_hour": 21,      # B2: "around 9 pm"
@@ -249,6 +251,10 @@ class App(_dnd_root()):
         self._timers["first"] = self.after(300, self.detect)
         self.after(15000, self._auto_detect)
         self._start_listener()
+        for seq in ("<Any-KeyPress>", "<Motion>", "<Button>", "<MouseWheel>"):     # S2: idle time
+            self.bind_all(seq, self._touch, add="+")
+        self._activity = time.time()
+        self.after(20000, self._idle_check)
         self.after(1500, self.start_helper)
 
     # ------------------------------------------------------------------ layout
@@ -679,10 +685,12 @@ class App(_dnd_root()):
             self.show_problem(errors.Problem("not_a_backup", "That folder isn't an iPhone backup.", "Choose a backup…", errors.TRY_AGAIN),
                               retry=self.open_backup_dialog)
             return False
-        import phone
-        win = phone.PhoneWindow(self, {}, None, backup=path)
-        self.phone_windows = getattr(self, "phone_windows", []) + [win]
-        phone_write.log_activity(f"Opened the backup {path}", kind="backup")
+        def go():
+            import phone
+            win = phone.PhoneWindow(self, {}, None, backup=path)
+            self.phone_windows = getattr(self, "phone_windows", []) + [win]
+            phone_write.log_activity(f"Opened the backup {path}", kind="backup")
+        self.require_unlock(go, "open this backup in PhoneKeep")
         return True
 
     def open_backup_dialog(self):
@@ -708,20 +716,99 @@ class App(_dnd_root()):
             w.pack(fill="x", pady=(0, 0) if w is self.main_cards[0] else (14, 0))
         self.detect(silent=True)
 
-    FEATURES = {"scheduler": True, "app_lock": False}   # flipped on by the PR that ships each feature
+    FEATURES = {"scheduler": True, "app_lock": True}   # flipped on by the PR that ships each feature
 
     def has_feature(self, name: str) -> bool:
         return bool(self.FEATURES.get(name))
 
     def has_touch_id(self) -> bool:
-        """Best effort: Macs with Touch ID report a biometric sensor; used only to word a question."""
-        if sys.platform != "darwin":
+        return self.lock_kind() == "touch_id"
+
+    # ------------------------------------------------------------------ app lock (S2)
+    def lock_kind(self):
+        """What this computer locks PhoneKeep with ("touch_id" | "password" | "hello"), or None. Asked once."""
+        if not hasattr(self, "_lock_kind"):
+            self._lock_kind = applock.available()
+        return self._lock_kind
+
+    def lock_on(self) -> bool:
+        kind = self.lock_kind()
+        if kind is None:
             return False
+        v = self.s["app_lock"]
+        return applock.default_on(kind) if v is None else bool(v)
+
+    def is_unlocked(self) -> bool:
+        return not self.lock_on() or getattr(self, "_unlocked", False)
+
+    def require_unlock(self, then, reason: str = "open your iPhone's data in PhoneKeep"):
+        """Run `then` now if PhoneKeep is unlocked, else after Touch ID / the computer password / Windows Hello.
+        Cancelling does nothing (the window stays closed). Scheduled backups never come through here."""
+        if self.is_unlocked():
+            self._activity = time.time()
+            then()
+            return
+        if getattr(self, "_asking_unlock", False):
+            return
+
+        def ask():
+            ok = applock.authenticate(reason)
+            self.call(lambda: done(ok))
+
+        def done(ok):
+            self._asking_unlock = False
+            if ok:
+                self._unlocked = True
+                self._activity = time.time()
+                self.log("PhoneKeep unlocked.")
+                then()
+        self._asking_unlock = True
+        threading.Thread(target=ask, daemon=True).start()
+
+    def unlock_blocking(self, reason: str = "show your chats and photos") -> bool:
+        """From a worker thread (the export's chooser step): wait for the unlock. True if unlocked."""
+        if self.is_unlocked():
+            return True
+        box, ev = {"ok": False}, threading.Event()
+        self.call(lambda: self.require_unlock(lambda: (box.update(ok=True), ev.set()), reason))
+        # if the person cancels, require_unlock never calls back: give up when the prompt has closed
+        while not ev.wait(0.5):
+            if not getattr(self, "_asking_unlock", False) and not self.is_unlocked():
+                return False
+        return box["ok"]
+
+    def _touch(self, _e=None):
+        self._activity = time.time()
+
+    def _idle_check(self):
+        """Every 20 s: after the chosen idle minutes, lock again and cover every phone window."""
         try:
-            out = subprocess.run(["bioutil", "-r"], capture_output=True, text=True, timeout=5).stdout
-            return "Touch ID" in out or "fingerprint" in out.lower()
-        except Exception:
-            return False
+            if self.lock_on() and getattr(self, "_unlocked", False):
+                idle = time.time() - getattr(self, "_activity", time.time())
+                if idle >= 60 * int(self.s["lock_idle_minutes"]):
+                    self.lock_now()
+        finally:
+            self.after(20000, self._idle_check)
+
+    def lock_now(self):
+        self._unlocked = False
+        for win in self.open_phone_windows():
+            try:
+                win.cover_locked()
+            except tk.TclError:
+                pass
+        self.log("PhoneKeep locked after being idle.")
+
+    def open_phone_windows(self) -> list:
+        wins = list(getattr(self, "phone_windows", [])) + [getattr(self, "phone_win", None)]
+        out = []
+        for w in wins:
+            try:
+                if w is not None and w.winfo_exists() and w not in out:
+                    out.append(w)
+            except tk.TclError:
+                pass
+        return out
 
     def detect(self, silent: bool = False):
         if self.busy or getattr(self, "detecting", False):
@@ -782,6 +869,8 @@ class App(_dnd_root()):
     def _choose_chats(self, lists, preview):
         if not any(chats for _l, chats in lists.values()):
             return {}
+        if not self.unlock_blocking("show your chats"):
+            return None
         box, ev = {}, threading.Event()
 
         def show():
@@ -801,6 +890,8 @@ class App(_dnd_root()):
         return box.get("v")
 
     def _choose_photos(self, source, items):
+        if not self.unlock_blocking("show your photos"):
+            return set()
         box, ev = {}, threading.Event()
 
         def show():
@@ -995,8 +1086,10 @@ class App(_dnd_root()):
                 return
         except tk.TclError:
             pass
-        import phone
-        self.phone_win = phone.PhoneWindow(self, self.device, self.udid)
+        def go():
+            import phone
+            self.phone_win = phone.PhoneWindow(self, self.device, self.udid)
+        self.require_unlock(go)
 
     # ------------------------------------------------------------------ actions
     def _reset_progress(self, with_backup: bool = True):
@@ -1430,6 +1523,42 @@ class SettingsWindow(tk.Toplevel):
                            180, 38, 13, bg=CARD).pack(side="left")
             ui.RoundButton(row, "Turn encryption off…", lambda: app.encryption_off(self), "secondary",
                            200, 38, 13, bg=CARD).pack(side="left", padx=8)
+
+        # app lock (S2)
+        kind = app.lock_kind()
+        lk = tk.Frame(sec, bg=CARD)
+        lk.pack(fill="x", pady=(14, 0))
+        if kind is None:
+            tk.Label(lk, text="Lock PhoneKeep: not available on this computer (it needs Touch ID, a Mac password "
+                              "or Windows Hello).", bg=CARD, fg=MUTED, font=font(12), wraplength=560,
+                     justify="left", anchor="w").pack(fill="x")
+        else:
+            self.lock_var = tk.BooleanVar(value=app.lock_on())
+
+            def set_lock():
+                on = self.lock_var.get()
+                if on or app.is_unlocked():
+                    app.s["app_lock"] = on
+                    app.log("App lock " + ("on." if on else "off."))
+                    return
+                # turning it off asks first, so someone at an unlocked computer can't just switch it off
+                self.lock_var.set(True)
+                app.require_unlock(lambda: (app.s.__setitem__("app_lock", False), self.lock_var.set(False),
+                                            app.log("App lock off.")), "turn off the PhoneKeep lock")
+            self.set_lock = set_lock
+            ttk.Checkbutton(lk, text=f"Lock PhoneKeep with {applock.describe(kind)}", variable=self.lock_var,
+                            command=set_lock).pack(anchor="w")
+            tk.Label(lk, text="Opening your iPhone's data asks first. Automatic backups still run while it's locked.",
+                     bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left", wraplength=560).pack(fill="x", padx=(22, 0))
+            irow = tk.Frame(lk, bg=CARD)
+            irow.pack(anchor="w", padx=(22, 0), pady=(6, 0))
+            tk.Label(irow, text="Lock again after", bg=CARD, fg=INK, font=font(12)).pack(side="left")
+            self.idle_var = tk.StringVar(value=str(app.s["lock_idle_minutes"]))
+            cb = ttk.Combobox(irow, textvariable=self.idle_var, values=["5", "10", "15", "30", "60"],
+                              state="readonly", width=4)
+            cb.pack(side="left", padx=6)
+            cb.bind("<<ComboboxSelected>>", lambda e: app.s.__setitem__("lock_idle_minutes", int(self.idle_var.get())))
+            tk.Label(irow, text="minutes without using PhoneKeep", bg=CARD, fg=INK, font=font(12)).pack(side="left")
 
         # no network (S3)
         import netguard

@@ -20,6 +20,10 @@ import phonekeep as wv
 import snapshots as sn
 
 keychain.use_memory()
+
+import applock
+
+applock.use_backend(lambda: None, lambda reason: False)   # no Touch ID prompts in tests (S2 has its own)
 W = HERE / "work" / "b5"
 shutil.rmtree(W, ignore_errors=True)
 W.mkdir(parents=True)

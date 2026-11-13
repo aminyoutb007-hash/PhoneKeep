@@ -24,6 +24,10 @@ import keychain
 import phone_write
 
 keychain.use_memory()
+
+import applock
+
+applock.use_backend(lambda: None, lambda reason: False)   # no Touch ID prompts in tests (S2 has its own)
 phone_write.ACTIVITY_FILE = W / "activity.jsonl"
 phone_write.ACTIVITY_FILE.unlink(missing_ok=True)
 

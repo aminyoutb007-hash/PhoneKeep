@@ -18,6 +18,7 @@ STEPS = [
     ("Security: script injection, path escapes, spreadsheet formulas", "test_security.py", False),
     ("Phone window with a simulated iPhone", "test_phone_window.py", True),   # needs a display
     ("S1: encryption by default, keychain, no password on command lines or in logs", "test_s1_encryption.py", True),
+    ("S2: app lock with Touch ID / the computer password / Windows Hello", "test_s2_app_lock.py", True),
     ("S3: no network during backup + export + phone window", "test_s3_no_network.py", True),
     ("E3: plain-language errors, each situation reproduced", "test_e3_errors.py", True),
     ("B1: a running backup can be cancelled (engine, main window, guide, helper)", "test_b1_cancel.py", True),

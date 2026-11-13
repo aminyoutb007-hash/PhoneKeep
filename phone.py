@@ -518,6 +518,33 @@ class PhoneWindow(tk.Toplevel):
         except tk.TclError:
             pass
 
+    def cover_locked(self):
+        """S2: after the idle time, hide everything in this window behind one Unlock button."""
+        if getattr(self, "_lock_cover", None) is not None:
+            return
+        cover = tk.Frame(self, bg=BG)
+        cover.place(relx=0, rely=0, relwidth=1, relheight=1)
+        box = tk.Frame(cover, bg=BG)
+        box.place(relx=0.5, rely=0.45, anchor="center")
+        tk.Label(box, text="🔒", bg=BG, font=font(48)).pack()
+        tk.Label(box, text="PhoneKeep is locked", bg=BG, fg=INK, font=font(20, "bold")).pack(pady=(6, 2))
+        tk.Label(box, text=f"{self.name} is hidden until you unlock.", bg=BG, fg=MUTED, font=font(13)).pack()
+        self.unlock_btn = RoundButton(box, "Unlock", lambda: self.app.require_unlock(self.uncover, "show your iPhone's data again"),
+                                      "primary", 160, 42, bg=BG)
+        self.unlock_btn.pack(pady=(16, 0))
+        cover.lift()
+        self._lock_cover = cover
+
+    def uncover(self):
+        """Unlocked: show this window again, and every other covered phone window."""
+        cover = getattr(self, "_lock_cover", None)
+        if cover is not None:
+            cover.destroy()
+            self._lock_cover = None
+        for w in (self.app.open_phone_windows() if hasattr(self.app, "open_phone_windows") else ()):
+            if w is not self and getattr(w, "_lock_cover", None) is not None:
+                w.uncover()
+
     def banner(self, text: str, button: Optional[tuple] = None, color=GREEN_SOFT):
         if not text:
             self.bar_frame.pack_forget()
