@@ -139,6 +139,10 @@ jobs:
         run: |
           dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --version
           dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli -m pymobiledevice3 version
+          # load every command PhoneKeep runs (each imports its own libraries lazily; 5.0.0's backup2 failed here)
+          for c in backup2 apps afc lockdown usbmux; do
+            dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli -m pymobiledevice3 $c --help 2>&1 | grep -q "Usage" || { echo "pymobiledevice3 $c --help printed no usage"; exit 1; }
+          done
           out=$(dist/PhoneKeep.app/Contents/MacOS/PhoneKeep --pk-launch-check 2>&1 | tail -5)
           echo "$out"
           echo "$out" | grep -q "PKLAUNCH ok"
@@ -227,6 +231,10 @@ jobs:
         run: |
           dist\PhoneKeep\phonekeep-cli.exe --version
           dist\PhoneKeep\phonekeep-cli.exe -m pymobiledevice3 version
+          foreach ($c in "backup2", "apps", "afc", "lockdown", "usbmux") {
+            $h = & dist\PhoneKeep\phonekeep-cli.exe -m pymobiledevice3 $c --help 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0 -or $h -notmatch "Usage") { Write-Host $h; throw "pymobiledevice3 $c does not load in the packaged app" }
+          }
           $out = & dist\PhoneKeep\phonekeep-cli.exe --pk-launch-check 2>&1 | Out-String
           Write-Host $out
           if ($out -notmatch "PKLAUNCH ok") { throw "The packaged app did not open its window" }

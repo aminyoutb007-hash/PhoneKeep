@@ -2,7 +2,7 @@
 # Run from the project folder:  pyinstaller packaging/PhoneKeep.spec
 import os
 import sys
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 datas, binaries, hiddenimports = [], [], []
 for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl", "certifi", "keyring", "tkinterdnd2", "send2trash",
@@ -13,6 +13,13 @@ for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl
         datas += d; binaries += b; hiddenimports += h
     except Exception as e:
         print(f"note: could not collect {pkg}: {e}")
+# Package metadata (dist-info) for pymobiledevice3 and everything it depends on: some of those libraries read their
+# own version at import (apple_compress, via pyimg4, on a Mac: without it every backup failed in 5.0.0)
+for pkg in ("pymobiledevice3", "iphone_backup_decrypt", "reportlab"):
+    try:
+        datas += copy_metadata(pkg, recursive=True)
+    except Exception as e:
+        print(f"note: could not copy metadata for {pkg}: {e}")
 # pymobiledevice3's CLI pulls in many lazily-imported libraries
 for pkg in ("typer", "rich", "click", "construct", "asn1", "srptools", "pycrashreport",
             "developer_disk_image", "ipsw_parser", "pygnuutils", "hyperframe", "qh3", "opack2"):
@@ -47,8 +54,8 @@ coll = COLLECT(exe, exe_cli, a.binaries, a.datas, name="PhoneKeep")
 if sys.platform == "darwin":
     app = BUNDLE(coll, name="PhoneKeep.app", icon=ICON, bundle_identifier="app.phonekeep.PhoneKeep",
                  info_plist={
-                     "CFBundleShortVersionString": "5.0.0",
-                     "CFBundleVersion": "5.0.0",
+                     "CFBundleShortVersionString": "5.0.1",
+                     "CFBundleVersion": "5.0.1",
                      "NSHighResolutionCapable": True,
                      "LSMinimumSystemVersion": "11.0",
                      "NSHumanReadableCopyright": "Open source. Runs locally; nothing is uploaded.",
