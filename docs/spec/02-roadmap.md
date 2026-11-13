@@ -26,13 +26,13 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | B5 | Open any backup and browse its files | File → Open backup…, drop a folder, Finder/iTunes backups listed, All files screen | Done | [03-backup.md](03-backup.md#b5-open-any-backup-and-browse-its-files) |
 | M1 | Browse Messages (iMessage, SMS) | Works | Done | [06-messages.md](06-messages.md#m1-browse-messages) |
 | M2 | Browse WhatsApp and WhatsApp Business | Works | Done | [06-messages.md](06-messages.md#m2-browse-whatsapp-and-whatsapp-business) |
+| M3 | Chats to PDF and print (moved from 5.1 on 12 Nov: usability task 3 asks for a PDF) | PDF per chat or combined, phone-like bubbles, photos, emoji, Arabic; Print opens the system dialog | In review | [06-messages.md](06-messages.md#m3-chats-to-pdf-and-print) |
 
 ### Release 5.1
 
 | ID | Feature | Today | Status | Details |
 | --- | --- | --- | --- | --- |
 | S2 | App lock (Touch ID / password) | Not available | To build | [04-security.md](04-security.md#s2-app-lock) |
-| M3 | Chats to PDF and print | Web page, Excel, CSV only | To build | [06-messages.md](06-messages.md#m3-chats-to-pdf-and-print) |
 | P1 | Photos: albums, preview, HEIC to JPG | By month, live, originals | Partial | [07-photos-media.md](07-photos-media.md#p1-photos) |
 | D9 | Export everything with one date range and search | Everything preset; dates for chats only | Partial | [08-personal-data.md](08-personal-data.md#d9-export-everything) |
 | V1 | Device overview | Name, iOS, connection | Partial | [10-device.md](10-device.md#v1-device-overview) |

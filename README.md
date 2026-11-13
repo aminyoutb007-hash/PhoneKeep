@@ -63,6 +63,8 @@ Photos, Music, Books, App Files and the wallpaper are read **live from the iPhon
 - **Snapshots over time**: every backup is kept as a snapshot you can open from the phone window's timeline; unchanged files are stored once. Keep one forever, rename it, or delete it.
 - **Backups on any drive**: Settings → Location; move existing backups to an external drive with a verified copy; PhoneKeep waits quietly when the drive is unplugged.
 - **Open any backup**: File → Open backup… (or drop a folder on the window) opens PhoneKeep's own backups and Finder/iTunes ones, and the **All files** screen shows everything in a backup as folders.
+- **Chats to PDF and print**: tick chats and save them as PDFs that look like the phone (bubbles, photos, emoji, Arabic right to left), one per chat or all in one; *Print* opens the print dialog with the same pages.
+- **Search inside chats**: the search box finds words in messages, not just chat names, and highlights them.
 - **Plain-language errors** with one button that fixes the problem, and *Show details* for the technical text.
 - **Cancel** a running backup at any time; the next backup carries on from where it stopped.
 

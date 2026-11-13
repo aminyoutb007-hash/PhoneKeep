@@ -1117,7 +1117,7 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
                     binfo: Optional[dict] = None, name_for=None, hub: bool = False,
                     strict: bool = False, only_chats: Optional[set] = None,
                     formats: Optional[set] = None, loaded: Optional[dict] = None,
-                    dates=None) -> dict:
+                    dates=None, pdf_combined: bool = False) -> dict:
     """Build the WhatsApp (or WhatsApp Business) archive in `out` from an open backup.
     loaded: the result of load_whatsapp(), when the chats were already read (e.g. for the picker).
     dates: (from, to) to keep only messages in that period."""
@@ -1193,8 +1193,12 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
         import tables
         tables.write_chats_csv(chats, out / "CSV", log)
         main = main or "CSV/_All chats.csv"
+    if "pdf" in formats:
+        import chat_pdf
+        pdf = chat_pdf.write_chats_pdf(chats, out, title, log, combined=pdf_combined)
+        main = main or pdf.relative_to(out).as_posix()
     n = sum(len(c["messages"]) for c in chats)
-    extra = [f for f, on in (("Excel", "excel" in formats), ("CSV", "csv" in formats)) if on]
+    extra = [f for f, on in (("PDF", "pdf" in formats), ("Excel", "excel" in formats), ("CSV", "csv" in formats)) if on]
     return {"count": n, "main": main,
             "detail": f"{len(chats):,} chats · {n:,} messages" + (f" · {' + '.join(extra)}" if extra else "")}
 

@@ -7,6 +7,10 @@ keyring>=25
 certifi>=2024.0
 rumps>=0.4; sys_platform == "darwin"
 pyobjc-framework-Cocoa>=10; sys_platform == "darwin"   # rumps needs Foundation/AppKit; listed here because rumps ships no wheel
+pyobjc-framework-Quartz>=10; sys_platform == "darwin"  # PDFKit: the print dialog for chat PDFs (M3)
 pystray>=0.19; sys_platform != "darwin"
 send2trash>=1.8
 tkinterdnd2>=0.4
+reportlab>=4.0          # chats to PDF (M3)
+arabic-reshaper>=3.0    # Arabic letter forms in PDFs
+python-bidi>=0.4        # right-to-left order in PDFs
