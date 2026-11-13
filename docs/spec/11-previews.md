@@ -41,7 +41,7 @@ These make PhoneKeep pleasant. They never come before security or ease of use, a
 
 ## Q6. Photo extras
 
-**P3.** A map of where photos were taken; "On this day" photos from past years on the Photos home; a duplicate finder that suggests the best copy to keep (saving only, never deleting on the phone).
+**P3.** A map of where photos were taken; "On this day" photos from past years on the Photos home. (The duplicate finder is now part of Photo clean-up, C1 in [13-phone-health.md](13-phone-health.md#c1-photo-clean-up-find-and-save).)
 
 ## Already done (keep them)
 

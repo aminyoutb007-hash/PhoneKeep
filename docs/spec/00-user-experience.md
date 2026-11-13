@@ -79,7 +79,7 @@ Main window
 │   ├── Home: app grid with counts
 │   └── App screens: Photos · Messages · WhatsApp · WhatsApp Business · Calls · Contacts
 │       · Voicemail · Notes · Calendar · Voice Memos · Safari · Music · Books · Files · Apps
-│       · Battery & storage · Security check
+│       · Check-up (storage, battery, stability, security)
 ├── Settings: backups (schedule, location, snapshots) · security (password, app lock) · appearance · advanced
 └── Menu bar / tray helper: status · Back up now · Open iPhone · Quit
 ```

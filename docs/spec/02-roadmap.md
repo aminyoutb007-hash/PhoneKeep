@@ -43,9 +43,23 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 
 ## P2: should have
 
+### Phone health and clean-up (first in P2, top to bottom; added 13 Nov)
+
 | ID | Feature | Today | Status | Details |
 | --- | --- | --- | --- | --- |
-| S5 | Spyware check (moved from P1 pending the MVT licence check) | Not available | To build | [04-security.md](04-security.md#s5-spyware-check) |
+| H1 | Check-up screen: Storage, Battery, Stability, Security cards; "Why is my phone slow?" (needs V2, V3) | Not available | To build | [13-phone-health.md](13-phone-health.md#h1-check-up-screen) |
+| H2 | Storage card: clean-up suggestions and forecast | Not available | To build | [13-phone-health.md](13-phone-health.md#h2-storage-card-and-clean-up-suggestions) |
+| H3 | Battery card: battery health history | Not available | To build | [13-phone-health.md](13-phone-health.md#h3-battery-card-and-battery-history) |
+| C1 | Photo clean-up: find and save (duplicates, similar, poor quality, old screenshots, large videos, chat clutter) | Not available | To build | [13-phone-health.md](13-phone-health.md#c1-photo-clean-up-find-and-save) |
+| H4 | Stability card: app crashes and unexpected restarts | Not available | To build | [13-phone-health.md](13-phone-health.md#h4-stability-card) |
+| H5 | Security card (includes S5) | Not available | To build | [13-phone-health.md](13-phone-health.md#h5-security-card) |
+| C2 | Remove cleaned-up photos from the iPhone (spike first; build only after agreement) | Not available | To build | [13-phone-health.md](13-phone-health.md#c2-remove-cleaned-up-photos-from-the-iphone) |
+
+### Everything else in P2
+
+| ID | Feature | Today | Status | Details |
+| --- | --- | --- | --- | --- |
+| S5 | Spyware check (moved from P1 pending the MVT licence check; now part of H5) | Not available | To build | [04-security.md](04-security.md#s5-spyware-check) |
 | S6 | Encrypted exports | Not available | To build | [04-security.md](04-security.md#s6-encrypted-exports) |
 | S7 | Activity log | Not available | To build | [04-security.md](04-security.md#s7-activity-log) |
 | S8 | Tamper check for backups | Not available | To build | [04-security.md](04-security.md#s8-tamper-check) |
@@ -91,4 +105,8 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | V4 | Move data to a new iPhone | Not available | To build | [10-device.md](10-device.md#v4-move-to-a-new-iphone) |
 | V5 | Screenshots of the phone | Not available | To build | [10-device.md](10-device.md#v5-screenshots) |
 | Q6 | Photo map and "on this day" | Not available | To build | [11-previews.md](11-previews.md#q6-photo-extras) |
+| C3 | Duplicate contacts (read-only, points to the iPhone's merge) | Not available | To build | [13-phone-health.md](13-phone-health.md#later-ideas-p3-only-when-asked) |
+| H6 | Family check-ups (one line per phone) | Not available | To build | [13-phone-health.md](13-phone-health.md#later-ideas-p3-only-when-asked) |
+| H7 | Selling or passing on an iPhone checklist | Not available | To build | [13-phone-health.md](13-phone-health.md#later-ideas-p3-only-when-asked) |
+| H8 | Monthly health summary PDF | Not available | To build | [13-phone-health.md](13-phone-health.md#later-ideas-p3-only-when-asked) |
 | X1 | Command line for every feature | Main features only | Partial | [12-engineering.md](12-engineering.md#command-line) |
