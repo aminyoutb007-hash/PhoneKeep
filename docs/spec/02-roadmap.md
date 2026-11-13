@@ -39,6 +39,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | V2 | Battery health | Not available | To build | [10-device.md](10-device.md#v2-battery-health) |
 | V3 | Storage usage | Not available | To build | [10-device.md](10-device.md#v3-storage-usage) |
 | Q1 | Quick previews (Space key) everywhere | Partly (double-click opens) | Partial | [11-previews.md](11-previews.md#q1-quick-preview-everywhere) |
+| B8 | Choose which iPhone when several are reachable (added 13 Nov, owner) | Cable wins, else the first on Wi-Fi, without saying so; one phone at a time | To build | [03-backup.md](03-backup.md#b8-choose-which-iphone-when-several-are-reachable) |
 | S4 | Signed and notarised installers (last: needs the certificates) | Ad-hoc signed; users must click Open Anyway. Workflow signs when the secrets exist | Partial | [04-security.md](04-security.md#s4-signed-and-notarised-installers) |
 
 ## P2: should have
