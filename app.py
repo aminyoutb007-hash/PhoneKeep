@@ -27,13 +27,13 @@ from ui import AMBER, BG, CARD, GREEN, GREEN_SOFT, INK, LINE, MUTED, RED, font
 SETTINGS_FILE = wv.DEFAULT_HOME / "settings.json"
 
 PRESETS = {
-    "chats": ("💬", "Chats", "WhatsApp (both apps)\nand Messages",
+    "chats": ("💬", "Chats", "WhatsApp and Messages",
               ["whatsapp", "whatsappbusiness", "messages", "contacts"]),
-    "chats_photos": ("📷", "Chats & photos", "Chats plus your\nphotos and videos",
+    "chats_photos": ("📷", "Chats & photos", "Plus photos and videos",
                      ["whatsapp", "whatsappbusiness", "messages", "contacts", "photos"]),
-    "everything": ("📱", "Everything", "Chats, photos, contacts,\ncalls, notes and more",
+    "everything": ("📱", "Everything", "Contacts, calls, notes and more",
                    list(sx.DEFAULT_SECTIONS)),
-    "custom": ("⚙", "Custom", "Pick exactly what\nto include", None),
+    "custom": ("⚙", "Custom", "Pick exactly what to include", None),
 }
 STEPS = [("backup", "Back up iPhone"), ("choose", "Choose chats & photos"), ("build", "Build your archive")]
 
@@ -322,31 +322,29 @@ class App(_dnd_root()):
         tiles.pack(fill="x", padx=14)
         self.tiles = {}
         for i, (key, (icon, title, sub, _secs)) in enumerate(PRESETS.items()):
-            t = tk.Frame(tiles, bg=CARD, highlightthickness=2, highlightbackground=LINE, cursor="hand2")
-            t.grid(row=0, column=i, sticky="nsew", padx=4)
+            img = ui.app_icon(f"keep_{key}", size=48)
+            card = ui.ChoiceCard(tiles, img, title, sub if img is not None else f"{icon}  {sub}",
+                                 lambda k=key: self._choose_preset(k), bg=CARD)
+            card.grid(row=0, column=i, sticky="ew", padx=5)
             tiles.columnconfigure(i, weight=1, uniform="t")
-            widgets = [t]
-            for txt, fnt, fg in ((icon, font(22), INK), (title, font(14, "bold"), INK), (sub, font(11), MUTED)):
-                lab = tk.Label(t, text=txt, bg=CARD, fg=fg, font=fnt, justify="center")
-                lab.pack(pady=(8 if txt == icon else 0, 8 if txt == sub else 0))
-                widgets.append(lab)
-            for w in widgets:
-                w.bind("<Button-1>", lambda e, k=key: self._choose_preset(k))
-            self.tiles[key] = widgets
+            self.tiles[key] = card
+        # the options, aligned: labels in one column, small even pills beside them
         opts = tk.Frame(wc, bg=CARD)
-        opts.pack(fill="x", padx=18, pady=(12, 4))
-        tk.Label(opts, text="Save chats as", bg=CARD, fg=MUTED, font=font(12)).pack(side="left", padx=(0, 8))
-        for f, label in (("web", "Web pages"), ("pdf", "PDF"), ("excel", "Excel"), ("csv", "CSV")):
-            ui.Chip(opts, label, self.fmt[f], bg=CARD).pack(side="left", padx=3)
-        opts2 = tk.Frame(wc, bg=CARD)
-        opts2.pack(fill="x", padx=18, pady=(6, 16))
-        tk.Label(opts2, text="Let me choose", bg=CARD, fg=MUTED, font=font(12)).pack(side="left", padx=(0, 8))
-        ui.Chip(opts2, "which chats", self.pick_chats, bg=CARD).pack(side="left", padx=3)
-        ui.Chip(opts2, "which photos", self.pick_photos, bg=CARD).pack(side="left", padx=3)
+        opts.pack(fill="x", padx=19, pady=(14, 16))
+        for r, (label, chips) in enumerate((
+                ("Save chats as", [(lab, self.fmt[f]) for f, lab in (("web", "Web pages"), ("pdf", "PDF"),
+                                                                       ("excel", "Excel"), ("csv", "CSV"))]),
+                ("Let me choose", [("which chats", self.pick_chats), ("which photos", self.pick_photos)]))):
+            tk.Label(opts, text=label, bg=CARD, fg=MUTED, font=font(12), anchor="w").grid(
+                row=r, column=0, sticky="w", padx=(0, 14), pady=4)
+            row = tk.Frame(opts, bg=CARD)
+            row.grid(row=r, column=1, sticky="w", pady=4)
+            for text, var in chips:
+                ui.Chip(row, text, var, size=12, bg=CARD, height=28).pack(side="left", padx=(0, 6))
         self._choose_preset(self.preset.get(), save=False)
 
         # main button
-        self.go = ui.RoundButton(self.body, "Back up now", self.backup_and_export, "primary", 400, 54, 17)
+        self.go = ui.RoundButton(self.body, "Back up now", self.backup_and_export, "primary", 400, 50, 16)
         self.go.pack(fill="x")
         # Cancel is always available for a long job (01-principles.md, 6); shown only while a backup runs
         self.cancel_btn = ui.RoundButton(self.body, "Cancel backup", self.cancel_backup, "secondary", 400, 40, 14)
@@ -397,12 +395,8 @@ class App(_dnd_root()):
 
     def _choose_preset(self, key: str, save: bool = True):
         self.preset.set(key)
-        for k, widgets in self.tiles.items():
-            on = k == key
-            widgets[0].configure(highlightbackground=GREEN if on else LINE,
-                                 bg=GREEN_SOFT if on else CARD)
-            for w in widgets[1:]:
-                w.configure(bg=GREEN_SOFT if on else CARD)
+        for k, card in self.tiles.items():
+            card.set(k == key)
         if save:
             self.s["preset"] = key
             if key == "custom":
