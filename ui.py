@@ -752,7 +752,12 @@ class PhotoPanel(tk.Frame):
         side = card(body)
         side.pack(side="left", fill="y")
         tk.Label(side, text="Months", bg=CARD, fg=MUTED, font=font(11, "bold"), anchor="w").pack(fill="x", padx=10, pady=(8, 2))
-        self.mlist = ttk.Treeview(side, columns=("m", "n"), show="", selectmode="browse", height=18)
+        st = ttk.Style(self)                 # PhoneKeep's own colours (macOS dark mode drew this list black)
+        st.configure("Months.Treeview", background=CARD, fieldbackground=CARD, foreground=INK, rowheight=28,
+                     font=font(12))
+        st.map("Months.Treeview", background=[("selected", GREEN_SOFT)], foreground=[("selected", INK)])
+        self.mlist = ttk.Treeview(side, columns=("m", "n"), show="", selectmode="browse", height=18,
+                                  style="Months.Treeview")
         self.mlist.column("m", width=130)
         self.mlist.column("n", width=86, anchor="e")
         self.mlist.pack(fill="y", expand=True, padx=4, pady=4)
@@ -789,16 +794,18 @@ class PhotoPanel(tk.Frame):
         self.canvas.yview_scroll(int(-e.delta / (1 if sys.platform == "darwin" else 120)), "units")
 
     def _fill_months(self):
-        sel = self.mlist.selection()
-        self.mlist.delete(*self.mlist.get_children())
+        """Month rows with their ☑/◪/☐ and counts. Rows are updated in place: deleting and re-inserting them
+        re-selected the open month, which emptied the photo grid (13 Nov: Select none, then Select this month)."""
         for m in self.month_keys:
             items = self.months[m]
             n_sel = sum(1 for i in items if i.id in self.selected)
             label = dt.datetime.strptime(m, "%Y-%m").strftime("%B %Y") if m != "1970-01" else "Unknown date"
             mark = "☑" if n_sel == len(items) else ("◪" if n_sel else "☐")
-            self.mlist.insert("", "end", iid=m, values=(f"{mark} {label}", f"{n_sel}/{len(items)}"))
-        if sel and self.mlist.exists(sel[0]):
-            self.mlist.selection_set(sel[0])
+            values = (f"{mark} {label}", f"{n_sel}/{len(items)}")
+            if self.mlist.exists(m):
+                self.mlist.item(m, values=values)
+            else:
+                self.mlist.insert("", "end", iid=m, values=values)
 
     def _month(self) -> Optional[str]:
         s = self.mlist.selection()
@@ -810,6 +817,7 @@ class PhotoPanel(tk.Frame):
             w.destroy()
         self.tiles.clear()
         self.shown = 0
+        self._laid_out = None          # new tiles: always place them
         self.canvas.yview_moveto(0)
         self._more()
 
