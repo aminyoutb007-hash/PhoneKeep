@@ -192,5 +192,83 @@ try:
 except tk.TclError as e:
     print(f"(dialog checks skipped: no display: {e})")
 
+# -- a failed open never deletes the stored password (found on a real Mac, 12 Nov) -------------------
+# The owner's only copy of the password lives in the keychain. An open can fail for reasons that have
+# nothing to do with the password (a snapshot still being written, a refused keychain read); the stored
+# password stays until a typed one proves to open the backup.
+try:
+    import tkinter as tk
+    import phone
+    import ui as _ui
+    import tempfile as _tf
+    keychain.set_password("00008030-S1WIN", SECRET)
+    tmp = Path(_tf.mkdtemp(prefix="phonekeep-s1-"))
+
+    class FakeApp(tk.Tk):
+        def __init__(self):
+            super().__init__()
+            self.withdraw()
+            self.s = {"backup_dir": str(tmp / "nowhere"), "archive_dir": str(tmp / "arch")}
+            self.busy = False
+            self._backup_password = None
+            self.log = lambda m: None
+
+        def detect(self, silent=False):
+            pass
+
+        def open_settings(self, focus=None):
+            pass
+
+    fa = FakeApp()
+    real_bd, real_info = phone.BackupData, phone.wv.backup_info
+    phone.wv.backup_info = lambda p: dict(real_info(p), encrypted=True)      # the fake backup, 'encrypted'
+    attempts = []
+
+    class Broken:
+        def __init__(self, path, password, log=lambda m: None):
+            attempts.append(password)
+            raise wv.PhoneKeepError("That password doesn't open this backup.")
+    phone.BackupData = Broken
+    phone.messagebox.askretrycancel = lambda *a, **k: False
+    asked = []
+    _ui.ask_password = lambda *a, **k: asked.append(1) or None
+    w = phone.PhoneWindow(fa, {"DeviceName": "S1 iPhone"}, "00008030-S1WIN")
+    w.withdraw()
+    w.backup_path = backup
+    w.live_error = "x"
+    w._open_backup()
+    import time as _t
+    t0 = _t.time()
+    while _t.time() - t0 < 10 and not attempts:
+        fa.update(); _t.sleep(0.02)
+    _t.sleep(0.3); fa.update()
+    check(attempts == [SECRET], f"the stored password was tried: {attempts}")
+    check(keychain.get_password("00008030-S1WIN") == SECRET, "a failed open leaves the stored password in the keychain")
+    # retry → asks for a typed one; a typed one that works is kept
+    from unittest.mock import MagicMock
+
+    class Opens:
+        def __init__(self, path, password, log=lambda m: None):
+            attempts.append(password)
+            if password != SECRET:
+                raise wv.PhoneKeepError("That password doesn't open this backup.")
+            self.m = MagicMock()
+
+        def __getattr__(self, n):
+            return getattr(self.m, n)
+    phone.BackupData = Opens
+    _ui.ask_password = lambda *a, **k: SECRET
+    w.data_error = None
+    w._open_backup(ask=True)
+    t0 = _t.time()
+    while _t.time() - t0 < 30 and w.data is None and w.data_error is None:
+        fa.update(); _t.sleep(0.02)
+    check(w.data is not None, f"a typed password that opens the backup is accepted: {w.data_error}")
+    check(keychain.get_password("00008030-S1WIN") == SECRET, "and kept in the keychain")
+    phone.BackupData, phone.wv.backup_info = real_bd, real_info
+    w.close(); fa.destroy()
+except tk.TclError as ex:
+    print(f"(window checks skipped: no display: {ex})")
+
 print("\nS1 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

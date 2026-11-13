@@ -26,6 +26,7 @@ import re
 import shutil
 import sqlite3
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Optional
@@ -137,10 +138,42 @@ class Mapper:
             out_lines.append(" ".join(words)[:max(1, len(line))].rstrip() if line else "")
         return self._remember("text passages", value, "\n".join(out_lines))
 
+    SYSTEM_SEG = re.compile(r"^([0-9A-Fa-f.\-_]+|(IMG|PXL|VID|DSC|MOV|RPReplay|Screenshot|Photo|Video|AUD|PTT|STK|DOC)[-_ ]?[\w.-]*|"
+                            r"Media|Message|Library|Documents|Desktop|Downloads|Mobile Documents|com~apple~CloudDocs|Attachments|"
+                            r"File Provider Storage|WhatsApp|Profile|Stickers|Thumbnails|Inbox|Outbox|Caches|Preferences|"
+                            r"Shared|Data|tmp|Temp|\.[\w.-]+)$")
+    # a single word is NOT kept just for being one word: under iCloud Drive or Documents it is often a person's
+    # name (a "Desktop/<first name>/…" folder on a real backup, 12 Nov). Only the system names above and hidden files are kept.
+    PERSONAL_AREA = re.compile(r"(^|/)(Mobile Documents|Documents|Desktop|Downloads|File Provider Storage|Attachments|Message/Media|Media)(/|$)")
+
+    def pathname(self, value: str) -> str:
+        """A file path with the owner's own folder and file names replaced segment by segment (deterministic,
+        so references in the chat databases and Manifest.db stay in step). System-looking segments
+        (IMG_1234.jpg, GUIDs, single words such as Library) are kept."""
+        if not isinstance(value, str) or "/" not in value or not self.PERSONAL_AREA.search(value):
+            return value
+        out = []
+        area = False
+        for seg in value.split("/"):
+            if area and seg and not self.SYSTEM_SEG.match(seg):
+                stem, dot, ext = seg.rpartition(".")
+                if not dot:
+                    stem, ext = seg, ""
+                i = self._idx(stem)
+                fake = f"{FIRST[i % len(FIRST)].lower()}-{(i // 13) % 997}"
+                self._remember("file and folder names", stem, fake)
+                seg = fake + (dot + ext if dot and len(ext) <= 5 else "")
+            out.append(seg)
+            if self.PERSONAL_AREA.search("/" + seg + "/"):
+                area = True
+        return "/".join(out)
+
     def shape(self, value):
-        """Only what the value's shape gives away (for structural columns): numbers, emails, ids, links."""
+        """Only what the value's shape gives away (for structural columns): numbers, emails, ids, links, paths."""
         if not isinstance(value, str) or not value:
             return value
+        if "/" in value and self.PERSONAL_AREA.search(value):
+            return self.pathname(value)
         if EMAIL_RE.match(value):
             return self.email(value)
         if URL_RE.match(value):
@@ -183,7 +216,8 @@ def redact_sqlite(src: Path, dest: Path, mapper: Mapper, report: Counter) -> Non
                    or NAME.search(c[1]) or TEXTY.search(c[1]) or ADDRESS.search(c[1])]
         text_cols = [c for c in stringy if not KEEP.search(c)]      # content: replaced by kind
         keep_cols = [c for c in stringy if KEEP.search(c)]          # structure: only numbers/emails/ids/links inside it
-        blob_cols = [c[1] for c in cols if "BLOB" in (c[2] or "").upper() and (TEXTY.search(c[1]) or c[1].lower() == "attributedbody")]
+        # every BLOB goes: metadata blobs carry quoted text and link previews, image blobs are the owner's photos
+        blob_cols = [c[1] for c in cols if "BLOB" in (c[2] or "").upper()]
         if not text_cols and not blob_cols and not keep_cols:
             continue
         pk = next((c[1] for c in cols if c[5]), "rowid")
@@ -199,7 +233,8 @@ def redact_sqlite(src: Path, dest: Path, mapper: Mapper, report: Counter) -> Non
                 elif c in keep_cols:
                     nv = mapper.shape(v)
                 else:
-                    nv = None if v else v           # rich text blobs (attributedBody, note data) are dropped
+                    # blobs are dropped (whatever they hold: bytes, or text stored in a BLOB column); images become a placeholder
+                    nv = (PLACEHOLDER_JPEG if _looks_like_image(v) else None) if v not in (None, b"", "") else v
                 changed |= nv != v
                 new.append(nv)
             if changed:
@@ -209,6 +244,25 @@ def redact_sqlite(src: Path, dest: Path, mapper: Mapper, report: Counter) -> Non
     con.execute("VACUUM")
     con.close()
 
+
+def _looks_like_image(b) -> bool:
+    """A BLOB column can hold any SQLite value (text, numbers); only real image bytes count."""
+    if not isinstance(b, (bytes, bytearray, memoryview)):
+        return False
+    return bytes(b[:3]) == b"\xff\xd8\xff" or bytes(b[:8]) == b"\x89PNG\r\n\x1a\n"
+
+
+def _placeholder_jpeg() -> bytes:
+    try:
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGB", (64, 64), (120, 160, 140)).save(buf, "JPEG")
+        return buf.getvalue()
+    except Exception:
+        return b"\xff\xd8\xff"
+
+
+PLACEHOLDER_JPEG = _placeholder_jpeg()
 
 MAGIC = {".jpg": b"\xff\xd8\xff", ".jpeg": b"\xff\xd8\xff", ".png": b"\x89PNG\r\n\x1a\n", ".heic": b"\0\0\0\x18ftypheic",
          ".mov": b"\0\0\0\x18ftypqt  ", ".mp4": b"\0\0\0\x18ftypisom", ".m4a": b"\0\0\0\x18ftypM4A ", ".amr": b"#!AMR\n",
@@ -245,7 +299,7 @@ KNOWN_DBS = list(KNOWN_DBS)
 STRUCTURE = re.compile(r"(^Media/.*\.(AAE|aae)$)")
 
 
-def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=print) -> Counter:
+def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=print, progress=None) -> Counter:
     src, out = Path(src), Path(out)
     if out.exists() and any(out.iterdir()):
         raise SystemExit(f"{out} is not empty.")
@@ -287,9 +341,18 @@ def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=prin
     rows = con.execute("SELECT fileID, domain, relativePath, flags, file FROM Files").fetchall()
     tmp = out / "_tmp"
     tmp.mkdir(exist_ok=True)
+    total = sum(1 for r in rows if r[3] == 1) or 1
+    started = time.time()
+    done = 0
     for fid, domain, rel, flags, blob in rows:
         if flags != 1 or not re.fullmatch(r"[0-9a-f]{40}", fid or ""):
             continue
+        done += 1
+        if progress and (done % 200 == 0 or done == total):
+            elapsed = time.time() - started
+            left = (total - done) * elapsed / done
+            progress(f"{done:,} of {total:,} files · {100 * done // total}% · "
+                     + ("under 2 min left" if left < 90 else f"about {int(left // 60)} min left"))
         dest = out / fid[:2] / fid
         dest.parent.mkdir(exist_ok=True)
         src_tmp = tmp / fid
@@ -302,9 +365,10 @@ def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=prin
             try:
                 redact_sqlite(src_tmp, dest, mapper, report)
                 report["databases redacted"] += 1
-            except sqlite3.DatabaseError:
+            except Exception as e:          # never let one odd database end the whole run, or leak it
                 placeholder(dest, size, Path(rel).suffix)
-                report["files replaced by placeholders"] += 1
+                report["databases that couldn't be redacted (replaced by placeholders)"] += 1
+                log(f"Couldn't redact {Path(rel).name} ({type(e).__name__}); replaced by an empty placeholder.")
         elif STRUCTURE.search(rel):
             shutil.copyfile(src_tmp, dest)
             report["structure files kept"] += 1
@@ -319,13 +383,44 @@ def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=prin
             try:
                 pl = plistlib.loads(blob)
                 objs = pl.get("$objects", [])
-                for o in objs:
+                for i, o in enumerate(objs):
                     if isinstance(o, dict) and "EncryptionKey" in o:
                         o.pop("EncryptionKey", None)
+                    elif isinstance(o, str) and "/" in o:
+                        # the archived file record keeps a second copy of the path (RelativePath): same mapping
+                        objs[i] = mapper.pathname(o)
                 con.execute("UPDATE Files SET file=? WHERE fileID=?", (plistlib.dumps(pl, fmt=plistlib.FMT_BINARY), fid))
             except Exception:
                 pass
+    # the owner's own folder and file names (iCloud Drive, app Documents, attachment names) are personal too;
+    # done last because the extraction above looks files up by their real path. Every entry — files AND
+    # folders — and both copies of its path: the column, and the archived file record's RelativePath
+    # (a person-named folder survived there on a real backup, 12 Nov).
+    for fid, rel, blob in con.execute("SELECT fileID, relativePath, file FROM Files").fetchall():
+        nrel = mapper.pathname(rel) if rel else rel
+        nblob = blob
+        if blob:
+            try:
+                pl = plistlib.loads(blob)
+                objs = pl.get("$objects", [])
+                changed = False
+                for i, o in enumerate(objs):
+                    if isinstance(o, dict) and "EncryptionKey" in o:
+                        o.pop("EncryptionKey", None)
+                        changed = True
+                    elif isinstance(o, str) and "/" in o:
+                        no = mapper.pathname(o)
+                        if no != o:
+                            objs[i] = no
+                            changed = True
+                if changed:
+                    nblob = plistlib.dumps(pl, fmt=plistlib.FMT_BINARY)
+            except Exception:
+                nblob = None          # a record that can't be read is dropped rather than kept as it was
+        if nrel != rel or nblob is not blob:
+            con.execute("UPDATE Files SET relativePath=?, file=? WHERE fileID=?", (nrel, nblob, fid))
     con.commit()
+    con.execute("VACUUM")
     con.close()
     shutil.rmtree(tmp, ignore_errors=True)
     reader.close()
@@ -337,15 +432,35 @@ def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=prin
 def main(argv=None) -> int:
     import argparse
     import getpass
+    import logging
+    logging.basicConfig(level=logging.WARNING)      # the decrypt library's per-file INFO lines would bury the progress line
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("backup", help="the real backup folder (never modified)")
     p.add_argument("out", help="an empty folder for the anonymised copy")
     p.add_argument("--password-stdin", action="store_true", help="read the backup password from standard input (never on the command line)")
     a = p.parse_args(argv)
-    pw = None
-    if wv.backup_info(Path(a.backup))["encrypted"]:
-        pw = sys.stdin.readline().rstrip("\r\n") if a.password_stdin else getpass.getpass("Backup password: ")
-    report = redact_backup(Path(a.backup), Path(a.out), pw)
+    encrypted = wv.backup_info(Path(a.backup))["encrypted"]
+    if encrypted and not a.password_stdin:
+        print("The backup is encrypted. Type its backup password (nothing shows while you type), then Return.")
+    report = None
+    for attempt in range(1 if a.password_stdin or not encrypted else 3):
+        pw = None
+        if encrypted:
+            pw = sys.stdin.readline().rstrip("\r\n") if a.password_stdin else getpass.getpass("Backup password: ")
+        try:
+            report = redact_backup(Path(a.backup), Path(a.out), pw,
+                                   progress=lambda line: print("\r" + line + " " * 12, end="", flush=True))
+            break
+        except wv.PhoneKeepError as e:
+            wrong = "password" in str(e).lower()
+            if wrong and attempt < 2 and not a.password_stdin:
+                print("That password doesn't open this backup. Try again.")
+                continue
+            print(str(e), file=sys.stderr)          # one plain sentence, no traceback
+            return 2
+    if report is None:
+        return 2
+    print()
     print("\nRedaction report")
     for k in sorted(report):
         print(f"  {report[k]:>7,}  {k}")

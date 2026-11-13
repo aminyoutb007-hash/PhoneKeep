@@ -182,11 +182,67 @@ def _folder_bytes(folder: Path) -> int:
     return total
 
 
+_backup_proc: dict = {"proc": None, "cancelled": False}
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        if os.name == "nt":
+            import ctypes
+            h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if not h:
+                return False
+            code = ctypes.c_ulong()
+            ok = ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(code))
+            ctypes.windll.kernel32.CloseHandle(h)
+            return bool(ok) and code.value == 259
+        os.kill(pid, 0)
+        return True
+    except Exception:
+        return False
+
+
+def _marker_owner(marker: Path) -> Optional[int]:
+    """The pid of a live process that holds this backup marker, else None (a stale marker is ignored)."""
+    try:
+        pid = int(marker.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid != os.getpid() and _pid_alive(pid) else None
+
+
+class BackupCancelled(PhoneKeepError):
+    """The owner pressed Cancel. Not a failure: the half-copied backup is finished next time."""
+
+    def __init__(self):
+        super().__init__("Backup cancelled. Back up again whenever you like; it carries on from here.",
+                         button="Back up now", action="try_again", key="cancelled")
+
+
+def cancel_backup() -> bool:
+    """Stop the running backup (from any thread). True if one was running."""
+    proc = _backup_proc["proc"]
+    if proc is None or proc.poll() is not None:
+        return False
+    _backup_proc["cancelled"] = True
+    try:
+        proc.terminate()
+    except OSError:
+        pass
+    return True
+
+
+def backup_running() -> bool:
+    proc = _backup_proc["proc"]
+    return proc is not None and proc.poll() is None
+
+
 def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int, list[str]]:
     """Run a backup helper, forwarding progress. Returns (exit code, last output lines)."""
     env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, encoding="utf-8", errors="replace", env=env, bufsize=1, **_NOWIN)
+    _backup_proc["proc"], _backup_proc["cancelled"] = proc, False
     last_pct, tail = -1, []
     assert proc.stdout is not None
     for raw in proc.stdout:  # universal newlines also split \r progress updates
@@ -220,6 +276,8 @@ def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int,
             continue
         if line.startswith("PKERR "):
             line = line[6:]
+        if "passcode" in line.lower() and "enter" in line.lower():
+            line = "Enter your passcode on the iPhone to continue."      # the phone's own prompt, in our words
         tail.append(line)
         tail = tail[-15:]
         if "--udid" in line and "no such option" in line.lower():
@@ -275,6 +333,17 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
     if warning:
         raise PhoneKeepError(warning, button="Change location", action="change_location", key="disk_full")
 
+    # one backup of a phone at a time, across processes (the window and the menu bar helper)
+    marker = _snaps.phone_dir(backup_root, udid) / "backup.lock"
+    other = _marker_owner(marker)
+    if other:
+        raise PhoneKeepError("A backup of this iPhone is already running (from the menu bar helper or another window). "
+                             "Wait for it to finish, then try again.", button="Try again", action="try_again", key="busy")
+    try:
+        marker.write_text(str(os.getpid()), encoding="utf-8")
+    except OSError:
+        pass
+
     log(f"Backing up '{name}' to {target}")
     log("Incremental backup (only changes since last time)." if existing
         else "First backup: this copies everything and can take a while.")
@@ -297,7 +366,9 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
             mins = int((time.time() - t_start) // 60)
             took = f" · {mins} min so far" if mins else ""
             if seen["pct"] is None or seen["pct"] < 0.5:
-                if copied < 1_000_000:
+                # Info.plist (with app icons) alone is ~20 MB and lands before the phone has even
+                # built its snapshot; only real file data means copying has started
+                if copied < 50_000_000:
                     status("Your iPhone is getting the backup ready. This can take a few minutes "
                            "before copying starts. Keep it unlocked." + took)
                 else:
@@ -320,7 +391,15 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
                 code, tail = _stream_backup([*_helper(), *args], log, progress, seen)
     finally:
         stop.set()
+        _backup_proc["proc"] = None
+        try:
+            marker.unlink()
+        except OSError:
+            pass
 
+    if _backup_proc["cancelled"]:
+        log("Backup cancelled by the owner. The next backup carries on from here.")
+        raise BackupCancelled()
     if code != 0 or not (target / "Manifest.db").exists():
         raise PhoneKeepError.from_problem("\n".join(tail), where=backup_root)
     took = int(time.time() - t_start)

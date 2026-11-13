@@ -48,7 +48,8 @@ TABLE = [
      "This backup is protected with a password.", "Enter password", ENTER_PASSWORD),
     ("disk_full",
      ["no space left", "disk full", "enospc", "errno 28", "not enough space", "insufficient disk",
-      "there is not enough space", "error 112", "winerror 112"],
+      "there is not enough space", "error 112", "winerror 112",
+      "notenoughdiskspace", "needs more than", "bytes free", "more needed)"],      # the iPhone's own refusal
      "Not enough space on {disk}: {free} free.", "Change location", CHANGE_LOCATION),
     ("apple_service_missing",
      ["usbmuxd", "apple mobile device", "could not connect to usbmuxd", "connectionrefused", "no usbmux"],
@@ -108,6 +109,9 @@ def explain(error, where: Optional[Path] = None, needed_bytes: Optional[int] = N
     for key, patterns, message, button, action in TABLE:
         if any(p in low for p in patterns):
             if key == "disk_full":
+                m = re.search(r"needs more than (\d+) bytes free", low)      # the phone says how much it wants
+                if m:
+                    needed_bytes = int(m.group(1))
                 need = f"{needed_bytes / 1e9:.1f} GB needed, " if needed_bytes else ""
                 message = f"Not enough space on {_disk_name(where)}: {need}{_free_text(where)} free."
             return Problem(key, message, button, action, details=text)

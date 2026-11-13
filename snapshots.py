@@ -457,7 +457,7 @@ def upgrade(backup_dir: Path, udid: str, log: Callable[[str], None] = lambda m: 
     cur.parent.mkdir(parents=True, exist_ok=True)
     cur.mkdir(exist_ok=True)
     for item in list(pdir.iterdir()):
-        if item.name in ("format.json", "store", "snapshots", "snapshots.json", "current", "health.json"):
+        if item.name in ("format.json", "store", "snapshots", "snapshots.json", "current", "health.json", "backup.lock"):
             continue
         os.replace(item, cur / item.name)
     log("Done: snapshot 1 made and verified; the backup now lives in its snapshot store.")

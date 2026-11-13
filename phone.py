@@ -24,7 +24,7 @@ import tempfile
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 import keychain
@@ -56,6 +56,7 @@ APPS = [
     ("books", "Books", "📚", "#ff9500", "live"),
     ("files", "App Files", "📁", "#1e90ff", "live"),
     ("apps", "Apps", "📱", "#5e5ce6", "backup"),
+    ("allfiles", "All files", "🗂", "#8e8e93", "backup"),
 ]
 LABEL = {k: l for k, l, *_ in APPS}
 CHAT_APPS = ("messages", "whatsapp", "whatsappbusiness")
@@ -111,6 +112,10 @@ class Runner:
 
     def submit(self, fn: Callable, ok: Callable = None, err: Callable = None):
         self.jobs.put((fn, ok, err))
+
+    def on_ui(self, fn: Callable):
+        """Run fn on the UI thread soon (safe to call from the worker: progress updates and the like)."""
+        self.done.put((lambda _r: fn(), None, None, None))
 
     def stop(self):
         self.alive = False
@@ -208,6 +213,8 @@ class BackupData:
                 v = sx.load_safari(c)
             elif key == "apps":
                 v = sx.load_apps(c)
+            elif key == "allfiles":
+                v = self.reader.domains()
             elif key == "photos":
                 import photos as ph
                 src = ph.BackupPhotoSource(self.reader, Path(self.reader._tmp.name) / "photos")
@@ -226,6 +233,9 @@ class BackupData:
             return f"{len(v[0]) + len(v[1]):,}"
         if key == "photos":
             return f"{len(v[1]):,}"
+        if key == "allfiles":
+            n = self.reader.db.execute("SELECT COUNT(*) FROM Files WHERE flags=1").fetchone()[0]
+            return f"{n:,} file{'s' if n != 1 else ''}"
         return f"{len(v):,}"
 
     def copy(self, domain: str, rel: str, dest: Path) -> bool:
@@ -243,19 +253,40 @@ class BackupData:
 # the window
 # ---------------------------------------------------------------------------
 
+def ask_save_folder(parent, title: str, start: Path):
+    """The folder dialog for a save (one place, so tests can stand in for it)."""
+    return filedialog.askdirectory(parent=parent, title=title, initialdir=str(start), mustexist=True)
+
+
 class PhoneWindow(tk.Toplevel):
-    def __init__(self, app, device: dict, udid: Optional[str]):
+    def __init__(self, app, device: dict, udid: Optional[str], backup: Optional[Path] = None):
+        """A phone window: for a connected phone (device + udid), or for any backup folder (B5: `backup`),
+        PhoneKeep's own or one made by Finder / iTunes, with no phone connected at all."""
         super().__init__(app, bg=BG)
+        if hasattr(app, "attach_menu"):
+            app.attach_menu(self)
         self.app = app
         self.device = device or {}
+        self.opened_backup = Path(backup) if backup else None
+        if self.opened_backup is not None and not udid:
+            udid = self.opened_backup.name if len(self.opened_backup.name) >= 24 else None   # Finder/iTunes folders are named by UDID
+            if sn.is_snapshot(self.opened_backup):
+                udid = self.opened_backup.parent.parent.name
         self.udid = udid
+        self.live_wanted = backup is None or bool(self.device)
+        if self.opened_backup is not None and not self.device:
+            self.device = {"DeviceName": wv.backup_info(self.opened_backup).get("name") or "iPhone"}
         self.name = self.device.get("DeviceName") or "iPhone"
         self.title(f"{self.name} — PhoneKeep")
         self.geometry("1220x800")
         self.minsize(980, 640)
         self.backup_dir = Path(app.s["backup_dir"])
         self.snapshot: Optional[sn.Snapshot] = None            # B3: which snapshot is open (None = latest)
-        self.backup_path = sn.latest_backup_path(self.backup_dir, udid) if udid else None
+        if self.opened_backup is not None and not sn.is_snapshot(self.opened_backup):
+            self.backup_path = self.opened_backup                  # a Finder / iTunes / other folder
+        else:
+            self.backup_path = (self.opened_backup if self.opened_backup is not None
+                                else sn.latest_backup_path(self.backup_dir, udid) if udid else None)
         self.out_root = Path(app.s["archive_dir"]) / "From iPhone"
         self.data: Optional[BackupData] = None
         self.data_error: Optional[str] = None
@@ -281,8 +312,12 @@ class PhoneWindow(tk.Toplevel):
         head.pack(fill="x")
         tk.Label(head, text=self.name, bg=GREEN, fg="white", font=font(19, "bold")).pack(side="left", padx=(20, 10), pady=12)
         how = "USB cable" if self.device.get("ConnectionType") == "USB" else "Wi-Fi"
-        self.sub = tk.Label(head, text=f"iOS {self.device.get('ProductVersion', '?')} · connected by {how}",
-                            bg=GREEN, fg="#d7efe9", font=font(12))
+        if self.opened_backup is not None and not self.live_wanted:
+            info = wv.backup_info(self.opened_backup)
+            sub_text = f"backup of {info.get('date') or '?'} · iOS {info.get('ios') or '?'} · no iPhone connected"
+        else:
+            sub_text = f"iOS {self.device.get('ProductVersion', '?')} · connected by {how}"
+        self.sub = tk.Label(head, text=sub_text, bg=GREEN, fg="#d7efe9", font=font(12))
         self.sub.pack(side="left", pady=12)
         self.lock_badge = tk.Label(head, text="", bg=GREEN, fg="#d7efe9", font=font(12, "bold"))
         self.lock_badge.pack(side="left", padx=(14, 0), pady=12)
@@ -378,8 +413,8 @@ class PhoneWindow(tk.Toplevel):
             m.grab_release()
 
     def _rename_snapshot(self, snap: sn.Snapshot):
-        name = simpledialog.askstring("Rename snapshot", f"A name for the snapshot of {snap.when.strftime('%d %b %Y').lstrip('0')}:",
-                                      initialvalue=snap.label, parent=self)
+        name = ui.ask_text(self, "Rename snapshot", f"A name for the snapshot of {snap.when.strftime('%d %b %Y').lstrip('0')}:",
+                           initial=snap.label or "")
         if name is not None:
             sn.set_label(self.backup_dir, self.udid, snap.id, name)
             self._build_timeline()
@@ -484,8 +519,9 @@ class PhoneWindow(tk.Toplevel):
 
     # connections --------------------------------------------------------------
     def _connect_live(self):
-        if not self.udid:
+        if not self.udid or not self.live_wanted:
             self.live_error = "No iPhone connected"
+            self._update_src_line()
             return
         import device as devmod
 
@@ -505,7 +541,9 @@ class PhoneWindow(tk.Toplevel):
             self._update_src_line()
         self.live_runner.submit(go, ok, err)
 
-    def _open_backup(self, password: Optional[str] = None):
+    def _open_backup(self, password: Optional[str] = None, ask: bool = False):
+        """ask=True: the stored password didn't open the backup last time, so ask for one now (the stored
+        one is kept until a typed one works)."""
         if self.backup_path is None or not (Path(self.backup_path) / "Manifest.db").exists():
             self.data_error = "No backup yet. Messages, chats, calls & notes appear after the first backup."
             self._update_src_line()
@@ -522,7 +560,7 @@ class PhoneWindow(tk.Toplevel):
         typed = False
         if info["encrypted"] and password is None:
             # silently from the keychain (S1); only ask if it isn't there yet
-            password = keychain.get_password(self.udid or "") or getattr(self.app, "_backup_password", None)
+            password = None if ask else (keychain.get_password(self.udid or "") or getattr(self.app, "_backup_password", None))
             if not password:
                 password = ui.ask_password(self, "enter", info["name"], wv.RESET_PASSWORD_HELP)
                 typed = True
@@ -547,18 +585,19 @@ class PhoneWindow(tk.Toplevel):
             self._count_next([k for k, *_r, where in APPS if where == "backup"])
             if self.current is None:
                 self.show_home()
-            elif self.current in CHAT_APPS + ("calls", "contacts", "notes", "calendar", "voicemail",
+            elif self.current in CHAT_APPS + ("calls", "contacts", "notes", "calendar", "voicemail", "allfiles",
                                                "voicememos", "safari", "apps"):
                 self.open_app(self.current)
 
         def err(e):
             msg = describe_error(e)
             if "password" in msg.lower():
+                # Never remove the stored password here: it is the owner's only copy, and an open can fail for
+                # other reasons (a snapshot still being written, a read refused by the keychain, a bad file).
+                # The stored one is replaced only when a typed password opens the backup (S1).
                 self.app._backup_password = None
-                if self.udid:
-                    keychain.delete_password(self.udid)   # a stored password that no longer opens the backup
                 if messagebox.askretrycancel(wv.APP_NAME, msg, parent=self):
-                    self._open_backup()
+                    self._open_backup(ask=True)
                     return
             self.data_error = msg
             self.banner(msg, color="#fdecea")
@@ -732,12 +771,36 @@ class PhoneWindow(tk.Toplevel):
         {"messages": self.v_chats, "whatsapp": self.v_chats, "whatsappbusiness": self.v_chats,
          "calls": self.v_calls, "contacts": self.v_contacts, "notes": self.v_notes,
          "calendar": self.v_calendar, "voicemail": self.v_voicemail, "voicememos": self.v_voicememos,
-         "safari": self.v_safari, "apps": self.v_apps, "music": self.v_music, "books": self.v_books,
+         "safari": self.v_safari, "apps": self.v_apps, "allfiles": self.v_allfiles, "music": self.v_music, "books": self.v_books,
          "files": self.v_files, "photos": self.v_photos}[key](key, value)
 
     # saving -------------------------------------------------------------------
     def out_dir(self, key: str) -> Path:
-        d = self.out_root / LABEL[key]
+        """Where a save goes. Asks the owner (a folder dialog, starting at the last folder they chose, or
+        PhoneKeep's Saved files folder); raises Cancelled if they close the dialog. Usability test of 12 Nov:
+        'save it to the Desktop' needs a choice, not a fixed folder."""
+        default = self.out_root / LABEL[key]
+        s = getattr(self.app, "s", None)
+        last = None
+        try:
+            last = s["last_save_dir"] if s is not None else None
+        except (KeyError, TypeError):
+            last = None
+        start = Path(last) if last else default
+        if not start.exists():
+            start = default
+            start.mkdir(parents=True, exist_ok=True)
+        chosen = ask_save_folder(self, f"Save {LABEL[key]} to…", start)
+        if not chosen:
+            return None                      # the owner closed the dialog: nothing to save, nothing to say
+        d = Path(chosen)
+        try:
+            if s is not None:
+                s["last_save_dir"] = str(d)
+                if hasattr(self.app, "save"):
+                    self.app.save()
+        except Exception:
+            pass
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -759,15 +822,31 @@ class PhoneWindow(tk.Toplevel):
         out = self.out_root
         data = self.data
 
+        eta = ui.Eta()
+        state = {"finished": False}
+
+        def progress(p):
+            text = eta.feed(p)
+
+            def show():
+                if not state["finished"]:           # a late update must not cover the "✓ Exported" line
+                    self.banner(f"Exporting {LABEL[key]}… {text}")
+            self.backup_runner.on_ui(show)
+
         def go():
             return sx.export_all(data.path, out, data.password, [key], include_media=True,
-                                 log=lambda m: None, chooser=chooser, formats=formats, dates=dates)
+                                 log=lambda m: None, chooser=chooser, formats=formats, dates=dates,
+                                 progress=progress)
 
         def ok(index):
+            state["finished"] = True
             self.banner(f"✓ Exported {LABEL[key]} to {out}", ("Open", lambda: open_file(Path(index))))
-        self.banner(f"Exporting {LABEL[key]}…")
-        self.backup_runner.submit(go, ok, lambda e: self.banner(f"Couldn't export: {describe_error(e)}",
-                                                                 color="#fdecea"))
+
+        def err(e):
+            state["finished"] = True
+            self.banner(f"Couldn't export: {describe_error(e)}", color="#fdecea")
+        self.banner(f"Exporting {LABEL[key]}… working out time left…")
+        self.backup_runner.submit(go, ok, err)
 
     # chats ----------------------------------------------------------------------
     def v_chats(self, key, value):
@@ -842,6 +921,8 @@ class PhoneWindow(tk.Toplevel):
                 messagebox.showinfo(wv.APP_NAME, "Click the photos you want to save first (or Select all).", parent=self)
                 return
             folder = self.out_dir("photos")
+            if folder is None:
+                return
 
             def go():
                 done = []
@@ -916,6 +997,8 @@ class PhoneWindow(tk.Toplevel):
         def save(kind):
             vis = selected() or shown()
             folder = self.out_dir(key)
+            if folder is None:
+                return
             stamp = dt.datetime.now().strftime("%Y-%m-%d %H%M")
             path = unique_path(folder / f"{LABEL[key]} {stamp}.{'xlsx' if kind == 'excel' else 'csv'}")
 
@@ -975,6 +1058,171 @@ class PhoneWindow(tk.Toplevel):
         rows = [[a, f"{len(self.data.ctx.files('AppDomain-' + a)):,} files in backup"] for a in apps]
         self.table_view(key, ["App ID", "Data in backup"], rows, [380, 200])
 
+    # all files (B5) -------------------------------------------------------------------
+    DOMAIN_NAMES = {"HomeDomain": "Home (Messages, Contacts, Calendar, Notes…)", "CameraRollDomain": "Camera Roll (Photos & videos)",
+                    "MediaDomain": "Media (attachments, voicemail, recordings)", "WirelessDomain": "Cellular & Wi-Fi",
+                    "SystemPreferencesDomain": "System settings", "KeychainDomain": "Keychain", "HealthDomain": "Health",
+                    "RootDomain": "Root", "DatabaseDomain": "Databases", "KeyboardDomain": "Keyboard", "ManagedPreferencesDomain": "Managed preferences",
+                    "MobileDeviceDomain": "Mobile device", "InstallDomain": "Install", "TonesDomain": "Ringtones", "BooksDomain": "Books",
+                    "HomeKitDomain": "HomeKit", "NetworkDomain": "Network", "ProtectedDomain": "Protected", "SysSharedContainerDomain": "Shared containers"}
+
+    def domain_title(self, domain: str) -> str:
+        if domain in self.DOMAIN_NAMES:
+            return self.DOMAIN_NAMES[domain]
+        for prefix, label in (("AppDomain-", "App: "), ("AppDomainGroup-", "App group: "), ("AppDomainPlugin-", "App plug-in: "),
+                              ("SysContainerDomain-", "System container: "), ("SysSharedContainerDomain-", "System shared: ")):
+            if domain.startswith(prefix):
+                return label + domain[len(prefix):]
+        return domain
+
+    def v_allfiles(self, key, domains):
+        total = self.counts.get("allfiles", "")
+        self.view_sub.configure(text=f"{len(domains):,} areas · {total} · this backup as folders")
+        top = tk.Frame(self.content, bg=BG)
+        top.pack(fill="x", pady=(0, 6))
+        tk.Label(top, text="🔍", bg=BG, font=font(13)).pack(side="left")
+        q = tk.StringVar()
+        ttk.Entry(top, textvariable=q, width=32).pack(side="left", padx=4)
+        tk.Label(top, text="Double-click or Space to preview · tick with a click, then Save", bg=BG, fg=MUTED, font=font(11)).pack(side="left", padx=10)
+        box = card(self.content)
+        box.pack(fill="both", expand=True)
+        tree = ttk.Treeview(box, columns=("size", "date"), selectmode="extended")
+        tree.heading("#0", text="Folder / file")
+        tree.heading("size", text="Size")
+        tree.heading("date", text="Modified")
+        tree.column("#0", width=520, stretch=True)
+        tree.column("size", width=100, anchor="e", stretch=False)
+        tree.column("date", width=150, stretch=False)
+        sb = ttk.Scrollbar(box, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=sb.set)
+        tree.pack(side="left", fill="both", expand=True, padx=(4, 0), pady=4)
+        sb.pack(side="left", fill="y", pady=4)
+        meta: dict = {}       # iid -> (domain, rel, size, mtime) for files
+        loaded: set = set()
+        import device as devmod
+
+        order = sorted(domains, key=lambda d: (d not in self.DOMAIN_NAMES, self.domain_title(d).lower()))
+        for d in order:
+            iid = tree.insert("", "end", text="📁 " + self.domain_title(d), values=("", ""), open=False)
+            meta[iid] = ("domain", d)
+            tree.insert(iid, "end", text="…")          # placeholder so the arrow shows
+
+        def add_folder_tree(parent_iid, domain, files: dict):
+            """files: rel -> (fid, mtime, size). Builds nested folders lazily into the tree."""
+            folders: dict = {}
+            for rel, (fid, mtime, size) in sorted(files.items()):
+                parts = rel.split("/")
+                node = parent_iid
+                path = ""
+                for part in parts[:-1]:
+                    path = f"{path}/{part}" if path else part
+                    k = (node, path)
+                    if k not in folders:
+                        folders[k] = tree.insert(node, "end", text="📁 " + part, values=("", ""), open=False)
+                        meta[folders[k]] = ("folder", domain, path)
+                    node = folders[k]
+                fiid = tree.insert(node, "end", text="📄 " + parts[-1],
+                                   values=(devmod.human_size(size or 0), dt.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M") if mtime else ""))
+                meta[fiid] = ("file", domain, rel, size or 0, mtime)
+
+        def on_open(_e):
+            iid = tree.focus()
+            if iid in loaded or meta.get(iid, ("",))[0] != "domain":
+                return
+            loaded.add(iid)
+            for ch in tree.get_children(iid):
+                tree.delete(ch)
+            domain = meta[iid][1]
+            files = self.data.reader.file_meta(domain)
+            add_folder_tree(iid, domain, files)
+            if not files:
+                tree.insert(iid, "end", text="(no files)")
+        tree.bind("<<TreeviewOpen>>", on_open)
+
+        def selected_files() -> list:
+            out = []
+
+            def walk(iid):
+                m = meta.get(iid)
+                if m and m[0] == "file":
+                    out.append(m)
+                elif m and m[0] == "domain" and iid not in loaded:
+                    for rel, (fid, mtime, size) in self.data.reader.file_meta(m[1]).items():
+                        out.append(("file", m[1], rel, size or 0, mtime))
+                else:
+                    for ch in tree.get_children(iid):
+                        walk(ch)
+            for iid in tree.selection():
+                walk(iid)
+            return out
+
+        def preview(_e=None):
+            sel = [meta[i] for i in tree.selection() if meta.get(i, ("",))[0] == "file"]
+            if not sel:
+                return
+            _k, domain, rel, size, mtime = sel[0]
+            tmp = Path(tempfile.mkdtemp(prefix="phonekeep-view-"))
+            dest = tmp / Path(rel).name
+            if self.data.copy(domain, rel, dest):
+                open_file(dest)
+        tree.bind("<Double-Button-1>", preview)
+        tree.bind("<space>", preview)
+        tree.bind("<Return>", preview)
+        self.allfiles_preview = preview           # also reachable for the tests
+
+        def search(*_):
+            text = q.get().strip().lower()
+            if not text:
+                return
+            # search every domain's file names (loads them as needed)
+            for iid in list(tree.get_children("")):
+                if iid not in loaded:
+                    loaded.add(iid)
+                    for ch in tree.get_children(iid):
+                        tree.delete(ch)
+                    add_folder_tree(iid, meta[iid][1], self.data.reader.file_meta(meta[iid][1]))
+            hits = [i for i, m in meta.items() if m[0] == "file" and text in m[2].lower()]
+            tree.selection_set(hits[:500])
+            if hits:
+                tree.see(hits[0])
+            foot_count.configure(text=f"{len(hits):,} match{'es' if len(hits) != 1 else ''}")
+        q.trace_add("write", search)
+
+        foot = tk.Frame(self.content, bg=BG)
+        foot.pack(fill="x", pady=(6, 0))
+        foot_count = tk.Label(foot, text="", bg=BG, fg=MUTED, font=font(12))
+        foot_count.pack(side="left")
+
+        def update_count(_e=None):
+            files = [m for m in (meta.get(i) for i in tree.selection()) if m and m[0] == "file"]
+            folders = [i for i in tree.selection() if meta.get(i, ("",))[0] in ("domain", "folder")]
+            size = sum(m[3] for m in files)
+            foot_count.configure(text=(f"{len(files):,} file{'s' if len(files) != 1 else ''} · {devmod.human_size(size)}" if files else "")
+                                 + (f" · {len(folders)} folder{'s' if len(folders) != 1 else ''}" if folders else ""))
+        tree.bind("<<TreeviewSelect>>", update_count)
+
+        def save():
+            items = selected_files()
+            if not items:
+                messagebox.showinfo(wv.APP_NAME, "Click a file or a folder first (Cmd/Ctrl-click for several).", parent=self)
+                return
+            out = self.out_dir("allfiles")
+            if out is None:
+                return
+            data = self.data
+
+            def go():
+                paths = []
+                for _k, domain, rel, size, mtime in items:
+                    dest = wv.safe_join(out / self.domain_title(domain).split(" (")[0].replace(": ", "-"), rel)
+                    if dest is None:
+                        continue
+                    paths.append(dest if data.copy(domain, rel, dest) else None)
+                return paths
+            self.run_save(f"{len(items):,} files", go, out, "file")
+        RoundButton(foot, "Save selected", save, "primary", 170, 38, 12).pack(side="right")
+        tree.focus_set()
+
     # notes ------------------------------------------------------------------------
     def v_notes(self, key, notes):
         self.view_sub.configure(text=f"{len(notes):,} notes")
@@ -998,7 +1246,7 @@ class PhoneWindow(tk.Toplevel):
         meta = tk.Label(rf, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w")
         meta.pack(fill="x", padx=14)
         txt = tk.Text(rf, wrap="word", relief="flat", font=font(13), padx=12, pady=8, bg="#fffdf3",
-                      highlightthickness=0)
+                      fg=INK, insertbackground=INK, highlightthickness=0)
         txt.pack(fill="both", expand=True, padx=2, pady=6)
         pane.add(rf, minsize=320)
 
@@ -1041,6 +1289,8 @@ class PhoneWindow(tk.Toplevel):
                 messagebox.showinfo(wv.APP_NAME, "This note is locked with your Notes password.", parent=self)
                 return
             folder = self.out_dir("notes")
+            if folder is None:
+                return
             p = unique_path(folder / (sx.safe_name(n["title"], 80) + ".txt"))
             p.write_text(n["text"] or "", encoding="utf-8")
             self.saved([p], folder, "note")
@@ -1070,6 +1320,8 @@ class PhoneWindow(tk.Toplevel):
                                     "Cmd/Ctrl-A for all).", parent=self)
                 return
             folder = self.out_dir(key)
+            if folder is None:
+                return
 
             def go():
                 done = []
@@ -1238,7 +1490,10 @@ class PhoneWindow(tk.Toplevel):
                 messagebox.showinfo(wv.APP_NAME, "Select files or folders to save first.", parent=self)
                 return
             a = by_id[state["app"]]
-            folder = self.out_dir("files") / sx.safe_name(a.name, 60)
+            folder = self.out_dir("files")
+            if folder is None:
+                return
+            folder = folder / sx.safe_name(a.name, 60)
             app_id = state["app"]
 
             def go():

@@ -202,6 +202,46 @@ for key, label, *_r in phone.APPS:
           + (f" (error: {errs[0][:80]})" if errs and not empty_ok else ""))
     check(len(win.content.winfo_children()) > 0, f"{label} screen shows content")
 
+# usability task 3: "find a message containing a given word" — the chat search looks inside messages,
+# opens the chat at the match and highlights it (12 Nov: it only matched chat names)
+win.open_app("whatsapp")
+pump(root, lambda: not still_loading(win), 90, "WhatsApp screen")
+def _find(w, cls):
+    for x in w.winfo_children():
+        if isinstance(x, cls):
+            return x
+        r = _find(x, cls)
+        if r is not None:
+            return r
+panel = _find(win.content, phone.ui.ChatPanel)
+check(panel is not None, "WhatsApp opens the chat panel")
+if panel is not None:
+    sample = None
+    for c in win.data.preview._chats("whatsapp"):
+        for m in c["messages"]:
+            words = [w for w in (m.get("text") or "").split() if len(w) > 4 and w.isalpha()]
+            if words and words[0].lower() not in c["name"].lower():
+                sample, chat_name = words[0], c["name"]
+                break
+        if sample:
+            break
+    check(sample is not None, f"a word from inside a message to search for: {sample!r}")
+    panel.q.set(sample)
+    root.update()
+    shown = [panel.tree.item(i, "values")[1].replace("👥 ", "") for i in panel.tree.get_children()]
+    check(chat_name in shown, f"searching {sample!r} lists the chat that contains it ({chat_name!r} in {shown[:5]})")
+    check(panel.search_hint.cget("text").startswith(f"“{sample}” is in "), f"says how many messages match: {panel.search_hint.cget('text')!r}")
+    iid = next(i for i in panel.tree.get_children() if panel.tree.item(i, "values")[1].replace("👥 ", "") == chat_name)
+    panel._show(iid)
+    root.update()
+    ranges = panel.text.tag_ranges("hit")
+    check(len(ranges) >= 2 and panel.text.get(ranges[0], ranges[1]).lower() == sample.lower(), "the match is highlighted in the chat")
+    panel.q.set("zzqqxxnotthere")
+    root.update()
+    check(not panel.tree.get_children() and panel.search_hint.cget("text").startswith("No message contains"),
+          f"a word nowhere says so: {panel.search_hint.cget('text')!r}")
+    panel.q.set("")
+
 # photos came from the backup because the cable was 'unplugged'
 check(isinstance(win.photo_src, ph.BackupPhotoSource), "Photos fell back to the backup when the iPhone wasn't reachable")
 
@@ -215,6 +255,67 @@ xlsx = list(out_dir.rglob("*.xlsx"))
 check(bool(xlsx), f"save produced an Excel file ({len(xlsx)} found)")
 
 # closing
+# B3: renaming a snapshot from the timeline uses PhoneKeep's own text dialog (found on a Mac: Tk's
+# simpledialog never appeared); the typed name lands in snapshots.json
+import datetime as _dt, json as _json
+from types import SimpleNamespace
+import snapshots as _sn2
+snap0 = SimpleNamespace(id="20261112-164026", when=_dt.datetime(2026, 11, 12, 16, 40), label=None, locked=False, title="Today")
+typed = []
+real_ask = phone.ui.ask_text
+phone.ui.ask_text = lambda parent, title, prompt, initial="", ok="Save": typed.append((title, initial)) or "Before the holiday"
+try:
+    win._rename_snapshot(snap0)
+finally:
+    phone.ui.ask_text = real_ask
+choices_file = _sn2.phone_dir(win.backup_dir, win.udid) / "snapshots.json"
+saved = _json.loads(choices_file.read_text(encoding="utf-8")) if choices_file.exists() else {}
+check(typed and typed[0][0] == "Rename snapshot", f"rename asks with the app's own dialog: {typed}")
+check(saved.get(snap0.id, {}).get("label") == "Before the holiday", f"the new name is saved in snapshots.json: {saved}")
+if choices_file.exists():
+    choices_file.unlink()
+d = phone.ui.TextDialog(win, "Rename snapshot", "A name:", initial="x")
+root.update()
+check(d.entry.get() == "x" and d.winfo_exists(), "the text dialog opens with the current name")
+d._cancel()
+check(d.result is None, "Cancel gives None")
+
+# dark mode: a tk widget that sets a light background must also set its text colour, or macOS draws white
+# text on it (12 Nov: every chat bubble looked empty). Checked on the source of every window module.
+import ast as _ast
+bad = []
+for mod in ("ui.py", "phone.py", "app.py", "firstrun.py"):
+    tree = _ast.parse((HERE.parent / mod).read_text(encoding="utf-8"))
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Call) and isinstance(node.func, _ast.Attribute) and node.func.attr in ("Text", "Listbox") \
+                and isinstance(node.func.value, _ast.Name) and node.func.value.id == "tk":
+            keys = {k.arg for k in node.keywords}
+            if "bg" in keys and "fg" not in keys:
+                bad.append(f"{mod}:{node.lineno}")
+check(not bad, f"every tk.Text/Listbox with a background sets its text colour: {bad}")
+# iMessage text inside attributedBody: older typedstream, NSMutableString variant, long (0x81) lengths,
+# and a keyed archive — the decoder must find the text in all of them
+import plistlib as _pl, sections as _sx
+_blobs = [
+    (b'\x04\x0bstreamtyped\x81\xe8\x03\x84\x01@\x84\x84\x84\x12NSAttributedString\x00\x84\x84\x08NSObject\x00\x85\x92\x84\x84\x84\x08NSString\x01\x94\x84\x01+\x05Hello\x86', "Hello"),
+    (b'\x84\x0fNSMutableString\x01\x84\x84\x08NSString\x01\x95\x84\x01+\x0bmerci bien!\x86', "merci bien!"),
+    (b'NSString\x01\x94\x84\x01+\x81\x2c\x01' + b'x' * 300 + b'\x86', "x" * 300),
+    (_pl.dumps({"$archiver": "NSKeyedArchiver", "$version": 100000, "$top": {"root": _pl.UID(1)},
+                "$objects": ["$null", {"NSString": _pl.UID(2)}, {"NS.string": "Bonjour"}]}, fmt=_pl.FMT_BINARY), "Bonjour"),
+]
+check(all(_sx.decode_attributed_body(b) == want for b, want in _blobs), "attributedBody text found in every layout")
+
+# every transfer shows progress and a realistic time left (01-principles.md, 6a)
+import ui as _ui2
+e = _ui2.Eta(settle=0.0)
+first = e.feed(1.0)
+check(first.endswith("working out time left…"), f"no estimate from the first second: {first!r}")
+e.points[0] = (e.points[0][0] - 60, e.points[0][1])          # a minute ago we were at 1%
+t = e.feed(21.0)
+check(t.startswith("21%") and ("about 3 min left" in t or "about 4 min left" in t), f"20% in a minute → about 4 min left: {t!r}")
+check(_ui2.Eta.fmt(30) == "under 2 min left" and _ui2.Eta.fmt(2 * 3600 + 5 * 60) == "about 2 h 05 min left", "wording")
+check(e.feed(100) == "100%", "done")
+
 win.close()
 root.update()
 check(("close",) in win.live.calls, "closing the window disconnects the simulated iPhone")

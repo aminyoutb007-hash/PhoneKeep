@@ -53,6 +53,19 @@ Click **Open iPhone** (or the phone itself) in the main window. A window opens w
 
 Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. Nothing is ever written to the phone.
 
+## New in 5.0
+
+- **Encrypted by default.** The first backup asks you to choose a backup password; it's saved in your Mac Keychain / Windows Credential Manager so you never type it again. **Write it down somewhere safe too** — if it's lost, the backup can't be opened by anything, and the only way forward is *Reset All Settings* on the iPhone and a new backup.
+- **No internet.** PhoneKeep refuses every network connection from inside the app; the only exception is the *Check for updates…* button in Settings, which fetches the release page when you click it.
+- **A guide on first run**: Connect → Trust → Password → Back up → Done, in the main window.
+- **A menu bar / system tray helper** that shows your last backup, backs up with one click, notifies you when it's done, and can start at login.
+- **Automatic backups**: daily or weekly at a time you choose, only when charging if you like.
+- **Snapshots over time**: every backup is kept as a snapshot you can open from the phone window's timeline; unchanged files are stored once. Keep one forever, rename it, or delete it.
+- **Backups on any drive**: Settings → Location; move existing backups to an external drive with a verified copy; PhoneKeep waits quietly when the drive is unplugged.
+- **Open any backup**: File → Open backup… (or drop a folder on the window) opens PhoneKeep's own backups and Finder/iTunes ones, and the **All files** screen shows everything in a backup as folders.
+- **Plain-language errors** with one button that fixes the problem, and *Show details* for the technical text.
+- **Cancel** a running backup at any time; the next backup carries on from where it stopped.
+
 ## Use it
 
 1. Plug in your iPhone (or use Wi-Fi sync), unlock it and tap **Trust This Computer**. PhoneKeep shows the phone's name and when it was last backed up.
@@ -76,6 +89,8 @@ Default locations (in your home folder):
 ### About photos and iCloud Photos
 
 If **iCloud Photos** is on, iOS leaves the photo library out of backups. Keep **"Copy photos directly from the phone"** ticked: PhoneKeep then copies the camera roll straight off the iPhone, and only new photos on later runs. If the phone is set to **Optimize iPhone Storage**, some originals only exist in iCloud. To get those, switch the phone to **Download and Keep Originals** first (Settings → Photos), or download them from icloud.com.
+
+**File → Open backup…** (or drop a backup folder onto the window) opens any backup — PhoneKeep's own, or one made by Finder or iTunes — in the phone window, with no iPhone connected; an **All files** screen shows the backup as folders, with preview and save.
 
 Backups can live on any disk, external drive or network drive (Settings → Location → **Change…**, which offers to move your existing backups there, checking every file before the old copy is removed). If that drive is unplugged, PhoneKeep simply waits and says "Connect *Backup Drive* to back up."
 

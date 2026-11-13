@@ -6,6 +6,7 @@ Single entry point for the packaged PhoneKeep app (.app / .exe).
   PhoneKeep -m pymobiledevice3 …  -> internal: the iPhone helper the app runs for backups
 """
 import multiprocessing
+import os
 import sys
 
 
@@ -60,6 +61,8 @@ def _crash_log() -> None:
     from pathlib import Path
 
     def hook(exc_type, exc, tb):
+        if issubclass(exc_type, BrokenPipeError):      # the window closed while a helper was still printing
+            return
         try:
             p = Path.home() / "PhoneKeep" / "crash.log"
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -71,6 +74,11 @@ def _crash_log() -> None:
             pass
         sys.__excepthook__(exc_type, exc, tb)
     sys.excepthook = hook
+    import threading
+
+    def thread_hook(args):                      # crashes on worker threads (the helper's backup thread, say)
+        hook(args.exc_type, args.exc_value, args.exc_traceback)
+    threading.excepthook = thread_hook
 
 
 def _lockdown_run(udid, coro_fn) -> None:
@@ -245,7 +253,10 @@ def main() -> None:
         import phonekeep
         sys.exit(phonekeep.main(args))
     import app
-    app.App().mainloop()
+    try:
+        app.App().mainloop()
+    finally:
+        os._exit(0)          # never leave a windowless process behind (see App.quit_app)
 
 
 if __name__ == "__main__":

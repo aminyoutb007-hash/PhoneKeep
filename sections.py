@@ -26,6 +26,14 @@ from typing import Callable, Optional
 import phonekeep as wv
 from phonekeep import _e, Log, PhoneKeepError
 
+
+class ExportCancelled(PhoneKeepError):
+    """The owner pressed Cancel during an export (raised from the progress callback)."""
+
+    def __init__(self):
+        super().__init__("Export cancelled. Your backup is untouched; files already saved stay in the archive.",
+                         button="Try again", action="try_again", key="cancelled")
+
 HOME = "HomeDomain"
 MEDIA = "MediaDomain"
 CAMERA = "CameraRollDomain"
@@ -339,26 +347,71 @@ def sec_contacts(ctx: Ctx, people: list[dict]) -> dict:
 # Messages (SMS / iMessage / RCS)
 # ---------------------------------------------------------------------------
 
+def _typedstream_text(b: bytes) -> str:
+    """The string of an NSAttributedString archived as a 'typedstream' (iMessage attributedBody up to now).
+    Layout after the class name: a few class-info bytes, then '+' (C string), then a length (one byte,
+    or 0x81 + 2 bytes LE, or 0x82 + 4 bytes LE), then UTF-8 bytes. The class may be NSString or
+    NSMutableString, and the number of class-info bytes varies between iOS versions, so scan for '+'."""
+    for cls in (b"NSString", b"NSMutableString"):
+        i = b.find(cls)
+        while i >= 0:
+            j = i + len(cls)
+            plus = b.find(b"+", j, j + 16)
+            if plus >= 0 and plus + 1 < len(b):
+                k = plus + 1
+                n = b[k]
+                k += 1
+                if n == 0x81:
+                    n = int.from_bytes(b[k:k + 2], "little"); k += 2
+                elif n == 0x82:
+                    n = int.from_bytes(b[k:k + 4], "little"); k += 4
+                elif n >= 0x80:
+                    n = -1
+                if 0 < n <= len(b) - k:
+                    text = b[k:k + n].decode("utf-8", "replace")
+                    if text.strip():
+                        return text
+            i = b.find(cls, i + 1)
+    return ""
+
+
+def _keyed_archive_text(b: bytes) -> str:
+    """The string of an NSAttributedString archived with NSKeyedArchiver (a binary plist)."""
+    import plistlib
+    try:
+        pl = plistlib.loads(b)
+    except Exception:
+        return ""
+    objs = pl.get("$objects") or []
+
+    def deref(v):
+        if isinstance(v, plistlib.UID):
+            v = objs[v.data] if v.data < len(objs) else None
+        return v
+
+    root = deref((pl.get("$top") or {}).get("root"))
+    candidates = [root] + [o for o in objs if isinstance(o, dict)]
+    for o in candidates:
+        if not isinstance(o, dict):
+            continue
+        for key in ("NSString", "NS.string", "NSAttributedString"):
+            v = deref(o.get(key))
+            if isinstance(v, dict):
+                v = deref(v.get("NS.string")) or deref(v.get("NSString"))
+            if isinstance(v, str) and v.strip():
+                return v
+    best = max((o for o in objs if isinstance(o, str) and o != "$null" and not o.startswith("NS")), key=len, default="")
+    return best
+
+
 def decode_attributed_body(b: Optional[bytes]) -> str:
-    """Pull the plain text out of iOS's 'typedstream' attributedBody blob."""
+    """Pull the plain text out of iOS's attributedBody blob (typedstream, or a keyed archive)."""
     if not b:
         return ""
     b = bytes(b)
-    i = b.find(b"NSString")
-    if i < 0:
-        return ""
-    i += len(b"NSString") + 5
-    if i >= len(b):
-        return ""
-    n = b[i]
-    i += 1
-    if n == 0x81:
-        n = int.from_bytes(b[i:i + 2], "little")
-        i += 2
-    elif n == 0x82:
-        n = int.from_bytes(b[i:i + 3], "little")
-        i += 3
-    return b[i:i + n].decode("utf-8", "replace")
+    if b.startswith(b"bplist"):
+        return _keyed_archive_text(b)
+    return _typedstream_text(b)
 
 
 def load_messages(ctx: Ctx) -> list[dict]:
@@ -1107,11 +1160,37 @@ class ChatPreview:
         loaded = self.ctx.cache.get(key)
         return loaded if key == "messages" else (loaded or {}).get("chats", [])
 
-    def messages(self, key: str, chat_id, limit: int = 80) -> tuple[list[dict], int]:
+    def messages(self, key: str, chat_id, limit: int = 80, around: Optional[str] = None) -> tuple[list[dict], int]:
+        """The latest `limit` messages of a chat; with `around`, the window that starts at the first
+        message containing that text (so a search result is on screen, not the last 80 messages)."""
         for c in self._chats(key):
             if c["id"] == chat_id:
-                return c["messages"][-limit:], len(c["messages"])
+                msgs = c["messages"]
+                if around:
+                    q = around.lower()
+                    for i, m in enumerate(msgs):
+                        if q in _msg_text(m):
+                            start = max(0, i - 3)
+                            return msgs[start:start + limit], len(msgs)
+                return msgs[-limit:], len(msgs)
         return [], 0
+
+    def matching(self, key: str, query: str) -> dict:
+        """{chat id: number of messages containing query} for one app (case-insensitive, text and captions)."""
+        q = (query or "").strip().lower()
+        if not q:
+            return {}
+        if not hasattr(self, "_index"):
+            self._index = {}
+        idx = self._index.get(key)
+        if idx is None:
+            idx = self._index[key] = {c["id"]: [_msg_text(m) for m in c["messages"]] for c in self._chats(key)}
+        out = {}
+        for cid, texts in idx.items():
+            n = sum(1 for t in texts if q in t)
+            if n:
+                out[cid] = n
+        return out
 
     def thumbnail(self, key: str, m: dict) -> Optional[Path]:
         """Small JPEG of a message's photo, or None."""
@@ -1133,6 +1212,10 @@ class ChatPreview:
             if not self.ctx.copy(domain, rel, src, keep_time=False):
                 return None
         return thumb if self.ctx.web_image(src, thumb, 260) else None
+
+
+def _msg_text(m: dict) -> str:
+    return ((m.get("text") or "") + "\n" + (m.get("caption") or "")).lower()
 
 
 def _chat_summary(c: dict) -> dict:
@@ -1250,6 +1333,8 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
             try:
                 r = sec_contacts(ctx, people) if key == "contacts" else fn(ctx)
                 log(f"{label}: {r.get('detail', '')}")
+            except ExportCancelled:
+                raise
             except PhoneKeepError as e:
                 r = {"count": 0, "note": str(e)}
                 log(f"{label}: {e}")

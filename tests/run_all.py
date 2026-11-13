@@ -20,12 +20,14 @@ STEPS = [
     ("S1: encryption by default, keychain, no password on command lines or in logs", "test_s1_encryption.py", True),
     ("S3: no network during backup + export + phone window", "test_s3_no_network.py", True),
     ("E3: plain-language errors, each situation reproduced", "test_e3_errors.py", True),
+    ("B1: a running backup can be cancelled (engine, main window, guide, helper)", "test_b1_cancel.py", True),
     ("E1: first-run guide walked end to end with a stub iPhone", "test_e1_first_run.py", True),
     ("E2: menu bar / tray helper backs up and notifies with no window open", "test_e2_helper.py", True),
     ("B2: scheduled automatic backups with a fake clock", "test_b2_schedule.py", False),
     ("B3: snapshots over time, content store, upgrade, FAT32", "test_b3_snapshots.py", False),
     ("B4: backup location, moving backups, unplugged drive, free space", "test_b4_location.py", True),
     ("X2: backup redaction tool leaves nothing personal and still opens", "test_x2_redaction.py", False),
+    ("B5: open any backup with no phone; All files preview and save", "test_b5_open_backup.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)

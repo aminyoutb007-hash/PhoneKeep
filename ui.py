@@ -282,6 +282,7 @@ class ChatPanel(tk.Frame):
 
     def __init__(self, parent, lists: dict, preview=None, select_all: bool = True, preview_limit: int = 80):
         super().__init__(parent, bg=BG)
+        _attach_app_menu(self)
         self.preview = preview
         self.preview_limit = preview_limit
         self.rows = [(k, label, c) for k, (label, chats) in lists.items() for c in chats]
@@ -300,6 +301,7 @@ class ChatPanel(tk.Frame):
         self.q.trace_add("write", lambda *_: self._fill())
         ent = ttk.Entry(bar, textvariable=self.q, width=28)
         ent.pack(side="left", padx=(4, 10))
+        self.search_hint = tk.Label(bar, text="", bg=BG, fg=MUTED, font=font(11))
         self.app_var = tk.StringVar(value="All apps")
         if len(self.apps) > 1:
             cb = ttk.Combobox(bar, textvariable=self.app_var, values=["All apps"] + self.apps,
@@ -308,6 +310,7 @@ class ChatPanel(tk.Frame):
             cb.bind("<<ComboboxSelected>>", lambda e: self._fill())
         RoundButton(bar, "Select none", lambda: self._set_all(False), "secondary", 120, 32, 12).pack(side="right")
         RoundButton(bar, "Select all", lambda: self._set_all(True), "secondary", 110, 32, 12).pack(side="right", padx=6)
+        self.search_hint.pack(side="left", padx=(10, 0))
 
         dbar = tk.Frame(self, bg=BG)
         dbar.pack(fill="x", padx=16, pady=(0, 8))
@@ -362,21 +365,26 @@ class ChatPanel(tk.Frame):
         self.pv_sub.pack(fill="x", padx=14, pady=(0, 6))
         tf = tk.Frame(right, bg="#efeae2")
         tf.pack(fill="both", expand=True)
-        self.text = tk.Text(tf, bg="#efeae2", relief="flat", wrap="word", font=font(13), padx=10, pady=8,
+        # fg must be set: in macOS dark mode Tk's default text colour is white, which vanished on the light
+        # bubbles (owner, 12 Nov: "all messages look empty")
+        self.text = tk.Text(tf, bg="#efeae2", fg=INK, insertbackground=INK, selectforeground=INK,
+                            relief="flat", wrap="word", font=font(13), padx=10, pady=8,
                             cursor="arrow", highlightthickness=0)
         tsb = ttk.Scrollbar(tf, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=tsb.set, state="disabled")
         self.text.pack(side="left", fill="both", expand=True)
         tsb.pack(side="right", fill="y")
-        self.text.tag_configure("them", lmargin1=6, lmargin2=6, rmargin=70, background="#ffffff",
+        self.text.tag_configure("them", foreground=INK, lmargin1=6, lmargin2=6, rmargin=70, background="#ffffff",
                                 spacing1=6, spacing3=2)
-        self.text.tag_configure("me", lmargin1=70, lmargin2=70, rmargin=6, background=ME,
+        self.text.tag_configure("me", foreground=INK, lmargin1=70, lmargin2=70, rmargin=6, background=ME,
                                 spacing1=6, spacing3=2)
         self.text.tag_configure("sender", foreground=GREEN, font=font(11, "bold"))
         self.text.tag_configure("meta", foreground=MUTED, font=font(10))
         self.text.tag_configure("day", justify="center", foreground=MUTED, font=font(11, "bold"),
                                 spacing1=12, spacing3=4)
         self.text.tag_configure("sys", justify="center", foreground=AMBER, font=font(11), spacing1=6)
+        self.text.tag_configure("hit", background="#ffe58f", foreground=INK)
+        self.text.tag_raise("hit")
         body.add(right, minsize=300)
 
         self.foot = tk.Frame(self, bg=BG)
@@ -395,9 +403,19 @@ class ChatPanel(tk.Frame):
         q = self.q.get().strip().lower()
         app = self.app_var.get()
         self.tree.delete(*self.tree.get_children())
+        # the search finds chats by name AND by what was said in them (usability test, 12 Nov:
+        # "find a message containing 'merci'" found nothing)
+        self.hits = {}
+        if q and self.preview is not None and len(q) >= 2:
+            for key in {k for k, _l, _c in self.rows}:
+                for cid, n in self.preview.matching(key, q).items():
+                    self.hits[(key, cid)] = n
+        n_hit_chats = 0
         for i, (key, label, c) in enumerate(self.rows):
-            if q and q not in c["name"].lower():
+            if q and q not in c["name"].lower() and (key, c["id"]) not in self.hits:
                 continue
+            if (key, c["id"]) in self.hits:
+                n_hit_chats += 1
             if app != "All apps" and label != app:
                 continue
             n_in = self._n_in(c)
@@ -410,6 +428,13 @@ class ChatPanel(tk.Frame):
             vals += (f"{n_in:,}", c["last"])
             self.tree.insert("", "end", iid=str(i), values=vals, tags=("dim",) if n_in == 0 else ())
         self.tree.tag_configure("dim", foreground=MUTED)
+        if hasattr(self, "search_hint"):
+            total = sum(self.hits.values())
+            self.search_hint.configure(text=(f"“{self.q.get().strip()}” is in {total:,} message{'s' if total != 1 else ''} "
+                                             f"across {n_hit_chats:,} chat{'s' if n_hit_chats != 1 else ''}") if q and total
+                                       else (f"No message contains “{self.q.get().strip()}”" if q and len(q) >= 2 and not
+                                             any(q in c['name'].lower() for _k, _l, c in self.rows) else ""))
+        self.current = None
         self._update_count()
 
     def _toggle(self, iid):
@@ -493,7 +518,9 @@ class ChatPanel(tk.Frame):
             return
         self.current = (key, c["id"])
         self.worker.clear()
-        msgs, total = self.preview.messages(key, c["id"], self.preview_limit)
+        q = self.q.get().strip()
+        around = q if (key, c["id"]) in getattr(self, "hits", {}) else None
+        msgs, total = self.preview.messages(key, c["id"], self.preview_limit, around=around)
         self.pv_title.configure(text=c["name"])
         shown = f"latest {len(msgs)} of {total:,} messages" if total > len(msgs) else f"{total:,} messages"
         self.pv_sub.configure(text=f"{label} · {shown}" + (" · group" if c["group"] else ""))
@@ -532,8 +559,20 @@ class ChatPanel(tk.Frame):
             t.insert("end", (when.strftime("%H:%M") if when else "") + "\n", (tag, "meta"))
         if not msgs:
             t.insert("end", "No messages to show.\n", "day")
+        t.tag_remove("hit", "1.0", "end")
+        first = None
+        if around:
+            pos = "1.0"
+            while True:
+                pos = t.search(around, pos, stopindex="end", nocase=True)
+                if not pos:
+                    break
+                end = f"{pos}+{len(around)}c"
+                t.tag_add("hit", pos, end)
+                first = first or pos
+                pos = end
         t.configure(state="disabled")
-        t.see("end")
+        t.see(first or "end")
 
     def _put_image(self, path, mark, cur):
         if cur != self.current or not path:
@@ -578,11 +617,56 @@ class ChatPanel(tk.Frame):
         return out
 
 
+class Eta:
+    """Progress → 'NN% · about M min left'. The time left comes from the speed over the last few minutes
+    (settles quickly, follows changes such as many small files then big videos); until there is enough to
+    go on it says 'working out time left…'. Used by every transfer PhoneKeep shows (01-principles.md)."""
+
+    def __init__(self, window: float = 300.0, settle: float = 10.0):
+        import time as _t
+        self._t, self.window, self.settle = _t, window, settle
+        self.points: list = []
+
+    @staticmethod
+    def fmt(seconds: float) -> str:
+        if seconds < 90:
+            return "under 2 min left"
+        m = int(seconds // 60)
+        return f"about {m} min left" if m < 90 else f"about {m // 60} h {m % 60:02d} min left"
+
+    def feed(self, pct: float) -> str:
+        """Record a percentage and return the text to show."""
+        now = self._t.time()
+        pct = max(0.0, min(100.0, float(pct)))
+        self.points.append((now, pct))
+        while len(self.points) > 2 and now - self.points[0][0] > self.window:
+            self.points.pop(0)
+        if pct >= 100:
+            return "100%"
+        first = self.points[0]
+        eta = ""
+        if pct > first[1] + 0.5 and now - first[0] >= self.settle:
+            rate = (pct - first[1]) / (now - first[0])
+            if rate > 0:
+                eta = self.fmt((100 - pct) / rate)
+        return f"{pct:.0f}%" + (f" · {eta}" if eta else " · working out time left…")
+
+
+def _attach_app_menu(win: tk.Toplevel) -> None:
+    """Give a dialog the app's menu bar (macOS shows Tk's default File menu otherwise)."""
+    w = win.master
+    while w is not None and not hasattr(w, "attach_menu"):
+        w = getattr(w, "master", None)
+    if w is not None:
+        w.attach_menu(win)
+
+
 class ChatPicker(tk.Toplevel):
     """Pick chats from WhatsApp, WhatsApp Business and Messages before an export."""
 
     def __init__(self, parent, lists: dict, preview=None):
         super().__init__(parent, bg=BG)
+        _attach_app_menu(self)
         self.title("Choose chats to export")
         self.geometry("1040x660")
         self.minsize(820, 480)
@@ -635,6 +719,7 @@ class PhotoPanel(tk.Frame):
 
     def __init__(self, parent, source, items: list, select_all: bool = True, on_open=None):
         super().__init__(parent, bg=BG)
+        _attach_app_menu(self)
         from photos import human_size
         self.human_size = human_size
         self.on_open = on_open
@@ -847,6 +932,7 @@ class PhotoPicker(tk.Toplevel):
 
     def __init__(self, parent, source, items: list):
         super().__init__(parent, bg=BG)
+        _attach_app_menu(self)
         self.title("Choose photos & videos")
         self.geometry("1040x700")
         self.minsize(820, 520)
@@ -912,6 +998,7 @@ class PasswordDialog(tk.Toplevel):
     def __init__(self, parent, mode: str = "choose", phone_name: str = "your iPhone",
                  keychain_available: bool = True, help_text: str = ""):
         super().__init__(parent, bg=CARD)
+        _attach_app_menu(self)
         import keychain as kc
         self.kc, self.mode, self.result = kc, mode, None
         title, verb, sub = self.TEXT[mode]
@@ -990,6 +1077,52 @@ class PasswordDialog(tk.Toplevel):
     def _cancel(self):
         self.result = None
         self.destroy()
+
+
+class TextDialog(tk.Toplevel):
+    """One line of text with OK/Cancel, in PhoneKeep's own style (Tk's simpledialog misbehaves on macOS:
+    it can come up behind the window, or not at all from a popup menu). Result: str, or None if cancelled."""
+
+    def __init__(self, parent, title: str, prompt: str, initial: str = "", ok: str = "Save"):
+        super().__init__(parent, bg=CARD)
+        _attach_app_menu(self)
+        self.result = None
+        self.title(title)
+        self.resizable(False, False)
+        self.transient(parent)
+        body = tk.Frame(self, bg=CARD)
+        body.pack(fill="both", expand=True, padx=28, pady=22)
+        tk.Label(body, text=title, bg=CARD, fg=INK, font=font(17, "bold")).pack(pady=(2, 4))
+        tk.Label(body, text=prompt, bg=CARD, fg=MUTED, font=font(12), wraplength=400, justify="center").pack()
+        self.var = tk.StringVar(value=initial or "")
+        self.entry = ttk.Entry(body, textvariable=self.var, font=font(14), width=32)
+        self.entry.pack(fill="x", pady=(14, 0), ipady=4)
+        btns = tk.Frame(body, bg=CARD)
+        btns.pack(fill="x", pady=(18, 0))
+        RoundButton(btns, ok, self._ok, "primary", 150, 40, bg=CARD).pack(side="right")
+        RoundButton(btns, "Cancel", self._cancel, "secondary", 100, 40, bg=CARD).pack(side="right", padx=8)
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self._cancel())
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.entry.focus_set()
+        self.entry.select_range(0, "end")
+        self.lift()
+        self.grab_set()
+
+    def _ok(self):
+        self.result = self.var.get().strip()
+        self.destroy()
+
+    def _cancel(self):
+        self.result = None
+        self.destroy()
+
+
+def ask_text(parent, title: str, prompt: str, initial: str = "", ok: str = "Save"):
+    """Open a TextDialog and wait for it. Returns the text, or None if cancelled."""
+    d = TextDialog(parent, title, prompt, initial, ok)
+    parent.wait_window(d)
+    return d.result
 
 
 def ask_password(parent, mode: str, phone_name: str, help_text: str = ""):

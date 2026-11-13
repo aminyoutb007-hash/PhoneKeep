@@ -92,9 +92,39 @@ r.close()
 personal = {p for p in personal if p and len(p.strip()) > 2 and p not in ("Group update",)}
 check(len(personal) > 15, f"{len(personal)} personal strings collected from the original")
 
+# -- what leaked on a real backup (12 Nov): the owner's folder names in file paths, and quoted text inside
+# WhatsApp's media metadata blobs. Planted (with invented names) into a copy of the fake backup first.
+src = W / "src"
+shutil.copytree(fake, src)
+man = sqlite3.connect(src / "Manifest.db")
+_planted = "Library/Mobile Documents/com~apple~CloudDocs/Desktop/Omar/Zineb paperwork/QCS/Zineb-Tazi.docx"
+import plistlib as _pl
+_rec = _pl.dumps({"$archiver": "NSKeyedArchiver", "$version": 100000, "$top": {"root": _pl.UID(1)},
+                  "$objects": ["$null", {"RelativePath": _pl.UID(2), "Mode": 16877, "$class": _pl.UID(3)}, _planted,
+                               {"$classname": "MBFile", "$classes": ["MBFile", "NSObject"]}]}, fmt=_pl.FMT_BINARY)
+man.execute("INSERT INTO Files(fileID, domain, relativePath, flags, file) VALUES (?,?,?,?,?)",
+            ("a" * 40, "HomeDomain", _planted, 2, _rec))
+man.commit(); man.close()
+personal.add("Zineb paperwork"); personal.add("Zineb-Tazi"); personal.add("/Omar/")
+for fid, rel in sqlite3.connect(src / "Manifest.db").execute("SELECT fileID, relativePath FROM Files WHERE relativePath LIKE '%ChatStorage.sqlite'"):
+    db = src / fid[:2] / fid
+    c = sqlite3.connect(db)
+    c.execute("CREATE TABLE IF NOT EXISTS ZWAMEDIAITEM (Z_PK INTEGER PRIMARY KEY, ZMESSAGE INTEGER, ZMEDIALOCALPATH VARCHAR, ZMETADATA BLOB)")
+    c.execute("INSERT INTO ZWAMEDIAITEM (ZMESSAGE, ZMEDIALOCALPATH, ZMETADATA) VALUES (1, ?, ?)",
+              ("Message/Media/447700900123@s.whatsapp.net/Driss birthday.jpg", b"\x12\x00Your parcel from Driss Lamrani is on its way\x00\x01"))
+    # SQLite lets a BLOB column hold text: seen on a real phone, it crashed the tool
+    c.execute("INSERT INTO ZWAMEDIAITEM (ZMESSAGE, ZMEDIALOCALPATH, ZMETADATA) VALUES (2, NULL, ?)",
+              ("Lunch with Salma Chraibi on Friday",))
+    personal.add("Salma Chraibi")
+    c.commit(); c.close()
+    personal.add("Driss Lamrani"); personal.add("Driss birthday")
+    break
+fake = src
+
 # -- redact ----------------------------------------------------------------------------------------------------
 out = W / "redacted"
 report = rb.redact_backup(fake, out, None, log=lambda m: None)
+check(report.get("file and folder names", 0) >= 2, f"the owner's folder and file names were replaced: {report.get('file and folder names')}")
 check(report["databases redacted"] >= 7, f"databases redacted: {report['databases redacted']}")
 check(report["photos & videos"] >= 3 and report["attachments & voice notes"] >= 1, f"media replaced: photos {report['photos & videos']}, attachments {report['attachments & voice notes']}")
 check(report["names"] >= 3 and report["phone numbers"] >= 3 and report["text passages"] >= 5, f"report: {dict(report)}")
@@ -155,6 +185,42 @@ rr = subprocess.run([sys.executable, str(HERE.parent / "tools" / "redact_backup.
 check("--password-stdin" in rr.stdout and "--password " not in rr.stdout, "CLI takes the password on stdin only")
 rr = subprocess.run([sys.executable, str(HERE.parent / "tools" / "redact_backup.py"), str(fake), str(out)], capture_output=True, text=True)
 check(rr.returncode != 0 and "not empty" in (rr.stderr + rr.stdout), "refuses to write into a non-empty folder")
+
+# a wrong password: three tries, one plain sentence, no traceback (owner's Mac, 13 Nov: one typo ended the
+# run with a wall of technical text)
+import io, contextlib
+calls = []
+real_redact, real_info, real_getpass = rb.redact_backup, rb.wv.backup_info, None
+import getpass as _gp
+real_getpass = _gp.getpass
+def _fake_redact(src, out_, pw, log=print, progress=None):
+    calls.append(pw)
+    if pw != "right":
+        raise wv.PhoneKeepError("That password doesn't open this backup.")
+    return __import__("collections").Counter({"databases redacted": 1})
+answers = iter(["wrnog", "right"])
+rb.redact_backup = _fake_redact
+rb.wv.backup_info = lambda p: {"encrypted": True}
+_gp.getpass = lambda prompt="": next(answers)
+buf, err = io.StringIO(), io.StringIO()
+try:
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+        code = rb.main([str(fake), str(W / "retry-out")])
+finally:
+    rb.redact_backup, rb.wv.backup_info, _gp.getpass = real_redact, real_info, real_getpass
+check(code == 0 and calls == ["wrnog", "right"] and "Try again." in buf.getvalue() and "Traceback" not in buf.getvalue() + err.getvalue(),
+      f"a wrong password asks again, in plain words ({calls}, exit {code})")
+answers = iter(["a", "b", "c"])
+rb.redact_backup = _fake_redact
+rb.wv.backup_info = lambda p: {"encrypted": True}
+_gp.getpass = lambda prompt="": next(answers)
+buf, err = io.StringIO(), io.StringIO()
+try:
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+        code = rb.main([str(fake), str(W / "retry-out2")])
+finally:
+    rb.redact_backup, rb.wv.backup_info, _gp.getpass = real_redact, real_info, real_getpass
+check(code == 2 and err.getvalue().strip() == "That password doesn't open this backup.", f"after three tries it stops with one sentence: {err.getvalue()!r}")
 
 print("\nX2 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)
