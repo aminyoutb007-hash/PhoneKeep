@@ -38,7 +38,7 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 **What the user sees and does:** Settings → Security shows "PhoneKeep never sends your data anywhere. Internet use: **Off**". Two things, and only two, can switch it on, each only when the user clicks: "Check for updates" and, if the spyware check (S5) ships, "Update indicators".
 
 **Requirements**
-- The app makes no internet connections. The only exceptions are the two opt-in actions above: the update check (one HTTPS request to the release page, no identifiers) and the indicator download for S5 (one HTTPS request to the indicator files, no identifiers), each made only when the user clicks its button.
+- The app makes no internet connections. The only exceptions are the two opt-in actions above: the update check (one HTTPS request to the release page, no identifiers; it may also refresh the list of current iOS versions used by H5) and the indicator download for S5 (one HTTPS request to the indicator files, no identifiers), each made only when the user clicks its button.
 - An automated test (in `tests/`, run in CI) guards every socket connection made while running a full backup, an export and a phone-window session, and fails if any goes anywhere other than the phone over USB / local Wi-Fi. An OS-level check on a real Mac is part of each release ([docs/release.md](../release.md)).
 
 **Done when**
@@ -60,7 +60,7 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 
 ## S5. Spyware check
 
-**P2 (moved from P1 until the MVT licence has been checked).**
+**P2 (moved from P1 until the MVT licence has been checked).** Shown as one part of the Security card (H5, [13-phone-health.md](13-phone-health.md#h5-security-card)).
 
 **What the user sees and does:** in the phone window, a **Security check** icon. Click **Check now** → progress → a result card: green "No signs of known spyware found (checked against 2,340 indicators, updated 1 Nov 2026)" or amber with what was found, in plain words, and what to do next (with a link to help organisations).
 

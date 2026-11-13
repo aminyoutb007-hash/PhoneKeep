@@ -88,3 +88,5 @@ Every feature that saves or backs up also works from the command line (`phonekee
 | Signed legal-evidence exports and e-discovery formats | Different audience |
 | Any cloud service, account or online sync | Conflicts with "data stays on the computer" |
 | Reading Signal | Signal keeps its data out of backups |
+| "RAM cleaners", speed boosters, battery savers or junk cleaners | iOS manages memory and background activity itself; a computer can't change them, so these would be dishonest (see [13-phone-health.md](13-phone-health.md#ground-rules-for-this-area)) |
+| Changing iPhone settings from the computer, or removing profiles or apps from it | iOS doesn't allow it, or it is device management; PhoneKeep shows the steps on the phone instead |
