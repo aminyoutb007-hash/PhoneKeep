@@ -503,6 +503,21 @@ class PhoneWindow(tk.Toplevel):
             parts.append("iPhone not reachable: photos come from the backup")
         self.src_line.configure(text="\n\n".join(parts))
 
+    def passcode_notice(self, text):
+        """The iPhone waits for its passcode: say so big at the top and bring this window forward."""
+        try:
+            if text is None:
+                self.banner("Backing up changes from the iPhone… keep it unlocked and nearby.")
+                self.bar_text.configure(font=font(13))
+                return
+            self.banner("📱  " + text, color="#fff4e0")
+            self.bar_text.configure(font=font(16, "bold"))
+            self.deiconify()
+            self.lift()
+            self.bell()
+        except tk.TclError:
+            pass
+
     def banner(self, text: str, button: Optional[tuple] = None, color=GREEN_SOFT):
         if not text:
             self.bar_frame.pack_forget()
@@ -1629,7 +1644,8 @@ class PhoneWindow(tk.Toplevel):
         def work():
             return wv.make_backup(Path(self.app.s["backup_dir"]), self.udid, log=lambda m: None,
                                   progress=progress, status=status,
-                                  keep=self.app.s["snapshots_keep"], until_disk_full=self.app.s["snapshots_until_full"])
+                                  keep=self.app.s["snapshots_keep"], until_disk_full=self.app.s["snapshots_until_full"],
+                                  attention=lambda text: self.after(0, lambda: self.passcode_notice(text)))
 
         def done(path=None, err=None):
             self.refreshing = False

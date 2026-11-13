@@ -46,6 +46,11 @@ elif args[0] == "--pk-backup":
     d.mkdir(parents=True, exist_ok=True)
     (d / "Info.plist").write_bytes(b"x" * 1000)
     print("PKSTAGE started", flush=True)
+    import os
+    if os.environ.get("PK_STUB_PASSCODE"):          # the iPhone waits for its passcode first
+        print("Please enter your passcode on the device to continue", flush=True)
+        print("PKPCT 0.0", flush=True)
+        time.sleep(1.5)
     for p in range(1, 400):
         print(f"PKPCT {p/10:.1f}", flush=True); time.sleep(0.25)
 ''')
@@ -206,6 +211,45 @@ rewritten.write_bytes(b"z" * 1_000_000)          # same size: the folder doesn't
 (upd / "bb" / "new").write_bytes(b"n" * 500_000)
 check(wv._bytes_written_since(upd, t0 - 2) == 1_500_000,
       f"an update backup counts rewritten and new files, not folder growth ({wv._bytes_written_since(upd, t0 - 2):,} bytes)")
+
+# the iPhone asks for its passcode (13 Nov): the windows get a clear notice, then it goes once copying starts
+events = []
+os.environ["PK_STUB_PASSCODE"] = "1"
+out2 = {}
+
+
+def run2():
+    try:
+        wv.make_backup(root, UD, log=lambda m: None, progress=lambda p: None, attention=events.append)
+    except Exception as e:
+        out2["e"] = e
+
+
+t = threading.Thread(target=run2); t.start()
+t0 = time.time()
+while time.time() - t0 < 20 and None not in events:
+    time.sleep(0.05)
+wv.cancel_backup(); t.join(30)
+del os.environ["PK_STUB_PASSCODE"]
+check(events[:1] == [wv.PASSCODE_PROMPT] and "passcode" in wv.PASSCODE_PROMPT and "unlock" in wv.PASSCODE_PROMPT.lower(),
+      f"the passcode prompt reaches the window as its own notice: {events[:1]}")
+check(None in events and events.count(wv.PASSCODE_PROMPT) == 1, f"and is taken down once copying starts: {events}")
+try:
+    import tkinter as tk
+    import app as appmod
+    appmod.SETTINGS_FILE = W / "settings-pass.json"
+    a = appmod.App(); a.withdraw(); a.update()
+    a.passcode_notice(wv.PASSCODE_PROMPT); a.update()
+    check(a.bar_frame.winfo_manager() == "pack" and wv.PASSCODE_PROMPT in a.bar_text.cget("text")
+          and "bold" in str(a.bar_text.cget("font")) and a.bar_btn is None,
+          f"main window: big amber notice at the top: {a.bar_text.cget('text')!r}")
+    a.passcode_notice(None); a.update()
+    check(a.bar_frame.winfo_manager() == "", "and it goes away when copying starts")
+    a.show_problem(appmod.errors.explain("RuntimeError: x")); a.update()
+    check("bold" not in str(a.bar_text.cget("font")), "other banners keep the normal text size")
+    a.destroy()
+except tk.TclError as ex:
+    print(f"(window check skipped: {ex})")
 
 print("\nB1 CANCEL TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

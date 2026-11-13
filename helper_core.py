@@ -186,7 +186,8 @@ class Helper:
                 self.on_change()
             s = settings()
             wv.make_backup(self.backup_dir, udid, log=self.log, progress=progress,
-                           keep=int(s.get("snapshots_keep", 10)), until_disk_full=bool(s.get("snapshots_until_full", False)))
+                           keep=int(s.get("snapshots_keep", 10)), until_disk_full=bool(s.get("snapshots_until_full", False)),
+                           attention=lambda text: text and self.notify(f"{name}: enter your passcode", text))
             took = int(time.time() - t0)
             after = wv._folder_bytes(self.backup_dir / udid)
             mins = max(1, round(took / 60))
