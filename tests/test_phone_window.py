@@ -427,6 +427,20 @@ pp2.pack(fill="both", expand=True); root.update()
 pp2.mlist.selection_set("2025-03")
 for _ in range(30):
     root.update()
+# 13 Nov: a line per year with its months under it; tiles fill the width; selected = a blue frame, no circle
+check(pp2.mlist.exists("year-2025") and "2025-03" in pp2.mlist.get_children("year-2025")
+      and pp2.mlist.item("2025-03", "values")[0].strip() == "March", "months are listed under their year, by name")
+pp2.mlist.selection_set("year-2025"); root.update()
+check(pp2._month() == "2025-03", "clicking a year opens its newest month")
+_cw = pp2.canvas.winfo_width()
+_used = pp2._cols() * (pp2.tile + pp2.GAP) + pp2.GAP
+check(0 <= _cw - _used < pp2._cols() + pp2.GAP, f"the photos fill the width ({_used} of {_cw} px)")
+_it = pp2.months["2025-03"][0]
+pp2.selected.add(_it.id); pp2._draw_tile(_it)
+_c = pp2.tiles[_it.id]
+_kinds = [(_c.type(i), _c.itemcget(i, "outline") if _c.type(i) in ("rectangle", "oval") else "") for i in _c.find_all()]
+check(("rectangle", _ui.SELECT_BLUE) in _kinds and not any(k == "oval" for k, _o in _kinds),
+      "a selected photo has a blue frame and no tick circle")
 _tile = next(iter(pp2.tiles.values()))
 _y0 = pp2.canvas.yview()[0]
 for _ in range(3):
