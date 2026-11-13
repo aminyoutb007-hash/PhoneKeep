@@ -215,6 +215,7 @@ def _dnd_root():
 class App(_dnd_root()):
     def __init__(self):
         super().__init__()
+        ui.use_light_appearance(self)
         self.title(wv.APP_NAME)
         self._build_menu()
         self.geometry("820x860")

@@ -312,8 +312,6 @@ class ChatPanel(tk.Frame):
                               state="readonly", width=18)
             cb.pack(side="left")
             cb.bind("<<ComboboxSelected>>", lambda e: self._fill())
-        RoundButton(bar, "Select none", lambda: self._set_all(False), "secondary", 120, 32, 12).pack(side="right")
-        RoundButton(bar, "Select all", lambda: self._set_all(True), "secondary", 110, 32, 12).pack(side="right", padx=6)
         self.search_hint.pack(side="left", padx=(10, 0))
 
         dbar = tk.Frame(self, bg=BG)
@@ -344,6 +342,13 @@ class ChatPanel(tk.Frame):
         body = tk.PanedWindow(self, orient="horizontal", sashwidth=6, bg=BG, bd=0)
         body.pack(fill="both", expand=True, padx=16)
         left = tk.Frame(body, bg=BG)
+        # ticking controls sit right above the list they act on (owner, 13 Nov)
+        tbar = tk.Frame(left, bg=BG)
+        tbar.pack(side="top", fill="x", pady=(0, 6))
+        RoundButton(tbar, "Select all", lambda: self._set_all(True), "secondary", 110, 30, 12, bg=BG).pack(side="left")
+        RoundButton(tbar, "Select none", lambda: self._set_all(False), "secondary", 120, 30, 12, bg=BG).pack(side="left", padx=6)
+        self.tick_count = tk.Label(tbar, text="", bg=BG, fg=MUTED, font=font(12))
+        self.tick_count.pack(side="left", padx=(8, 0))
         cols = ("tick", "name") + (("app",) if len(self.apps) > 1 else ()) + ("messages", "last")
         self.tree = ttk.Treeview(left, columns=cols, show="headings", selectmode="browse")
         heads = {"tick": ("✓", 36), "name": ("Chat", 230), "app": ("App", 130),
@@ -352,6 +357,7 @@ class ChatPanel(tk.Frame):
             self.tree.heading(c, text=heads[c][0])
             self.tree.column(c, width=heads[c][1], stretch=(c == "name"),
                              anchor="center" if c in ("tick", "messages") else "w")
+        self.tree.heading("tick", command=lambda: self._set_all(not self._all_shown_ticked()))   # ✓ ticks/unticks all shown
         sb = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side="left", fill="both", expand=True)
@@ -457,6 +463,10 @@ class ChatPanel(tk.Frame):
         if self.tree.identify_column(event.x) == "#1":  # the tick column
             self._toggle(iid)
 
+    def _all_shown_ticked(self) -> bool:
+        kids = self.tree.get_children()
+        return bool(kids) and all((self.rows[int(i)][0], self.rows[int(i)][2]["id"]) in self.selected for i in kids)
+
     def _set_all(self, on: bool):
         for iid in self.tree.get_children():
             key, _l, c = self.rows[int(iid)]
@@ -482,6 +492,9 @@ class ChatPanel(tk.Frame):
             with_msgs = sum(1 for c in sel if self._n_in(c) > 0)
             text += f" in {with_msgs:,} chat{'s' if with_msgs != 1 else ''} · {when}"
         self.count.configure(text=text)
+        shown = len(self.tree.get_children())
+        ticked = sum(1 for i in self.tree.get_children() if (self.rows[int(i)][0], self.rows[int(i)][2]["id"]) in self.selected)
+        self.tick_count.configure(text=f"{ticked:,} of {shown:,} shown are ticked")
 
     # dates --------------------------------------------------------------
     def _preset(self):
@@ -656,8 +669,31 @@ class Eta:
         return f"{pct:.0f}%" + (f" · {eta}" if eta else " · working out time left…")
 
 
+def use_light_appearance(win) -> bool:
+    """PhoneKeep is drawn in light colours; on a Mac in dark mode the standard controls (lists, text boxes,
+    drop-downs) would otherwise turn black (owner, 13 Nov: "the chats in black look untidy"). Until a real
+    dark mode exists (E6), every PhoneKeep window uses macOS's light appearance. Returns True if applied."""
+    if sys.platform != "darwin":
+        return False
+    done = False
+    try:                                   # the whole app at once
+        from AppKit import NSApplication, NSAppearance
+        NSApplication.sharedApplication().setAppearance_(NSAppearance.appearanceNamed_("NSAppearanceNameAqua"))
+        done = True
+    except Exception:
+        pass
+    try:                                   # and this window (works without pyobjc, Tk 8.6.10+)
+        win.tk.call("::tk::unsupported::MacWindowStyle", "appearance", win, "aqua")
+        done = True
+    except Exception:
+        pass
+    return done
+
+
 def _attach_app_menu(win: tk.Toplevel) -> None:
-    """Give a dialog the app's menu bar (macOS shows Tk's default File menu otherwise)."""
+    """Give a dialog the app's menu bar (macOS shows Tk's default File menu otherwise), and the light look."""
+    if isinstance(win, tk.Toplevel):
+        use_light_appearance(win)
     w = win.master
     while w is not None and not hasattr(w, "attach_menu"):
         w = getattr(w, "master", None)
