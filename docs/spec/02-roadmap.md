@@ -51,6 +51,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | H2 | Storage card: clean-up suggestions and forecast | Not available | To build | [13-phone-health.md](13-phone-health.md#h2-storage-card-and-clean-up-suggestions) |
 | H3 | Battery card: battery health history | Not available | To build | [13-phone-health.md](13-phone-health.md#h3-battery-card-and-battery-history) |
 | C1 | Photo clean-up: find and save (duplicates, similar, poor quality, old screenshots, large videos, chat clutter) | Not available | To build | [13-phone-health.md](13-phone-health.md#c1-photo-clean-up-find-and-save) |
+| C1b | Photo clean-up learns from your choices (after C1) | Not available | To build | [13-phone-health.md](13-phone-health.md#c1b-learns-from-your-choices) |
 | H4 | Stability card: app crashes and unexpected restarts | Not available | To build | [13-phone-health.md](13-phone-health.md#h4-stability-card) |
 | H5 | Security card (includes S5) | Not available | To build | [13-phone-health.md](13-phone-health.md#h5-security-card) |
 | C2 | Remove cleaned-up photos from the iPhone (spike first; build only after agreement) | Not available | To build | [13-phone-health.md](13-phone-health.md#c2-remove-cleaned-up-photos-from-the-iphone) |

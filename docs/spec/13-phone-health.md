@@ -18,7 +18,7 @@ These add to [01-principles.md](01-principles.md); they never relax it.
 
 A **Why is my phone slow?** button gives one plain answer drawn from all four cards, most likely cause first ("Your storage is 96% full and your battery is at 78%. Both slow an iPhone down. Start with Storage").
 
-The check-up runs by itself after every backup (it reads data the backup already collected, so it adds no waiting). When a card turns red, the menu bar helper (E2) shows a small dot and one notification ("Amin's iPhone: storage almost full"), at most once per problem.
+The check-up runs by itself after every backup. Battery, storage, crash reports, profiles and passcode status are not in an iPhone backup: PhoneKeep reads them from the phone right after the backup (a few seconds) and keeps them with the snapshot. When a card turns red, the menu bar helper (E2) shows a small dot and one notification ("Amin's iPhone: storage almost full"), at most once per problem.
 
 **Requirements**
 - Thresholds (tunable in one table in the code, not scattered):
@@ -26,11 +26,12 @@ The check-up runs by itself after every backup (it reads data the backup already
 | Card | Amber | Red |
 | --- | --- | --- |
 | Storage | 85% full or more | 95% full or more |
-| Battery | Health below 85%, or dropped 5 points in 3 months | Health below 80%, or the phone reports the battery needs service |
+| Battery | Health below 85%, or dropped 5 points in 3 months | Health below 80%, or the phone reports the battery needs service (where the model reports it) |
 | Stability | An app crashed 3+ times in 7 days | An app crashed 10+ times in 7 days, or the phone restarted unexpectedly |
-| Security | iOS out of date; an app from outside the App Store | No passcode; an unknown configuration profile or device management; signs of a jailbreak; a spyware indicator matched |
+| Security | iOS out of date; an app signed by a company or developer rather than the App Store | No passcode; an unknown configuration profile or device management; known signs of a jailbreak; a spyware indicator matched |
 
-- Works offline from the latest snapshot when the phone isn't connected, with "As of last backup, 3 Nov" on each card.
+- Works offline when the phone isn't connected, from what was read at the last backup, with "As of last backup, 3 Nov" on each card.
+- Over Wi-Fi only, some readings (battery details in particular) may not be available; to be checked during V2 (5.1). Where a reading needs the cable, its card says "Connect by cable to update".
 
 **Done when**
 - [ ] With the test fixtures, each card shows green, amber and red at the thresholds above, with the matching one-line reason.
@@ -58,7 +59,7 @@ A **storage forecast** sits under the bar when there are at least 4 snapshots: "
 **Requirements**
 - App sizes come from the phone's app list (app plus its data). Chat media and attachment sizes come from the backup. All estimates say "about".
 - A suggestion appears only when it frees at least 500 MB.
-- The forecast uses used-space figures from past snapshots (B3) and is hidden when the trend is flat or falling.
+- The forecast uses the used-space figure recorded at each backup (from the first backup after H1/H3 ship; older snapshots don't have it) and is hidden when the trend is flat or falling.
 
 **Done when**
 - [ ] Suggestions are listed largest first, each with a size and either a working button or exact steps.
@@ -79,7 +80,7 @@ A short **Tips for this iPhone** list, only the ones that apply: turn on Optimis
 - **Save details** exports the history as CSV, as well as V2's JSON.
 
 **Done when**
-- [ ] After three backups, the chart shows three points that match the phone's Settings → Battery at each time (within 1%).
+- [ ] After three backups, the chart shows three points within 3 points of the phone's Settings → Battery → Maximum Capacity at each time. (A computer can't read Apple's displayed figure directly; PhoneKeep works it out from the battery's own capacity figures and shows it as "about 87%".)
 - [ ] Tips that don't apply to the model or situation are not shown.
 
 ## H4. Stability card
@@ -106,8 +107,8 @@ Includes S5 (spyware check), which becomes one part of this card. It is a **secu
 | Passcode | "No passcode set. Anyone holding the phone can open it. Set one in Settings → Face ID & Passcode." |
 | iOS version | "iOS is out of date. Updates fix security problems. Settings → General → Software Update." |
 | Configuration profiles and device management | Names each profile or management server and who installed it, with "If you don't recognise this, remove it in Settings → General → VPN & Device Management". |
-| Apps from outside the App Store | Names each app and how it was installed |
-| Signs of a jailbreak | Names what was found and what a jailbreak means for security |
+| Apps from outside the App Store | Names each app and how it was installed. Amber only for apps signed by a company or a developer; apps from an EU alternative marketplace and TestFlight betas are listed for information |
+| Known signs of a jailbreak | Names what was found and what a jailbreak means for security. A computer can only see known signs (known jailbreak apps, a phone opened up to the computer); green says "No known signs of a jailbreak" |
 | Spyware check (S5) | As in [04-security.md](04-security.md#s5-spyware-check): run on request with **Check now** |
 
 When anything serious is found, the card also explains Lockdown Mode (what it is, who it's for, where to turn it on) and links to help organisations.
@@ -118,7 +119,7 @@ When anything serious is found, the card also explains Lockdown Mode (what it is
 - The overall result never says "safe": green means "No problems found in these checks".
 
 **Done when**
-- [ ] With test fixtures, each check produces its warning: no passcode, an unknown profile, an app from outside the App Store, jailbreak signs, an old iOS version.
+- [ ] With test fixtures, each check produces its warning: no passcode, an unknown profile, a company-signed app (amber) and a marketplace app (information only), known jailbreak signs, an old iOS version.
 - [ ] A clean fixture shows all ticks and the wording "No problems found in these checks".
 - [ ] No check writes anything to the phone (verified by the phone-write gate's log).
 
@@ -147,11 +148,35 @@ A summary follows: "Saved 1,212 items to your archive. Freed 8.4 GB."
 - Suggested keepers prefer: the sharpest, then the largest, then the one with location and date intact, then favourites. Favourites and photos in any album are never suggested for removal.
 - Live Photos and edited photos are handled as one item (photo, video part and edits together).
 - Every item is in the archive, verified, before it can be offered for removal.
+- **iCloud Photos with "Optimise iPhone Storage":** photos whose originals are only in iCloud can't be analysed properly or saved as verified originals, so they are left out of the cards, with one line: "312 photos are only in iCloud; open them in Photos on the iPhone to download them first." *(Default chosen 13 Nov; owner to confirm.)*
+
+**How it's built (agreed 13 Nov)**
+- **The iPhone's own analysis first.** The Photos library database in the backup already records screenshots, bursts, favourites, albums, the app that saved an image, iOS's own duplicate detection (iOS 16+) and Apple's quality scores. PhoneKeep uses them where the phone's iOS version has them and computes only what's missing.
+- **Step 1 (classic, no AI):** checksums for exact copies; perceptual hashes (`imagehash`) for the same photo saved again or resized; blur by variance of the Laplacian and exposure from the histogram (OpenCV).
+- **Step 2 (small on-computer AI models):** an image-fingerprint model (e.g. DINOv2-small) for similar shots; face landmarks (e.g. MediaPipe) to prefer open eyes in a burst; optionally CLIP for hints like "looks like a meme / document". Run with ONNX Runtime on reduced-size copies, several at a time; models ship inside the app (adds roughly 50–150 MB) and never go online.
+- Each library and each model's **weights** have their licence checked before use (weights can be licensed differently from their code).
+- Wording describes, never judges: "looks blurry", "looks like a meme".
 
 **Done when**
 - [ ] On the rich photo fixture extended with seeded duplicates, near-duplicates, blurred, dark, screenshot and chat-saved images, each card finds what was seeded and nothing else (no favourites, no album photos).
-- [ ] 10,000 photos are analysed in under 5 minutes on an Apple Silicon Mac; a second visit opens in under 2 seconds.
+- [ ] 10,000 photos are analysed in under 5 minutes on an Apple Silicon Mac (on reduced-size copies); a second visit opens in under 2 seconds. Older Intel Macs and PCs are measured and reported, not held to this.
 - [ ] Every item offered for removal is present in the archive with a matching checksum.
+
+## C1b. Learns from your choices
+
+Comes after C1 and the step-2 fingerprints.
+
+**What the user sees and does:** nothing new to learn. Over a few clean-up rounds the suggestions get closer to what the owner actually keeps and removes, and each says why: "Suggested because you removed similar images from this chat last time"; "Not suggested: you usually keep photos like this."
+
+**Requirements**
+- Learns only from the owner's own choices (kept, removed, keeper swapped) and the photo's scores, app, age and faces; numbers and choices only, never the photos. Stored next to the backups, per phone; never online.
+- Per-card tuning (stricter blur threshold when most blur suggestions are kept, pre-ticking a card the owner always clears), "things like this you keep" from the fingerprints, and keeper preferences in bursts.
+- Changes nothing until about 20 choices on a card. Never removes anything by itself: it only reorders and pre-ticks; every removal is still saved first and confirmed. The hard rules (favourites and album photos never suggested) can't be learned away.
+- Settings: **Learn from my choices** (on/off) and **Forget what PhoneKeep learned**.
+
+**Done when**
+- [ ] After a seeded round where the owner keeps every blurry photo of one subject, the next round suggests fewer of them and says why.
+- [ ] Forget resets the suggestions to C1's defaults.
 
 ## C2. Remove cleaned-up photos from the iPhone
 
@@ -164,6 +189,8 @@ A summary follows: "Saved 1,212 items to your archive. Freed 8.4 GB."
 **Requirements**
 - Goes through `phone_write.py`, with the confirmation and an activity log entry (S7) per removal batch.
 - Removes only items that were verified in the archive in the same session.
+
+**The spike covers both systems.** Image Capture's route exists only on the Mac (Apple's ImageCaptureCore); Windows has its own (Windows Portable Devices). The spike tests both and reports whether removed photos go to Recently Deleted. If only one is safe, C2 ships for that system first. *(Default chosen 13 Nov; owner to confirm.)*
 
 **Done when**
 - [ ] (After the spike) Removed items disappear from the iPhone's Photos app with no leftovers, and every one is present in the archive.
