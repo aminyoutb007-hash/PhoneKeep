@@ -49,7 +49,7 @@ def pdf_pages(p: Path) -> int:
 def pdf_text(p: Path):
     if not shutil.which("pdftotext"):
         return None
-    r = subprocess.run(["pdftotext", "-layout", str(p), "-"], capture_output=True)
+    r = subprocess.run(["pdftotext", "-enc", "UTF-8", "-layout", str(p), "-"], capture_output=True)
     return r.stdout.decode("utf-8", "replace") if r.returncode == 0 else None
 
 

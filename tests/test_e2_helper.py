@@ -57,6 +57,7 @@ elif args[0] == "--pk-backup":
     for p in (20, 40, 60, 80, 100):
         print(f"PKPCT {{p}}", flush=True); time.sleep(0.1)
 ''')
+real_launcher_cmd = wv._launcher_cmd
 wv._launcher_cmd = lambda: [sys.executable, str(stub)]
 wv.check_pmd3 = lambda: None
 PHONE = {"DeviceName": "Amin's iPhone", "UniqueDeviceID": "00008030-E2TEST", "ConnectionType": "WiFi", "ProductVersion": "26.1"}
@@ -136,19 +137,30 @@ check(pl["ProgramArguments"][-1] == "--pk-helper" and pl["RunAtLoad"] is True, "
 login_item.remove(home=home)
 check(not login_item.installed(home=home), "LaunchAgent removed")
 check(login_item.helper_command()[-1] == "--pk-helper", "helper command ends in --pk-helper")
-# the packaged helper must be a different executable from the app window (macOS 'already running')
+# the packaged helper must be a different executable from the app window (macOS 'already running'): checked
+# against a fake app bundle in the work folder, with the real launcher lookup (not this test's stub, and not
+# whatever PhoneKeep happens to be installed in /Applications)
 import phonekeep as wv_
-sys_frozen, sys_exe = getattr(sys, "frozen", False), sys.executable
+fake_app = W / "PhoneKeep.app" / "Contents" / "MacOS"
+fake_app.mkdir(parents=True, exist_ok=True)
+(fake_app / "PhoneKeep").write_bytes(b"")
+cli_name = "phonekeep-cli.exe" if os.name == "nt" else "phonekeep-cli"
+sys_frozen, sys_exe, stub_launcher = getattr(sys, "frozen", False), sys.executable, wv_._launcher_cmd
 try:
     sys.frozen = True
-    sys.executable = "/Applications/PhoneKeep.app/Contents/MacOS/PhoneKeep"
+    sys.executable = str(fake_app / "PhoneKeep")
+    wv_._launcher_cmd = real_launcher_cmd
+    (fake_app / cli_name).write_bytes(b"")
     cmd = login_item.helper_command()
-    check(cmd[0] != sys.executable and cmd[0].endswith("phonekeep-cli") or cmd[0] == sys.executable and not Path(sys.executable).with_name("phonekeep-cli").exists(),
-          f"packaged helper runs through phonekeep-cli, not the app binary: {cmd}")
+    check(Path(cmd[0]).name == cli_name and cmd[-1] == "--pk-helper", f"packaged helper runs through phonekeep-cli, not the app binary: {cmd}")
+    (fake_app / cli_name).unlink()
+    cmd = login_item.helper_command()
+    check(cmd[0] == sys.executable, f"and falls back to the app binary when there is no phonekeep-cli: {cmd}")
 finally:
     if sys_frozen is False:
         del sys.frozen
     sys.executable = sys_exe
+    wv_._launcher_cmd = stub_launcher
 
 # ago / size wording
 import datetime as dt
