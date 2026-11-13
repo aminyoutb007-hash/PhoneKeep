@@ -557,7 +557,7 @@ class PhoneWindow(tk.Toplevel):
                         ("Back up now", self.refresh))
             return
         info = wv.backup_info(self.backup_path)
-        self.lock_badge.configure(text="🔒 Encrypted · on this computer" if info["encrypted"] else "")
+        self.lock_badge.configure(text=ui.PROTECTED if info["encrypted"] else "")
         typed = False
         if info["encrypted"] and password is None:
             # silently from the keychain (S1); only ask if it isn't there yet

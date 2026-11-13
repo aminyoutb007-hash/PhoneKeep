@@ -270,5 +270,12 @@ try:
 except tk.TclError as ex:
     print(f"(window checks skipped: no display: {ex})")
 
+# usability task 5 (13 Nov): the lock line says how the data is protected, the same in every window
+badge = appmod.App.lock_badge({"encrypted": True})
+check("backup password" in badge and "never sent online" in badge, f"the lock line says how it is protected: {badge!r}")
+check(appmod.App.lock_badge({"encrypted": False}) == "⚠ Not encrypted", "and says so plainly when it isn't")
+srcs = "".join((Path(__file__).resolve().parent.parent / f).read_text(encoding="utf-8") for f in ("app.py", "phone.py"))
+check("Encrypted · on this computer" not in srcs, "the old vague wording is gone from the main and phone windows")
+
 print("\nS1 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

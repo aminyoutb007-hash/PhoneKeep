@@ -77,7 +77,7 @@ class Picture(tk.Canvas):
 
     def _password(self):
         self._lock(150, 70, 60)
-        self.create_text(150, 135, text="Encrypted · on this computer", font=font(12, "bold"), fill=GREEN)
+        self.create_text(150, 135, text="Encrypted with your password", font=font(12, "bold"), fill=GREEN)
 
     def _backup(self):
         x, y, w, h = self._phone(x=40, y=30, w=60, h=120)
