@@ -26,7 +26,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | B5 | Open any backup and browse its files | File → Open backup…, drop a folder, Finder/iTunes backups listed, All files screen | Done | [03-backup.md](03-backup.md#b5-open-any-backup-and-browse-its-files) |
 | M1 | Browse Messages (iMessage, SMS) | Works | Done | [06-messages.md](06-messages.md#m1-browse-messages) |
 | M2 | Browse WhatsApp and WhatsApp Business | Works | Done | [06-messages.md](06-messages.md#m2-browse-whatsapp-and-whatsapp-business) |
-| M3 | Chats to PDF and print (moved from 5.1 on 12 Nov: usability task 3 asks for a PDF) | PDF per chat or combined, phone-like bubbles, photos, emoji, Arabic; Print opens the system dialog | In review | [06-messages.md](06-messages.md#m3-chats-to-pdf-and-print) |
+| M3 | Chats to PDF and print (moved from 5.1 on 12 Nov: usability task 3 asks for a PDF) | PDF per chat or combined, phone-like bubbles, photos, emoji, Arabic; Print opens the system dialog | Done | [06-messages.md](06-messages.md#m3-chats-to-pdf-and-print) |
 
 ### Release 5.1
 
