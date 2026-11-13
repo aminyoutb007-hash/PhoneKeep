@@ -198,6 +198,7 @@ b.destroy()
 keychain.delete_password("00008030-E1TEST")
 appmod.SETTINGS_FILE = W / "settings2.json"
 shutil.rmtree(W / "Backups", ignore_errors=True)
+appmod.SETTINGS_FILE.write_text(json.dumps({"backup_dir": str(W / "Backups"), "archive_dir": str(W / "Archive")}), encoding="utf-8")
 c = appmod.App()
 c.withdraw()
 c.s["backup_dir"] = str(W / "Backups")
