@@ -1483,6 +1483,7 @@ class SettingsWindow(tk.Toplevel):
         win = canvas.create_window((0, 0), window=body, anchor="nw")
         body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
+        ui.wheel_scroll(canvas)            # Settings scrolled only with its scrollbar
 
         def section(title, sub=None):
             c = ui.card(body)
