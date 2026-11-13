@@ -146,7 +146,9 @@ try:
     dlg = ui.show_details(a, a.details_for_support(pr.details))
     a.update()
     shown_text = dlg.text.get("1.0", "end")
-    check(dlg.winfo_width() >= 700 and dlg.resizable() == (True, True), f"the details window is large and resizable ({dlg.winfo_width()} px)")
+    dlg.update_idletasks()
+    w_set = int(dlg.geometry().split("x")[0])          # the size it asks for (Windows hadn't drawn it yet: 1 px)
+    check(w_set >= 700 and dlg.resizable() == (True, True), f"the details window is large and resizable ({w_set} px)")
     check("Traceback" in shown_text and "what PhoneKeep was doing" in shown_text and "Backing up 'Test iPhone'" in shown_text
           and wv.VERSION in shown_text, "it shows the error, what PhoneKeep was doing and the version")
     dlg.copy()
