@@ -129,6 +129,10 @@ import keychain
 import sections as sx
 
 keychain.use_memory()
+
+import applock
+
+applock.use_backend(lambda: None, lambda reason: False)   # no Touch ID prompts in tests (S2 has its own)
 fake = HERE / "work" / "Backups" / "00008030-FULLTEST"
 if not (fake / "Manifest.db").exists():
     subprocess.run([sys.executable, str(HERE / "test_full_backup.py")], cwd=HERE.parent, check=True)

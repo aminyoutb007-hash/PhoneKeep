@@ -32,7 +32,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 
 | ID | Feature | Today | Status | Details |
 | --- | --- | --- | --- | --- |
-| S2 | App lock (Touch ID / password) | Not available | To build | [04-security.md](04-security.md#s2-app-lock) |
+| S2 | App lock (Touch ID / password) | Not available | Done | [04-security.md](04-security.md#s2-app-lock) |
 | P1 | Photos: albums, preview, HEIC to JPG | By month, live, originals | Partial | [07-photos-media.md](07-photos-media.md#p1-photos) |
 | D9 | Export everything with one date range and search | Everything preset; dates for chats only | Partial | [08-personal-data.md](08-personal-data.md#d9-export-everything) |
 | V1 | Device overview | Name, iOS, connection | Partial | [10-device.md](10-device.md#v1-device-overview) |

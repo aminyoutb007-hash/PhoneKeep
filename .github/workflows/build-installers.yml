@@ -143,6 +143,9 @@ jobs:
           for c in backup2 afc usbmux; do
             dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli -m pymobiledevice3 $c --help 2>&1 | grep -q "Usage" || { echo "pymobiledevice3 $c --help printed no usage"; exit 1; }
           done
+          # S2: the app lock's system check loads (the runner may have no Touch ID; a missing module is the failure)
+          lock=$(dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-lock-check 2>&1 | tail -1); echo "$lock"
+          echo "$lock" | grep -q "^PKLOCK" && ! echo "$lock" | grep -qi "not available: \(ModuleNotFound\|Import\)" || { echo "the app lock can't load in the packaged app"; exit 1; }
           out=$(dist/PhoneKeep.app/Contents/MacOS/PhoneKeep --pk-launch-check 2>&1 | tail -5)
           echo "$out"
           echo "$out" | grep -q "PKLAUNCH ok"

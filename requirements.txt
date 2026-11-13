@@ -8,6 +8,10 @@ certifi>=2024.0
 rumps>=0.4; sys_platform == "darwin"
 pyobjc-framework-Cocoa>=10; sys_platform == "darwin"   # rumps needs Foundation/AppKit; listed here because rumps ships no wheel
 pyobjc-framework-Quartz>=10; sys_platform == "darwin"  # PDFKit: the print dialog for chat PDFs (M3)
+pyobjc-framework-LocalAuthentication>=10; sys_platform == "darwin"   # S2: Touch ID / the Mac's password
+winrt-runtime>=2.0; sys_platform == "win32"                          # S2: Windows Hello
+winrt-Windows.Foundation>=2.0; sys_platform == "win32"
+winrt-Windows.Security.Credentials.UI>=2.0; sys_platform == "win32"
 pystray>=0.19; sys_platform != "darwin"
 send2trash>=1.8
 tkinterdnd2>=0.4

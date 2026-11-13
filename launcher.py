@@ -266,6 +266,14 @@ def main() -> None:
         win.after(2500, lambda: (print(f"PKLAUNCH ok {phonekeep.full_version()}", flush=True), win.destroy()))
         win.mainloop()
         return
+    if args == ["--pk-lock-check"]:
+        # Internal, used by the installer build: the app lock's system check loads in the packaged app.
+        # Prints "PKLOCK <kind or none> <problem>"; a missing module is a build failure (13 Nov: Touch ID
+        # never asked in the packaged app).
+        import applock
+        kind = applock.available()
+        print(f"PKLOCK {kind or 'none'} {applock.last_problem}", flush=True)
+        return
     if args == ["--open-phone"]:
         import app
         win = app.App()

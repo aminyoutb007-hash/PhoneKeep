@@ -22,7 +22,7 @@ V=.build-venv/bin/python
 grep -v -i '^rumps' requirements.txt > .build-venv/req.txt
 "$V" -m pip install -q --only-binary=:all: -r .build-venv/req.txt pyinstaller
 "$V" -m pip install -q --no-deps rumps
-"$V" -c "import Foundation, AppKit, Quartz, rumps" || { echo "rumps/pyobjc not importable in the build venv" >&2; exit 1; }
+"$V" -c "import Foundation, AppKit, Quartz, LocalAuthentication, rumps" || { echo "rumps/pyobjc not importable in the build venv" >&2; exit 1; }
 
 # label: "<next release>-dev+<ID>-local", like GitHub's pull-request builds, from the branch name.
 # --release (on a release tag only): no label, like GitHub's tag builds, for when GitHub's Macs are unavailable.
@@ -44,6 +44,8 @@ printf 'BUILD_LABEL = ""\n' > build_label.py          # keep the committed file 
 
 # the launch check opens the real window; PHONEKEEP_NO_HELPER keeps it from starting the menu bar helper
 PHONEKEEP_NO_HELPER=1 dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-launch-check | grep -q "PKLAUNCH ok"
+lock=$(dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-lock-check 2>&1 | tail -1); echo "$lock"   # S2
+echo "$lock" | grep -qi "ModuleNotFound\|ImportError" && { echo "the app lock can't load in the packaged app" >&2; exit 1; }
 for c in backup2 afc usbmux; do      # every phone command loads in the packaged app (5.0.0: backup2 didn't)
   dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli -m pymobiledevice3 $c --help 2>&1 | grep -q "Usage" \
     || { echo "pymobiledevice3 $c does not load in the packaged app" >&2; exit 1; }
