@@ -1124,7 +1124,7 @@ class App(_dnd_root()):
         lines = [f"{wv.APP_NAME} {wv.VERSION}"]
         if wv.BUILD_LABEL:
             lines.append(f"Test build {wv.BUILD_LABEL}")
-        lines += ["", "Backs up your iPhone to this computer.", "Encrypted · stays on this computer."]
+        lines += ["", "Backs up your iPhone to this computer.", "Encrypted with your backup password; never sent online."]
         messagebox.showinfo(f"About {wv.APP_NAME}", "\n".join(lines), parent=self)
 
     def open_settings(self, focus: str = None):
@@ -1135,7 +1135,7 @@ class App(_dnd_root()):
     def lock_badge(info) -> str:
         if not info:
             return ""
-        return "🔒 Encrypted · on this computer" if info.get("encrypted") else "⚠ Not encrypted"
+        return ui.PROTECTED if info.get("encrypted") else "⚠ Not encrypted"
 
     def _on_ui(self, fn):
         """Run fn on the UI thread and wait for its result (for dialogs opened from a worker)."""
@@ -1387,7 +1387,7 @@ class SettingsWindow(tk.Toplevel):
                   else "Backups are not encrypted." if info
                   else "Encryption is turned on with your first backup.")
         sec = section("Security", status)
-        tk.Label(sec, text=("🔒 Encrypted · on this computer" if (info and info["encrypted"]) else ""),
+        tk.Label(sec, text=(ui.PROTECTED if (info and info["encrypted"]) else ""),
                  bg=CARD, fg=GREEN, font=font(12, "bold")).pack(anchor="w", pady=(0, 6))
         row = tk.Frame(sec, bg=CARD)
         row.pack(anchor="w")

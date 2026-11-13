@@ -61,6 +61,10 @@ def setup_styles(root: tk.Misc) -> None:
     st.configure("Treeview.Heading", font=font(12, "bold"))
 
 
+
+# where the data is and how it is protected, in one line (usability task 5, 13 Nov): the same everywhere
+PROTECTED = "🔒 Encrypted with your backup password · never sent online"
+
 class RoundButton(tk.Canvas):
     """A pill-shaped button: kind = primary | secondary | ghost | light."""
 

@@ -4,7 +4,7 @@ Every feature in one list. **Work P1 first, top to bottom, then P2. P3 only when
 
 Status: **Done** (works, keep it working) · **Partial** (some of it exists; finish the rest) · **To build** · **Out of scope** (see [12-engineering.md](12-engineering.md)).
 
-P1 ships as two releases so features can be tested in batches: **5.0** then **5.1**. Within each release, work top to bottom. The version number stays at 4.0.1 until the release pull request; test builds carry a label such as `5.0-dev+B3` (see [12-engineering.md](12-engineering.md#build-and-release)).
+P1 ships as two releases so features can be tested in batches: **5.0** then **5.1**. Within each release, work top to bottom. The version number stays at the last release until the release pull request; test builds carry a label such as `5.0-dev+B3` (see [12-engineering.md](12-engineering.md#build-and-release)).
 
 ## P1: must have
 
@@ -26,7 +26,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | B5 | Open any backup and browse its files | File → Open backup…, drop a folder, Finder/iTunes backups listed, All files screen | Done | [03-backup.md](03-backup.md#b5-open-any-backup-and-browse-its-files) |
 | M1 | Browse Messages (iMessage, SMS) | Works | Done | [06-messages.md](06-messages.md#m1-browse-messages) |
 | M2 | Browse WhatsApp and WhatsApp Business | Works | Done | [06-messages.md](06-messages.md#m2-browse-whatsapp-and-whatsapp-business) |
-| M3 | Chats to PDF and print (moved from 5.1 on 12 Nov: usability task 3 asks for a PDF) | PDF per chat or combined, phone-like bubbles, photos, emoji, Arabic; Print opens the system dialog | In review | [06-messages.md](06-messages.md#m3-chats-to-pdf-and-print) |
+| M3 | Chats to PDF and print (moved from 5.1 on 12 Nov: usability task 3 asks for a PDF) | PDF per chat or combined, phone-like bubbles, photos, emoji, Arabic; Print opens the system dialog | Done | [06-messages.md](06-messages.md#m3-chats-to-pdf-and-print) |
 
 ### Release 5.1
 

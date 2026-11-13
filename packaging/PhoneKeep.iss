@@ -1,6 +1,6 @@
 ; Inno Setup script: turns dist\PhoneKeep into a single PhoneKeep-Setup.exe
 #ifndef AppVersion
-  #define AppVersion "4.0.1"
+  #define AppVersion "5.0.0"
 #endif
 
 [Setup]
