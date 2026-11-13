@@ -8,7 +8,8 @@ datas, binaries, hiddenimports = [], [], []
 for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl", "certifi", "keyring", "tkinterdnd2", "send2trash",
             "reportlab", "arabic_reshaper", "bidi",                       # M3: chats to PDF
             *(("rumps",) if sys.platform == "darwin" else ("pystray",)),
-            *(("winrt",) if sys.platform == "win32" else ())):                # S2: Windows Hello
+            *(("winrt",) if sys.platform == "win32" else ()),                 # S2: Windows Hello
+            *(("LocalAuthentication",) if sys.platform == "darwin" else ())):  # S2: Touch ID (with its lazy _metadata)
     try:
         d, b, h = collect_all(pkg)
         datas += d; binaries += b; hiddenimports += h

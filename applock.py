@@ -15,6 +15,7 @@ import threading
 from typing import Callable, Optional
 
 _backend: Optional[dict] = None          # {"available": fn, "authenticate": fn}; None = the real system one
+last_problem: str = ""                   # why the lock isn't available, for the activity panel and support
 
 
 def use_backend(available: Callable[[], Optional[str]], authenticate: Callable[[str], bool]) -> None:
@@ -28,17 +29,28 @@ _LA_BIOMETRICS = 1          # LAPolicyDeviceOwnerAuthenticationWithBiometrics
 _LA_OWNER = 2               # LAPolicyDeviceOwnerAuthentication (Touch ID, or the computer password)
 
 
+def _can(ctx, policy) -> bool:
+    r = ctx.canEvaluatePolicy_error_(policy, None)
+    return bool(r[0] if isinstance(r, tuple) else r)        # pyobjc returns (ok, error)
+
+
 def _mac_available() -> Optional[str]:
+    global last_problem
     try:
         from LocalAuthentication import LAContext
-    except Exception:
+    except Exception as e:
+        last_problem = f"LocalAuthentication not available: {type(e).__name__}: {e}"
         return None
-    ctx = LAContext.alloc().init()
-    ok_bio, _err = ctx.canEvaluatePolicy_error_(_LA_BIOMETRICS, None)
-    if ok_bio:
-        return "touch_id"
-    ok_any, _err = ctx.canEvaluatePolicy_error_(_LA_OWNER, None)
-    return "password" if ok_any else None
+    try:
+        ctx = LAContext.alloc().init()
+        if _can(ctx, _LA_BIOMETRICS):
+            return "touch_id"
+        if _can(ctx, _LA_OWNER):
+            return "password"
+        last_problem = "this Mac has neither Touch ID nor a login password the system will check"
+    except Exception as e:
+        last_problem = f"LocalAuthentication check failed: {type(e).__name__}: {e}"
+    return None
 
 
 def _mac_authenticate(reason: str) -> bool:
@@ -56,12 +68,17 @@ def _mac_authenticate(reason: str) -> bool:
 
 # ---------------------------------------------------------------- Windows: Windows Hello
 def _win_available() -> Optional[str]:
+    global last_problem
     try:
         import asyncio
         from winrt.windows.security.credentials.ui import UserConsentVerifier, UserConsentVerifierAvailability
         res = asyncio.run(_await(UserConsentVerifier.check_availability_async()))
-        return "hello" if res == UserConsentVerifierAvailability.AVAILABLE else None
-    except Exception:
+        if res == UserConsentVerifierAvailability.AVAILABLE:
+            return "hello"
+        last_problem = f"Windows Hello is not set up ({res})"
+        return None
+    except Exception as e:
+        last_problem = f"Windows Hello not available: {type(e).__name__}: {e}"
         return None
 
 

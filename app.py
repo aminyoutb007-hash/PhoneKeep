@@ -257,7 +257,8 @@ class App(_dnd_root()):
         self.after(20000, self._idle_check)
         self.after(500, lambda: self.log("App lock: " + (f"on ({applock.describe(self.lock_kind())}), locks after "
                                                          f"{self.s['lock_idle_minutes']} idle minutes" if self.lock_on()
-                                                         else "off" if self.lock_kind() else "not available on this computer") + "."))
+                                                         else "off" if self.lock_kind() else "not available on this computer"
+                                                         + (f" [{applock.last_problem}]" if applock.last_problem else "")) + "."))
         self.after(1500, self.start_helper)
 
     # ------------------------------------------------------------------ layout
