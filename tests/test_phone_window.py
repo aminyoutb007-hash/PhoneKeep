@@ -411,6 +411,12 @@ check("Chats" in _texts and "✓" in _texts, f"a chosen card shows its title and
 _cc.event_generate("<ButtonRelease-1>", x=10, y=10); root.update()
 check(_picked == [1], "clicking a card chooses it")
 _cc.destroy()
+# headers (13 Nov): the right-hand buttons are packed first, so text on the left is trimmed, never drawn over them
+_ps = (HERE.parent / "phone.py").read_text(encoding="utf-8")
+_as = (HERE.parent / "app.py").read_text(encoding="utf-8")
+check(_ps.index("Refresh from iPhone\", self.refresh") < _ps.index("self.sub = tk.Label(head")
+      and _as.index("\"⚙  Settings\", self.open_settings") < _as.index("text=\"Back up your iPhone to this computer\""),
+      "window headers pack their buttons before the text, so nothing overlaps")
 import phone as _phone
 check(all((_phone.ICON_DIR / f"{k}.png").exists() and (_phone.ICON_DIR / f"{k}-28.png").exists() for k, *_r in _phone.APPS),
       "every app on the home screen has PhoneKeep's own drawn icon (big and small)")

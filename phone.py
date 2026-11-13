@@ -313,6 +313,12 @@ class PhoneWindow(tk.Toplevel):
     def _build(self):
         head = tk.Frame(self, bg=GREEN)
         head.pack(fill="x")
+        # the buttons on the right are packed first, so a narrow window trims the text on the left instead of
+        # drawing it over "Refresh from iPhone" (owner's Mac, 13 Nov)
+        RoundButton(head, "📂  Saved files", lambda: (self.out_root.mkdir(parents=True, exist_ok=True),
+                                                      reveal(self.out_root)), "ghost", 150, 34, 12).pack(side="right", padx=(6, 16))
+        self.refresh_btn = RoundButton(head, "⟳  Refresh from iPhone", self.refresh, "ghost", 210, 34, 12)
+        self.refresh_btn.pack(side="right")
         tk.Label(head, text=self.name, bg=GREEN, fg="white", font=font(19, "bold")).pack(side="left", padx=(20, 10), pady=12)
         how = "USB cable" if self.device.get("ConnectionType") == "USB" else "Wi-Fi"
         if self.opened_backup is not None and not self.live_wanted:
@@ -324,10 +330,6 @@ class PhoneWindow(tk.Toplevel):
         self.sub.pack(side="left", pady=12)
         self.lock_badge = tk.Label(head, text="", bg=GREEN, fg="#d7efe9", font=font(12, "bold"))
         self.lock_badge.pack(side="left", padx=(14, 0), pady=12)
-        RoundButton(head, "📂  Saved files", lambda: (self.out_root.mkdir(parents=True, exist_ok=True),
-                                                      reveal(self.out_root)), "ghost", 150, 34, 12).pack(side="right", padx=(6, 16))
-        self.refresh_btn = RoundButton(head, "⟳  Refresh from iPhone", self.refresh, "ghost", 210, 34, 12)
-        self.refresh_btn.pack(side="right")
 
         self.bar_frame = tk.Frame(self, bg=GREEN_SOFT)
         self.bar_text = tk.Label(self.bar_frame, text="", bg=GREEN_SOFT, fg=INK, font=font(12), anchor="w")
