@@ -184,6 +184,17 @@ try:
     b = appmod.App()
     b.withdraw()
     check(not b.lock_on(), "Mac without Touch ID: off by default")
+    b.destroy()
+    # a Touch ID Mac with its lid closed reports only the password: once Touch ID was seen, the lock stays on
+    kind["v"] = "touch_id"
+    appmod.SETTINGS_FILE.write_text(json.dumps({"backup_dir": str(W / "Backups2")}), encoding="utf-8")
+    t1 = appmod.App(); t1.withdraw(); t1.lock_kind(); t1.destroy()
+    kind["v"] = "password"
+    b = appmod.App(); b.withdraw()
+    check(b.lock_kind() == "touch_id" and b.lock_on(), "a Touch ID Mac with its lid closed keeps the lock on (asks for the password)")
+    b.destroy()
+    appmod.SETTINGS_FILE.write_text(json.dumps({"backup_dir": str(W / "Backups2")}), encoding="utf-8")
+    b = appmod.App(); b.withdraw()
     qs = []
     import firstrun
     src_fr = (HERE.parent / "firstrun.py").read_text(encoding="utf-8")

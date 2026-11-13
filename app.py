@@ -732,7 +732,14 @@ class App(_dnd_root()):
     def lock_kind(self):
         """What this computer locks PhoneKeep with ("touch_id" | "password" | "hello"), or None. Asked once."""
         if not hasattr(self, "_lock_kind"):
-            self._lock_kind = applock.available()
+            kind = applock.available()
+            # once Touch ID has been seen on this Mac, it stays a Touch ID Mac: with the lid closed macOS reports
+            # only the password, which would otherwise turn the lock's default off (owner's MacBook, 13 Nov)
+            if kind == "touch_id" and not self.s.data.get("touch_id_seen"):
+                self.s["touch_id_seen"] = True
+            elif kind == "password" and self.s.data.get("touch_id_seen"):
+                kind = "touch_id"
+            self._lock_kind = kind
         return self._lock_kind
 
     def lock_on(self) -> bool:
