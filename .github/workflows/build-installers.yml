@@ -264,13 +264,17 @@ jobs:
     needs: [mac, windows]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: out
           merge-multiple: true
       - name: Release notes with checksums
         run: |
-          { echo "## Installers"; echo; echo "| File | SHA-256 |"; echo "| --- | --- |";
+          # docs/release-notes/<major.minor>.md (everything before its "## Checksums" heading), then the checksums
+          v="${GITHUB_REF_NAME#v}"; f="docs/release-notes/$(echo "$v" | cut -d. -f1-2).md"
+          { if [ -f "$f" ]; then sed '/^## Checksums/,$d' "$f"; echo; fi
+            echo "## Installers and checksums"; echo; echo "| File | SHA-256 |"; echo "| --- | --- |";
             for s in out/*.sha256; do echo "| $(basename "${s%.sha256}") | \`$(cut -d' ' -f1 "$s")\` |"; done; } > notes.md
       - uses: softprops/action-gh-release@v2
         with:
