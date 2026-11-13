@@ -140,7 +140,10 @@ class Mapper:
 
     SYSTEM_SEG = re.compile(r"^([0-9A-Fa-f.\-_]+|(IMG|PXL|VID|DSC|MOV|RPReplay|Screenshot|Photo|Video|AUD|PTT|STK|DOC)[-_ ]?[\w.-]*|"
                             r"Media|Message|Library|Documents|Desktop|Downloads|Mobile Documents|com~apple~CloudDocs|Attachments|"
-                            r"File Provider Storage|WhatsApp|Profile|Stickers|Thumbnails|\.?[A-Za-z]+)$")
+                            r"File Provider Storage|WhatsApp|Profile|Stickers|Thumbnails|Inbox|Outbox|Caches|Preferences|"
+                            r"Shared|Data|tmp|Temp|\.[\w.-]+)$")
+    # a single word is NOT kept just for being one word: under iCloud Drive or Documents it is often a person's
+    # name (a "Desktop/<first name>/…" folder on a real backup, 12 Nov). Only the system names above and hidden files are kept.
     PERSONAL_AREA = re.compile(r"(^|/)(Mobile Documents|Documents|Desktop|Downloads|File Provider Storage|Attachments|Message/Media|Media)(/|$)")
 
     def pathname(self, value: str) -> str:
@@ -380,19 +383,42 @@ def redact_backup(src: Path, out: Path, password: Optional[str] = None, log=prin
             try:
                 pl = plistlib.loads(blob)
                 objs = pl.get("$objects", [])
-                for o in objs:
+                for i, o in enumerate(objs):
                     if isinstance(o, dict) and "EncryptionKey" in o:
                         o.pop("EncryptionKey", None)
+                    elif isinstance(o, str) and "/" in o:
+                        # the archived file record keeps a second copy of the path (RelativePath): same mapping
+                        objs[i] = mapper.pathname(o)
                 con.execute("UPDATE Files SET file=? WHERE fileID=?", (plistlib.dumps(pl, fmt=plistlib.FMT_BINARY), fid))
             except Exception:
                 pass
     # the owner's own folder and file names (iCloud Drive, app Documents, attachment names) are personal too;
-    # done last because the extraction above looks files up by their real path
-    for fid, rel in con.execute("SELECT fileID, relativePath FROM Files").fetchall():
-        if rel:
-            nrel = mapper.pathname(rel)
-            if nrel != rel:
-                con.execute("UPDATE Files SET relativePath=? WHERE fileID=?", (nrel, fid))
+    # done last because the extraction above looks files up by their real path. Every entry — files AND
+    # folders — and both copies of its path: the column, and the archived file record's RelativePath
+    # (a person-named folder survived there on a real backup, 12 Nov).
+    for fid, rel, blob in con.execute("SELECT fileID, relativePath, file FROM Files").fetchall():
+        nrel = mapper.pathname(rel) if rel else rel
+        nblob = blob
+        if blob:
+            try:
+                pl = plistlib.loads(blob)
+                objs = pl.get("$objects", [])
+                changed = False
+                for i, o in enumerate(objs):
+                    if isinstance(o, dict) and "EncryptionKey" in o:
+                        o.pop("EncryptionKey", None)
+                        changed = True
+                    elif isinstance(o, str) and "/" in o:
+                        no = mapper.pathname(o)
+                        if no != o:
+                            objs[i] = no
+                            changed = True
+                if changed:
+                    nblob = plistlib.dumps(pl, fmt=plistlib.FMT_BINARY)
+            except Exception:
+                nblob = None          # a record that can't be read is dropped rather than kept as it was
+        if nrel != rel or nblob is not blob:
+            con.execute("UPDATE Files SET relativePath=?, file=? WHERE fileID=?", (nrel, nblob, fid))
     con.commit()
     con.execute("VACUUM")
     con.close()

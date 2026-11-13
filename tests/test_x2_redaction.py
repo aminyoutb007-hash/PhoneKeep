@@ -97,10 +97,15 @@ check(len(personal) > 15, f"{len(personal)} personal strings collected from the 
 src = W / "src"
 shutil.copytree(fake, src)
 man = sqlite3.connect(src / "Manifest.db")
+_planted = "Library/Mobile Documents/com~apple~CloudDocs/Desktop/Omar/Zineb paperwork/QCS/Zineb-Tazi.docx"
+import plistlib as _pl
+_rec = _pl.dumps({"$archiver": "NSKeyedArchiver", "$version": 100000, "$top": {"root": _pl.UID(1)},
+                  "$objects": ["$null", {"RelativePath": _pl.UID(2), "Mode": 16877, "$class": _pl.UID(3)}, _planted,
+                               {"$classname": "MBFile", "$classes": ["MBFile", "NSObject"]}]}, fmt=_pl.FMT_BINARY)
 man.execute("INSERT INTO Files(fileID, domain, relativePath, flags, file) VALUES (?,?,?,?,?)",
-            ("a" * 40, "HomeDomain", "Library/Mobile Documents/com~apple~CloudDocs/Desktop/Owner/Zineb paperwork/QCS/Zineb-Tazi.docx", 2, b""))
+            ("a" * 40, "HomeDomain", _planted, 2, _rec))
 man.commit(); man.close()
-personal.add("Zineb paperwork"); personal.add("Zineb-Tazi")
+personal.add("Zineb paperwork"); personal.add("Zineb-Tazi"); personal.add("/Omar/")
 for fid, rel in sqlite3.connect(src / "Manifest.db").execute("SELECT fileID, relativePath FROM Files WHERE relativePath LIKE '%ChatStorage.sqlite'"):
     db = src / fid[:2] / fid
     c = sqlite3.connect(db)
