@@ -103,7 +103,7 @@
 
 **Why (owner, 13 Nov):** with two iPhones nearby, PhoneKeep takes the one on the cable, or else the first one the computer reports over Wi-Fi, without saying so. Unplugging one phone silently switched the window to the other phone over Wi-Fi.
 
-**What the user sees and does:** when more than one iPhone is reachable, the main window says "2 iPhones nearby" and lists them: name, model, **cable** or **Wi-Fi**, last backup. One click picks the phone; the window shows that phone until the owner picks another or it disappears. The phone in the window never changes by itself: if the chosen phone goes away, the window says "*iPhone Amin* is no longer connected" and lists the others to pick from. Settings → Automatic backups has a tick box per phone ("Back up automatically"); the menu bar helper backs up each ticked phone in turn and names the phone in its notifications.
+**What the user sees and does (owner, 13 Nov, evening):** the device area at the top of the main window lists **every reachable iPhone**, by cable or Wi-Fi: name, model, **cable** or **Wi-Fi**, last backup. The owner clicks one; the backup options below ("What do you want to keep?", Back up now, Open iPhone) are then for that phone. The window shows that phone until the owner picks another or it disappears. The phone in the window never changes by itself: if the chosen phone goes away, the window says "*iPhone Amin* is no longer connected" and lists the others to pick from. Settings → Automatic backups has a tick box per phone ("Back up automatically"); the menu bar helper backs up each ticked phone in turn and names the phone in its notifications.
 
 **Requirements**
 - A phone reachable over both cable and Wi-Fi is listed once, as **cable**.
