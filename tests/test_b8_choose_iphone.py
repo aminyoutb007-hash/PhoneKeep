@@ -91,9 +91,9 @@ try:
     check(a.udid is None and a.dev_name.cget("text") == "2 iPhones nearby" and not a.open_btn.enabled,
           f"two iPhones and none chosen yet: the card says so and nothing is picked ({a.dev_name.cget('text')!r})")
     texts = {u: " ".join(r.itemcget(i, "text") for i in r.find_all() if r.type(i) == "text") for u, r in rows.items()}
-    check(set(rows) == {A["UniqueDeviceID"], B["UniqueDeviceID"]} and "cable" in texts[A["UniqueDeviceID"]]
-          and "Wi-Fi" in texts[B["UniqueDeviceID"]] and "iPhone 14 Pro Max · iOS 26.5" in texts[A["UniqueDeviceID"]]
-          and "iPhone 17 Pro Max · iOS 18.6" in texts[B["UniqueDeviceID"]],
+    check(set(rows) == {A["UniqueDeviceID"], B["UniqueDeviceID"]} and "Cable" in texts[A["UniqueDeviceID"]]
+          and "Wi-Fi" in texts[B["UniqueDeviceID"]] and "iPhone 14 Pro Max iOS 26.5" in texts[A["UniqueDeviceID"]]
+          and "iPhone 17 Pro Max iOS 18.6" in texts[B["UniqueDeviceID"]],
           f"both are shown as phones with their name, model, iOS and connection: {list(texts.values())}")
     _pc = rows[A["UniqueDeviceID"]]
     from PIL import Image as _Im
@@ -102,8 +102,14 @@ try:
     check(not any(":" in _pc.itemcget(i, "text") for i in _pc.find_all() if _pc.type(i) == "text"),
           "with the phone's own picture, no clock is drawn over it (it has its own)")
     _pc.set_battery({"level": 80, "charging": True})
-    check(any("🔋 80% ⚡" in _pc.itemcget(i, "text") for i in _pc.find_all() if _pc.type(i) == "text"),
-          "the battery level and charging show on the card")
+    _t = [_pc.itemcget(i, "text") for i in _pc.find_all() if _pc.type(i) == "text"]
+    check("80%" in _t and "⚡" in _t and not any("🔋" in t or "📶" in t or "🔌" in t for t in _t),
+          "the battery level and charging show on the card, as drawn icons (no emoji)")
+    _pc.update_idletasks()
+    _boxes = sorted((_pc.bbox(i) for i in _pc.find_all() if _pc.type(i) == "text" and _pc.itemcget(i, "anchor") == "n"),
+                    key=lambda b: b[1])
+    check(len(_boxes) == 3 and all(b1[3] <= b2[1] + 1 for b1, b2 in zip(_boxes, _boxes[1:])),
+          "the name, model and iOS lines never overlap")
 
     a.choose_phone(B["UniqueDeviceID"])
     a.update()

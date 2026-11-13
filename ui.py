@@ -212,9 +212,54 @@ class PhoneCard(tk.Canvas):
                x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
         return self.create_polygon(pts, smooth=True, **kw)
 
+    # small drawn icons (the emoji looked dated): Wi-Fi arcs, a cable plug, a battery that fills to its level
+    def _wifi(self, x, cy, colour):
+        for k, r in enumerate((3, 7, 11)):
+            if k == 0:
+                self.create_oval(x + 11 - 2, cy + 4 - 2, x + 11 + 2, cy + 4 + 2, fill=colour, outline=colour)
+            else:
+                self.create_arc(x + 11 - r, cy + 4 - r, x + 11 + r, cy + 4 + r, start=45, extent=90,
+                                style="arc", outline=colour, width=2)
+        return 22
+
+    def _plug(self, x, cy, colour):
+        self.create_line(x + 5, cy - 5, x + 5, cy - 1, fill=colour, width=2)
+        self.create_line(x + 11, cy - 5, x + 11, cy - 1, fill=colour, width=2)
+        self._rr(x + 2, cy - 1, x + 14, cy + 5, 2, fill=colour, outline=colour)
+        self.create_line(x + 8, cy + 5, x + 8, cy + 8, fill=colour, width=2)
+        return 16
+
+    def _battery(self, x, cy, level: int, charging: bool):
+        w, h = 22, 11
+        self._rr(x, cy - h // 2, x + w, cy + h // 2, 3, fill="", outline=MUTED, width=1)
+        self.create_rectangle(x + w + 1, cy - 2, x + w + 3, cy + 2, fill=MUTED, outline=MUTED)
+        colour = GREEN if charging else (RED if level <= 20 else INK)
+        fw = max(1, int((w - 4) * max(0, min(100, level)) / 100))
+        self.create_rectangle(x + 2, cy - h // 2 + 2, x + 2 + fw, cy + h // 2 - 2, fill=colour, outline=colour)
+        if charging:
+            self.create_text(x + w // 2 + 1, cy, text="⚡", fill="#ffffff", font=font(7, "bold"))
+        return w + 4
+
+    def _status_row(self, cx, cy):
+        """[Wi-Fi or cable] Wi-Fi   [battery] 100%, centred."""
+        f = tkfont.Font(font=font(11))
+        how = "Wi-Fi" if self.how != "cable" else "Cable"
+        batt = self.battery if self.battery and self.battery.get("level", -1) >= 0 else None
+        width = (22 if self.how != "cable" else 16) + 5 + f.measure(how)
+        if batt:
+            width += 16 + 26 + 7 + f.measure(f"{batt['level']}%")
+        x = cx - width // 2
+        x += (self._wifi(x, cy, MUTED) if self.how != "cable" else self._plug(x, cy, MUTED)) + 5
+        t = self.create_text(x, cy, text=how, fill=MUTED, font=font(11), anchor="w")
+        x = self.bbox(t)[2] + 16
+        if batt:
+            x += self._battery(x, cy, batt["level"], bool(batt.get("charging"))) + 3
+            self.create_text(x, cy, text=f"{batt['level']}%", fill=MUTED, font=font(11), anchor="w")
+
     def _draw(self):
         self.delete("all")
-        W, H, PW, PH = self.W, self.H, self.PW, self.PH
+        W, PW, PH = self.W, self.PW, self.PH
+        H = int(self.cget("height"))
         if self.chosen or self.hover:
             self._rr(3, 3, W - 3, H - 3, 18, fill=GREEN_SOFT if self.chosen else "#f6f8f9",
                      outline=GREEN if self.chosen else LINE, width=2 if self.chosen else 1)
@@ -230,14 +275,18 @@ class PhoneCard(tk.Canvas):
             now = dt.datetime.now().strftime("%H:%M")
             self.create_text(W // 2, y0 + 50, text=now, fill="white", font=font(19, "bold"))
             self._rr(W // 2 - 26, y0 + PH - 14, W // 2 + 26, y0 + PH - 11, 1, fill="#ffffff")  # home bar
-        ty = y0 + PH + 20
-        self.create_text(W // 2, ty, text=self.name, fill=INK, font=font(14, "bold"), width=W - 16, justify="center")
-        self.create_text(W // 2, ty + 24, text=f"{self.model} · iOS {self.ios}", fill=MUTED, font=font(11),
-                         width=W - 16, justify="center")
-        marks = ["🔌 cable" if self.how == "cable" else "📶 Wi-Fi"]
-        if self.battery and self.battery.get("level", -1) >= 0:
-            marks.append(f"🔋 {self.battery['level']}%" + (" ⚡" if self.battery.get("charging") else ""))
-        self.create_text(W // 2, ty + 46, text="   ".join(marks), fill=MUTED, font=font(11))
+        # text lines stacked by their real height, so a larger system font never makes them overlap
+        # (owner's Mac, 13 Nov: "looks crowded")
+        y = y0 + PH + 12
+        for text, f, colour, gap in ((self.name, font(13, "bold"), INK, 3), (self.model, font(11), MUTED, 1),
+                                     (f"iOS {self.ios}", font(11), MUTED, 8)):
+            item = self.create_text(W // 2, y, text=text, fill=colour, font=f, anchor="n", width=W - 20, justify="center")
+            y = self.bbox(item)[3] + gap
+        self._status_row(W // 2, y + 7)
+        need = y + 24
+        if int(self.cget("height")) != need:     # first draw at this font: fit the card, then draw its outline again
+            self.configure(height=need)
+            self.after_idle(self._draw)
         if self.chosen:
             self.create_oval(W - 32, 10, W - 12, 30, fill=GREEN, outline=GREEN)
             self.create_text(W - 22, 20, text="✓", fill="#ffffff", font=font(11, "bold"))
