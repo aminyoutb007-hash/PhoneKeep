@@ -901,10 +901,12 @@ class PhotoPanel(tk.Frame):
 
         bar = tk.Frame(self, bg=BG)
         bar.pack(fill="x", padx=16, pady=(12, 6))
-        RoundButton(bar, "Select all", lambda: self._set_all(True), "secondary", 110, 32, 12).pack(side="left")
-        RoundButton(bar, "Select none", lambda: self._set_all(False), "secondary", 120, 32, 12).pack(side="left", padx=6)
-        RoundButton(bar, "Select this month", lambda: self._set_month(True), "light", 160, 32, 12).pack(side="left", padx=(18, 0))
-        RoundButton(bar, "Clear this month", lambda: self._set_month(False), "light", 150, 32, 12).pack(side="left", padx=6)
+        # one button that flips between Select all and Select none; a month or a year is (un)ticked with the box in
+        # its row of the list (owner, 13 Nov: four buttons were confusing)
+        self.all_btn = RoundButton(bar, "Select none", self._flip_all, "secondary", 120, 32, 12)
+        self.all_btn.pack(side="left")
+        tk.Label(bar, text="Tick a month or a year in the list to select all of it · click a photo to select it",
+                 bg=BG, fg=MUTED, font=font(11)).pack(side="left", padx=12)
 
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True, padx=16)
@@ -918,12 +920,13 @@ class PhotoPanel(tk.Frame):
         st.configure("Months.Treeview", rowheight=26)
         self.mlist = ttk.Treeview(side, columns=("m", "n"), show="", selectmode="browse", height=18,
                                   style="Months.Treeview")
-        self.mlist.column("m", width=128)
+        self.mlist.column("m", width=140)
         self.mlist.column("n", width=64, anchor="e")
         self.mlist.tag_configure("year", font=font(12, "bold"), foreground=INK)
         self.mlist.tag_configure("month", foreground=INK)
         self.mlist.pack(fill="y", expand=True, padx=4, pady=4)
         self.mlist.bind("<<TreeviewSelect>>", lambda e: self._on_select())
+        self.mlist.bind("<ButtonRelease-1>", self._row_click, add="+")
 
         grid_frame = card(body)
         grid_frame.pack(side="left", fill="both", expand=True, padx=(10, 0))
@@ -960,7 +963,7 @@ class PhotoPanel(tk.Frame):
             items = [i for m in months for i in self.months[m]]
             n_sel = sum(1 for i in items if i.id in self.selected)
             yid = f"year-{y}"
-            yv = (y if y != "Unknown" else "Unknown date", f"{n_sel}/{len(items)}")
+            yv = (f"{self._box(n_sel, len(items))} " + (y if y != "Unknown" else "Unknown date"), f"{n_sel}/{len(items)}")
             if self.mlist.exists(yid):
                 self.mlist.item(yid, values=yv)
             else:
@@ -968,12 +971,39 @@ class PhotoPanel(tk.Frame):
             for m in months:
                 its = self.months[m]
                 k = sum(1 for i in its if i.id in self.selected)
-                label = "   " + (dt.datetime.strptime(m, "%Y-%m").strftime("%B") if m != "1970-01" else "No date")
+                label = f"    {self._box(k, len(its))} " + (dt.datetime.strptime(m, "%Y-%m").strftime("%B") if m != "1970-01" else "No date")
                 values = (label, f"{k}/{len(its)}")
                 if self.mlist.exists(m):
                     self.mlist.item(m, values=values)
                 else:
                     self.mlist.insert(yid, "end", iid=m, values=values, tags=("month",))
+
+    @staticmethod
+    def _box(n: int, total: int) -> str:
+        return "☑" if total and n == total else ("◪" if n else "☐")
+
+    def _row_click(self, e):
+        """A click on a row's box (un)ticks that whole month or year; a click elsewhere just opens it."""
+        row = self.mlist.identify_row(e.y)
+        if not row:
+            return
+        x0 = 30 if row.startswith("year-") else 52          # the box sits at the start of the row
+        if e.x > x0:
+            return
+        if row.startswith("year-"):
+            items = [i for m in self.mlist.get_children(row) for i in self.months[m]]
+        else:
+            items = self.months[row]
+        on = not all(i.id in self.selected for i in items)
+        for i in items:
+            (self.selected.add if on else self.selected.discard)(i.id)
+        for i in self.months.get(self._month(), []):
+            self._draw_tile(i)
+        self._fill_months()
+        self._update_count()
+
+    def _flip_all(self):
+        self._set_all(len(self.selected) < len(self.items))
 
     def _on_select(self):
         sel = self.mlist.selection()
@@ -1124,6 +1154,8 @@ class PhotoPanel(tk.Frame):
         n_p = len(chosen) - nv
         self.count.configure(text=f"{n_p:,} photo{'s' if n_p != 1 else ''} and {nv:,} video{'s' if nv != 1 else ''} "
                                   f"selected of {len(self.items):,} · about {self.human_size(size)}")
+        if hasattr(self, "all_btn"):
+            self.all_btn.configure_text("Select none" if len(self.selected) == len(self.items) and self.items else "Select all")
 
 
 class PhotoPicker(tk.Toplevel):

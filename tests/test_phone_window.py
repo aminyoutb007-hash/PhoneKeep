@@ -429,7 +429,7 @@ for _ in range(30):
     root.update()
 # 13 Nov: a line per year with its months under it; tiles fill the width; selected = a blue frame, no circle
 check(pp2.mlist.exists("year-2025") and "2025-03" in pp2.mlist.get_children("year-2025")
-      and pp2.mlist.item("2025-03", "values")[0].strip() == "March", "months are listed under their year, by name")
+      and pp2.mlist.item("2025-03", "values")[0].strip()[2:] == "March", "months are listed under their year, by name")
 pp2.mlist.selection_set("year-2025"); root.update()
 check(pp2._month() == "2025-03", "clicking a year opens its newest month")
 _cw = pp2.canvas.winfo_width()
@@ -441,6 +441,20 @@ _c = pp2.tiles[_it.id]
 _kinds = [(_c.type(i), _c.itemcget(i, "outline") if _c.type(i) in ("rectangle", "oval") else "") for i in _c.find_all()]
 check(("rectangle", _ui.SELECT_BLUE) in _kinds and not any(k == "oval" for k, _o in _kinds),
       "a selected photo has a blue frame and no tick circle")
+# 13 Nov: one Select all / Select none button; a month's or a year's box in the list ticks all of it
+pp2._set_all(False); root.update()
+check(pp2.all_btn.text == "Select all", "with nothing selected the button says Select all")
+_y = pp2.mlist.bbox("2025-03")[1] + 5
+pp2._row_click(type("E", (), {"x": 40, "y": _y})()); root.update()
+check(all(i.id in pp2.selected for i in pp2.months["2025-03"]) and pp2.mlist.item("2025-03", "values")[0].strip().startswith("☑"),
+      "ticking a month's box selects the whole month")
+pp2._row_click(type("E", (), {"x": 120, "y": _y})()); root.update()
+check(all(i.id in pp2.selected for i in pp2.months["2025-03"]), "clicking the month's name only opens it")
+_yy = pp2.mlist.bbox("year-2025")[1] + 5
+pp2._row_click(type("E", (), {"x": 10, "y": _yy})()); root.update()
+check(not pp2.selected, "ticking the year's box when all of it is selected clears the year")
+pp2._flip_all(); root.update()
+check(len(pp2.selected) == len(_many) and pp2.all_btn.text == "Select none", "Select all selects everything and becomes Select none")
 _tile = next(iter(pp2.tiles.values()))
 _y0 = pp2.canvas.yview()[0]
 for _ in range(3):
