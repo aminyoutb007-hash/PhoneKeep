@@ -375,6 +375,29 @@ check(pp.selected == {i.id for i in pp.months["2025-06"]} and pp.mlist.item("202
       "and the month is ticked, 4/4")
 pp._set_month(False); pp._set_all(True); root.update()
 check(len(_placed()) == 4 and pp.mlist.selection() == ("2025-06",), "Clear this month and Select all keep the same month open")
+# B3 timeline (13 Nov): every snapshot in one drop-down list, newest first; choosing one opens it
+import snapshots as _sn
+from types import SimpleNamespace as _NS2
+_now = _dt.datetime.now().replace(second=0, microsecond=0)
+_mk = lambda h, m, d=0: (lambda w: _NS2(id=f"{d}-{h}{m}", when=w, label="", locked=False, size=1e9, ios="26", encrypted=True,
+                                         title=_sn.Snapshot.title.fget(_NS2(when=w, label=""))))((_now - _dt.timedelta(days=d)).replace(hour=h, minute=m))
+_snaps = [_mk(12, 29), _mk(11, 33), _mk(18, 25, 1)] + [_mk(9, 0, d) for d in range(3, 12)]
+_opened = []
+_tl_host = tk.Toplevel(root)
+_fake = _NS2(timeline=tk.Frame(_tl_host), snapshot=None, backup_dir=None, udid="x", open_snapshot=_opened.append,
+             _snapshot_menu=lambda e, s: None)
+_fake.timeline.pack()
+_real_list = _sn.list_snapshots
+_sn.list_snapshots = lambda a, b: _snaps
+import phone as _phone
+_phone.PhoneWindow._build_timeline(_fake)
+_sn.list_snapshots = _real_list
+root.update()
+check(len(_fake.snap_choices) == 12 and _fake.snap_choices[0] == "Today 12:29  (latest)" and _fake.snap_choices[1] == "Today 11:33",
+      f"all 12 snapshots are in one drop-down list, newest first, with times: {_fake.snap_choices[:3]}")
+_fake.snap_var.set(_fake.snap_choices[2]); _fake.snap_box.event_generate("<<ComboboxSelected>>"); root.update()
+check(_opened and _opened[-1] is _snaps[2], "choosing one opens that snapshot")
+_tl_host.destroy()
 import phone as _phone
 check(all((_phone.ICON_DIR / f"{k}.png").exists() and (_phone.ICON_DIR / f"{k}-28.png").exists() for k, *_r in _phone.APPS),
       "every app on the home screen has PhoneKeep's own drawn icon (big and small)")

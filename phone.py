@@ -380,40 +380,26 @@ class PhoneWindow(tk.Toplevel):
         if not snaps:
             return
         tk.Label(self.timeline, text="Snapshots", bg=BG, fg=INK, font=font(12, "bold"), anchor="w").pack(fill="x")
+        # one drop-down list of every snapshot, newest first, and ⋯ for keep forever / rename / delete
+        # (owner, 13 Nov: "the snapshots should be a drop list")
         row = tk.Frame(self.timeline, bg=BG)
-        row.pack(fill="x")
+        row.pack(fill="x", pady=(2, 0))
         current = self.snapshot.id if self.snapshot else snaps[0].id
-        # one line per day: the day, then its snapshots as small buttons (the time when a day has several),
-        # three to a line, so nothing runs off the edge (owner's Mac, 13 Nov)
-        days: list = []
-        for snap in snaps[:8]:
-            if days and days[-1][0] == snap.when.date():
-                days[-1][1].append(snap)
-            else:
-                days.append((snap.when.date(), [snap]))
-        r = 0
-        for _d, group in days:
-            several = len(group) > 1
-            if several:
-                tk.Label(row, text=group[0].title, bg=BG, fg=MUTED, font=font(11), anchor="w").grid(
-                    row=r, column=0, sticky="nw", padx=(0, 6), pady=3)
-            for n, snap in enumerate(group):
-                text = (snap.label or snap.when.strftime("%H:%M")) if several else snap.title
-                lab = tk.Label(row, text=("🔒 " if snap.locked else "") + text, bg=GREEN if snap.id == current else CARD,
-                               fg="white" if snap.id == current else INK, font=font(11), padx=7, pady=2, cursor="hand2")
-                if several:
-                    lab.grid(row=r + n // 3, column=1 + n % 3, padx=(0, 4), pady=2, sticky="w")
-                else:
-                    lab.grid(row=r, column=0, columnspan=4, padx=(0, 4), pady=2, sticky="w")
-                lab.bind("<Button-1>", lambda e, s_=snap: self.open_snapshot(s_))
-                lab.bind("<Button-3>", lambda e, s_=snap: self._snapshot_menu(e, s_))
-                lab.bind("<Button-2>", lambda e, s_=snap: self._snapshot_menu(e, s_))
-                lab.bind("<Control-Button-1>", lambda e, s_=snap: self._snapshot_menu(e, s_))
-            r += (len(group) + 2) // 3 if several else 1
-        if len(snaps) > 8:
-            more = tk.Label(self.timeline, text=f"+ {len(snaps) - 8} older…", bg=BG, fg=GREEN, font=font(11), cursor="hand2", anchor="w")
-            more.pack(fill="x")
-            more.bind("<Button-1>", lambda e: self._all_snapshots())
+        titles = sn.timeline_titles(snaps)
+        self.snap_choices = [("🔒 " if snap.locked else "") + t + ("  (latest)" if n == 0 else "")
+                             for n, (snap, t) in enumerate(zip(snaps, titles))]
+        self.snap_var = tk.StringVar(value=self.snap_choices[next(n for n, x in enumerate(snaps) if x.id == current)])
+        self.snap_box = ttk.Combobox(row, textvariable=self.snap_var, values=self.snap_choices, state="readonly",
+                                     width=22, height=min(15, len(snaps)))
+        self.snap_box.pack(side="left")
+        self.snap_box.bind("<<ComboboxSelected>>",
+                           lambda e: self.open_snapshot(snaps[self.snap_choices.index(self.snap_var.get())]))
+        more = tk.Label(row, text="⋯", bg=CARD, fg=INK, font=font(14, "bold"), padx=8, cursor="hand2")
+        more.pack(side="left", padx=(6, 0))
+        sel = lambda: snaps[self.snap_choices.index(self.snap_var.get())]
+        more.bind("<Button-1>", lambda e: self._snapshot_menu(e, sel()))
+        tk.Label(self.timeline, text=f"{len(snaps)} snapshot{'s' if len(snaps) != 1 else ''} · ⋯ for keep, rename, delete",
+                 bg=BG, fg=MUTED, font=font(10), anchor="w").pack(fill="x", pady=(2, 0))
         detail = self.snapshot or snaps[0]
         size = f"{detail.size / 1e9:.1f} GB" if detail.size >= 1e9 else f"{detail.size / 1e6:.1f} MB"
         tk.Label(self.timeline, text=f"{detail.when.strftime('%d %b %Y %H:%M').lstrip('0')} · {size} · iOS {detail.ios or '?'} · "
@@ -476,16 +462,6 @@ class PhoneWindow(tk.Toplevel):
             self.open_snapshot(None)
         else:
             self._build_timeline()
-
-    def _all_snapshots(self):
-        win = tk.Toplevel(self, bg=CARD)
-        win.title("All snapshots")
-        win.transient(self)
-        lb = tk.Listbox(win, width=48, height=min(20, len(self.snaps)), font=font(12), activestyle="none")
-        lb.pack(padx=12, pady=12)
-        for s_ in self.snaps:
-            lb.insert("end", f"{'🔒 ' if s_.locked else ''}{s_.title}  ·  {s_.when.strftime('%d %b %Y %H:%M').lstrip('0')}")
-        lb.bind("<Double-Button-1>", lambda e: (self.open_snapshot(self.snaps[lb.curselection()[0]]), win.destroy()) if lb.curselection() else None)
 
     def _draw_phone(self):
         c = self.mock
