@@ -45,7 +45,17 @@ def _mac_available() -> Optional[str]:
         ctx = LAContext.alloc().init()
         if _can(ctx, _LA_BIOMETRICS):
             return "touch_id"
-        if _can(ctx, _LA_OWNER):
+        owner = _can(ctx, _LA_OWNER)
+        # A Mac with Touch ID whose sensor can't be used right now (lid closed, an external keyboard without
+        # Touch ID) still counts as a Touch ID Mac: the lock stays on and asks for the password instead
+        # (13 Nov: the owner's MacBook, lid closed, reported "password only" and the lock stayed off).
+        try:
+            has_sensor = int(ctx.biometryType()) == 1          # LABiometryTypeTouchID
+        except Exception:
+            has_sensor = False
+        if owner and has_sensor:
+            return "touch_id"
+        if owner:
             return "password"
         last_problem = "this Mac has neither Touch ID nor a login password the system will check"
     except Exception as e:
