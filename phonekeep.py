@@ -59,7 +59,8 @@ WA_BUSINESS_DOMAIN = "AppDomainGroup-group.net.whatsapp.WhatsAppSMB.shared"
 WA_DB = "ChatStorage.sqlite"
 APPLE_EPOCH = 978307200  # 2001-01-01 in Unix seconds
 
-DEFAULT_HOME = Path.home() / "PhoneKeep"
+# PHONEKEEP_HOME: the tests point this at their own folder, so they never write to the real one
+DEFAULT_HOME = Path(os.environ.get("PHONEKEEP_HOME") or Path.home() / "PhoneKeep")
 DEFAULT_BACKUP_DIR = DEFAULT_HOME / "Backups"
 DEFAULT_ARCHIVE_DIR = DEFAULT_HOME / "Archive"
 

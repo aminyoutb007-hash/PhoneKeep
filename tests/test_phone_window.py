@@ -11,6 +11,8 @@ import datetime as dt, io, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+import os
+os.environ.setdefault("PHONEKEEP_HOME", str(HERE / "work" / "home"))   # never the real ~/PhoneKeep
 sys.path.insert(0, str(HERE.parent))
 
 W = HERE / "work"
