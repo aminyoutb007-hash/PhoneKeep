@@ -32,8 +32,8 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 **How it's built (5.1):** `applock.py`: Apple's LocalAuthentication ("device owner" policy: Touch ID, or the Mac's password) through pyobjc, and Windows Hello through pywinrt; no password of PhoneKeep's own. One unlock covers the session until the idle time (Settings: 5–60 minutes, default 10). Gated: opening a phone window, opening any backup, and the export's chat and photo choosers. Idle: every phone window is covered by "🔒 PhoneKeep is locked" with **Unlock** (a solid cover rather than a blur: Tk can't blur a window, and a cover hides more). Switching the lock off while locked asks first. The menu bar helper never uses the lock, so scheduled backups keep running.
 
 **Done when**
-- [ ] Opening the phone window asks for Touch ID; cancelling keeps it closed.
-- [ ] After the idle time the content is hidden until unlocked.
+- [x] Opening the phone window asks for Touch ID; cancelling keeps it closed. (Owner's MacBook, 13 Nov, release-candidate build; tests: `test_s2_app_lock`.)
+- [x] After the idle time the content is hidden until unlocked. (Owner's MacBook, 13 Nov: 5 idle minutes, the iPhone window was covered by "PhoneKeep is locked" with Unlock.)
 
 ## S3. No network
 
