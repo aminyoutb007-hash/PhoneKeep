@@ -186,5 +186,41 @@ check("--password-stdin" in rr.stdout and "--password " not in rr.stdout, "CLI t
 rr = subprocess.run([sys.executable, str(HERE.parent / "tools" / "redact_backup.py"), str(fake), str(out)], capture_output=True, text=True)
 check(rr.returncode != 0 and "not empty" in (rr.stderr + rr.stdout), "refuses to write into a non-empty folder")
 
+# a wrong password: three tries, one plain sentence, no traceback (owner's Mac, 13 Nov: one typo ended the
+# run with a wall of technical text)
+import io, contextlib
+calls = []
+real_redact, real_info, real_getpass = rb.redact_backup, rb.wv.backup_info, None
+import getpass as _gp
+real_getpass = _gp.getpass
+def _fake_redact(src, out_, pw, log=print, progress=None):
+    calls.append(pw)
+    if pw != "right":
+        raise wv.PhoneKeepError("That password doesn't open this backup.")
+    return __import__("collections").Counter({"databases redacted": 1})
+answers = iter(["wrnog", "right"])
+rb.redact_backup = _fake_redact
+rb.wv.backup_info = lambda p: {"encrypted": True}
+_gp.getpass = lambda prompt="": next(answers)
+buf, err = io.StringIO(), io.StringIO()
+try:
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+        code = rb.main([str(fake), str(W / "retry-out")])
+finally:
+    rb.redact_backup, rb.wv.backup_info, _gp.getpass = real_redact, real_info, real_getpass
+check(code == 0 and calls == ["wrnog", "right"] and "Try again." in buf.getvalue() and "Traceback" not in buf.getvalue() + err.getvalue(),
+      f"a wrong password asks again, in plain words ({calls}, exit {code})")
+answers = iter(["a", "b", "c"])
+rb.redact_backup = _fake_redact
+rb.wv.backup_info = lambda p: {"encrypted": True}
+_gp.getpass = lambda prompt="": next(answers)
+buf, err = io.StringIO(), io.StringIO()
+try:
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+        code = rb.main([str(fake), str(W / "retry-out2")])
+finally:
+    rb.redact_backup, rb.wv.backup_info, _gp.getpass = real_redact, real_info, real_getpass
+check(code == 2 and err.getvalue().strip() == "That password doesn't open this backup.", f"after three tries it stops with one sentence: {err.getvalue()!r}")
+
 print("\nX2 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

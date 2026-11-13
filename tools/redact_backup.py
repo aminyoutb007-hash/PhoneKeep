@@ -439,11 +439,27 @@ def main(argv=None) -> int:
     p.add_argument("out", help="an empty folder for the anonymised copy")
     p.add_argument("--password-stdin", action="store_true", help="read the backup password from standard input (never on the command line)")
     a = p.parse_args(argv)
-    pw = None
-    if wv.backup_info(Path(a.backup))["encrypted"]:
-        pw = sys.stdin.readline().rstrip("\r\n") if a.password_stdin else getpass.getpass("Backup password: ")
-    report = redact_backup(Path(a.backup), Path(a.out), pw,
-                           progress=lambda line: print("\r" + line + " " * 12, end="", flush=True))
+    encrypted = wv.backup_info(Path(a.backup))["encrypted"]
+    if encrypted and not a.password_stdin:
+        print("The backup is encrypted. Type its backup password (nothing shows while you type), then Return.")
+    report = None
+    for attempt in range(1 if a.password_stdin or not encrypted else 3):
+        pw = None
+        if encrypted:
+            pw = sys.stdin.readline().rstrip("\r\n") if a.password_stdin else getpass.getpass("Backup password: ")
+        try:
+            report = redact_backup(Path(a.backup), Path(a.out), pw,
+                                   progress=lambda line: print("\r" + line + " " * 12, end="", flush=True))
+            break
+        except wv.PhoneKeepError as e:
+            wrong = "password" in str(e).lower()
+            if wrong and attempt < 2 and not a.password_stdin:
+                print("That password doesn't open this backup. Try again.")
+                continue
+            print(str(e), file=sys.stderr)          # one plain sentence, no traceback
+            return 2
+    if report is None:
+        return 2
     print()
     print("\nRedaction report")
     for k in sorted(report):
