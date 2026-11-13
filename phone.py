@@ -60,6 +60,24 @@ APPS = [
     ("allfiles", "All files", "🗂", "#8e8e93", "backup"),
 ]
 LABEL = {k: l for k, l, *_ in APPS}
+ICON_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "assets" / "icons"
+_ICON_CACHE: dict = {}
+
+
+def app_icon(key: str, small: bool = False):
+    """PhoneKeep's own drawn icon for an app (tools/make_app_icons.py), or None (then the emoji is shown)."""
+    k = (key, small)
+    if k not in _ICON_CACHE:
+        img = None
+        p = ICON_DIR / (f"{key}-28.png" if small else f"{key}.png")
+        if Image is not None and p.exists():
+            try:
+                from PIL import ImageTk as _itk
+                img = _itk.PhotoImage(Image.open(p))
+            except Exception:
+                img = None
+        _ICON_CACHE[k] = img
+    return _ICON_CACHE[k]
 CHAT_APPS = ("messages", "whatsapp", "whatsappbusiness")
 
 
@@ -362,21 +380,26 @@ class PhoneWindow(tk.Toplevel):
         if not snaps:
             return
         tk.Label(self.timeline, text="Snapshots", bg=BG, fg=INK, font=font(12, "bold"), anchor="w").pack(fill="x")
+        # one drop-down list of every snapshot, newest first, and ⋯ for keep forever / rename / delete
+        # (owner, 13 Nov: "the snapshots should be a drop list")
         row = tk.Frame(self.timeline, bg=BG)
-        row.pack(fill="x")
+        row.pack(fill="x", pady=(2, 0))
         current = self.snapshot.id if self.snapshot else snaps[0].id
-        for i, snap in enumerate(snaps[:8]):
-            lab = tk.Label(row, text=(("🔒 " if snap.locked else "") + snap.title), bg=GREEN if snap.id == current else CARD,
-                           fg="white" if snap.id == current else INK, font=font(11), padx=8, pady=3, cursor="hand2")
-            lab.pack(side="left", padx=(0, 4), pady=2)
-            lab.bind("<Button-1>", lambda e, s_=snap: self.open_snapshot(s_))
-            lab.bind("<Button-3>", lambda e, s_=snap: self._snapshot_menu(e, s_))
-            lab.bind("<Button-2>", lambda e, s_=snap: self._snapshot_menu(e, s_))
-            lab.bind("<Control-Button-1>", lambda e, s_=snap: self._snapshot_menu(e, s_))
-        if len(snaps) > 8:
-            more = tk.Label(self.timeline, text=f"+ {len(snaps) - 8} older…", bg=BG, fg=GREEN, font=font(11), cursor="hand2", anchor="w")
-            more.pack(fill="x")
-            more.bind("<Button-1>", lambda e: self._all_snapshots())
+        titles = sn.timeline_titles(snaps)
+        self.snap_choices = [("🔒 " if snap.locked else "") + t + ("  (latest)" if n == 0 else "")
+                             for n, (snap, t) in enumerate(zip(snaps, titles))]
+        self.snap_var = tk.StringVar(value=self.snap_choices[next(n for n, x in enumerate(snaps) if x.id == current)])
+        self.snap_box = ttk.Combobox(row, textvariable=self.snap_var, values=self.snap_choices, state="readonly",
+                                     width=22, height=min(15, len(snaps)))
+        self.snap_box.pack(side="left")
+        self.snap_box.bind("<<ComboboxSelected>>",
+                           lambda e: self.open_snapshot(snaps[self.snap_choices.index(self.snap_var.get())]))
+        more = tk.Label(row, text="⋯", bg=CARD, fg=INK, font=font(14, "bold"), padx=8, cursor="hand2")
+        more.pack(side="left", padx=(6, 0))
+        sel = lambda: snaps[self.snap_choices.index(self.snap_var.get())]
+        more.bind("<Button-1>", lambda e: self._snapshot_menu(e, sel()))
+        tk.Label(self.timeline, text=f"{len(snaps)} snapshot{'s' if len(snaps) != 1 else ''} · ⋯ for keep, rename, delete",
+                 bg=BG, fg=MUTED, font=font(10), anchor="w").pack(fill="x", pady=(2, 0))
         detail = self.snapshot or snaps[0]
         size = f"{detail.size / 1e9:.1f} GB" if detail.size >= 1e9 else f"{detail.size / 1e6:.1f} MB"
         tk.Label(self.timeline, text=f"{detail.when.strftime('%d %b %Y %H:%M').lstrip('0')} · {size} · iOS {detail.ios or '?'} · "
@@ -439,16 +462,6 @@ class PhoneWindow(tk.Toplevel):
             self.open_snapshot(None)
         else:
             self._build_timeline()
-
-    def _all_snapshots(self):
-        win = tk.Toplevel(self, bg=CARD)
-        win.title("All snapshots")
-        win.transient(self)
-        lb = tk.Listbox(win, width=48, height=min(20, len(self.snaps)), font=font(12), activestyle="none")
-        lb.pack(padx=12, pady=12)
-        for s_ in self.snaps:
-            lb.insert("end", f"{'🔒 ' if s_.locked else ''}{s_.title}  ·  {s_.when.strftime('%d %b %Y %H:%M').lstrip('0')}")
-        lb.bind("<Double-Button-1>", lambda e: (self.open_snapshot(self.snaps[lb.curselection()[0]]), win.destroy()) if lb.curselection() else None)
 
     def _draw_phone(self):
         c = self.mock
@@ -685,10 +698,14 @@ class PhoneWindow(tk.Toplevel):
             t.grid(row=i // cols, column=i % cols, padx=10, pady=10, sticky="n")
             cv = tk.Canvas(t, width=92, height=92, bg=BG, highlightthickness=0, cursor="hand2")
             cv.pack()
-            pts = [8 + 22, 8, 84 - 22, 8, 84, 8, 84, 8 + 22, 84, 84 - 22, 84, 84, 84 - 22, 84,
-                   8 + 22, 84, 8, 84, 8, 84 - 22, 8, 8 + 22, 8, 8]
-            cv.create_polygon(pts, smooth=True, fill=colour, outline=LINE if colour == "#ffffff" else "")
-            cv.create_text(46, 46, text=icon, font=font(34))
+            img = app_icon(key)
+            if img is not None:
+                cv.create_image(46, 46, image=img)
+            else:
+                pts = [8 + 22, 8, 84 - 22, 8, 84, 8, 84, 8 + 22, 84, 84 - 22, 84, 84, 84 - 22, 84,
+                       8 + 22, 84, 8, 84, 8, 84 - 22, 8, 8 + 22, 8, 8]
+                cv.create_polygon(pts, smooth=True, fill=colour, outline=LINE if colour == "#ffffff" else "")
+                cv.create_text(46, 46, text=icon, font=font(34))
             tk.Label(t, text=label, bg=BG, fg=INK, font=font(12, "bold"), wraplength=120).pack()
             cl = tk.Label(t, text="", bg=BG, fg=MUTED, font=font(11))
             cl.pack()
@@ -723,7 +740,12 @@ class PhoneWindow(tk.Toplevel):
         top.pack(fill="x", pady=(0, 8))
         RoundButton(top, "‹  Home", self.show_home, "secondary", 100, 32, 12).pack(side="left")
         icon = next(i for k, _l, i, *_ in APPS if k == key)
-        tk.Label(top, text=f"{icon}  {LABEL[key]}", bg=BG, fg=INK, font=font(19, "bold")).pack(side="left", padx=12)
+        small = app_icon(key, small=True)
+        if small is not None:
+            tk.Label(top, image=small, text=f"  {LABEL[key]}", compound="left", bg=BG, fg=INK,
+                     font=font(19, "bold")).pack(side="left", padx=12)
+        else:
+            tk.Label(top, text=f"{icon}  {LABEL[key]}", bg=BG, fg=INK, font=font(19, "bold")).pack(side="left", padx=12)
         self.view_sub = tk.Label(top, text=sub, bg=BG, fg=MUTED, font=font(12))
         self.view_sub.pack(side="left")
         return top

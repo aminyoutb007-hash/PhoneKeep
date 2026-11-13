@@ -179,5 +179,14 @@ finally:
 after = sorted(str(p.relative_to(old3)) for p in old3.rglob("*") if "store" not in str(p) and "snapshots" not in str(p) and p.name != "format.json")
 check((old3 / "Manifest.db").exists() and before == after, "the old backup is exactly as it was")
 
+# timeline titles (13 Nov): several snapshots on one day show their times
+from types import SimpleNamespace as _NS
+_now = dt.datetime.now().replace(hour=12, minute=11, second=0, microsecond=0)
+_mk = lambda when, label="": _NS(when=when, label=label, title=sn.Snapshot.title.fget(_NS(when=when, label=label)))
+_snaps = [_mk(_now), _mk(_now.replace(hour=11, minute=33)), _mk(_now - dt.timedelta(days=3)), _mk(_now.replace(hour=9, minute=5), "Before trip")]
+_t = sn.timeline_titles(_snaps)
+check(_t[:2] == ["Today 12:11", "Today 11:33"] and _t[3] == "Before trip" and ":" not in _t[2],
+      f"same-day snapshots show their time; a single day or a label doesn't: {_t}")
+
 print("\nB3 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)
