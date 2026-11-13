@@ -1122,6 +1122,51 @@ class TextDialog(tk.Toplevel):
         self.destroy()
 
 
+class DetailsDialog(tk.Toplevel):
+    """'Show details': the technical text for support, in a window that is big enough to read and can be
+    resized, scrolled and copied (13 Nov: the old message box was too small to show a traceback)."""
+
+    def __init__(self, parent, text: str, title: str = "Details for support"):
+        super().__init__(parent, bg=CARD)
+        _attach_app_menu(self)
+        self.title(title)
+        self.geometry("780x460")
+        self.minsize(420, 240)
+        self.transient(parent)
+        top = tk.Frame(self, bg=CARD)
+        top.pack(fill="x", padx=20, pady=(16, 8))
+        tk.Label(top, text=title, bg=CARD, fg=INK, font=font(16, "bold")).pack(side="left")
+        btns = tk.Frame(self, bg=CARD)
+        btns.pack(side="bottom", fill="x", padx=20, pady=(8, 16))
+        RoundButton(btns, "Close", self.destroy, "primary", 110, 36, bg=CARD).pack(side="right")
+        self.copy_btn = RoundButton(btns, "Copy all", self.copy, "secondary", 120, 36, bg=CARD)
+        self.copy_btn.pack(side="right", padx=8)
+        box = tk.Frame(self, bg=CARD)
+        box.pack(fill="both", expand=True, padx=20)
+        bar = ttk.Scrollbar(box, orient="vertical")
+        self.text = tk.Text(box, wrap="word", font=("Menlo", 11) if sys.platform == "darwin" else ("Consolas", 10),
+                            bg="#f7f8fa", fg=INK, relief="flat", padx=10, pady=8, yscrollcommand=bar.set,
+                            highlightthickness=1, highlightbackground=LINE)
+        bar.configure(command=self.text.yview)
+        bar.pack(side="right", fill="y")
+        self.text.pack(side="left", fill="both", expand=True)
+        self.text.insert("1.0", text or "")
+        self.text.configure(state="disabled")      # read-only, but text can still be selected and copied
+        self.content = text or ""
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.lift()
+
+    def copy(self):
+        self.clipboard_clear()
+        self.clipboard_append(self.content)
+        self.copy_btn.configure_text("Copied ✓")
+
+
+def show_details(parent, text: str):
+    """Open the details window (not modal: the main window stays usable)."""
+    return DetailsDialog(parent, text)
+
+
 def ask_text(parent, title: str, prompt: str, initial: str = "", ok: str = "Save"):
     """Open a TextDialog and wait for it. Returns the text, or None if cancelled."""
     d = TextDialog(parent, title, prompt, initial, ok)

@@ -270,7 +270,7 @@ class App(_dnd_root()):
         self.bar_btn = None
         self.bar_details = tk.Label(self.bar_frame, text="Show details", bg="#fdecea", fg=MUTED, font=font(11), cursor="hand2")
         self.bar_details_text = ""
-        self.bar_details.bind("<Button-1>", lambda e: messagebox.showinfo("Details for support", self.bar_details_text, parent=self))
+        self.bar_details.bind("<Button-1>", lambda e: ui.show_details(self, self.details_for_support(self.bar_details_text)))
 
         self.body = tk.Frame(self, bg=BG)
         self.body.pack(fill="both", expand=True, padx=22, pady=16)
@@ -523,7 +523,7 @@ class App(_dnd_root()):
             for r in self.steps.values():
                 if r.state == "active":
                     r.set("error", detail=pr.message)
-            self.log("ERROR: " + pr.message + (f"  [{pr.details}]" if pr.details else ""))
+            self.log("ERROR: " + pr.message + (f"  [{pr.details.splitlines()[0]}]" if pr.details else ""))   # full text: Show details
             if not quiet:
                 self.show_problem(pr, retry=(lambda: self._run(fn, done)) if fn else None)
         else:
@@ -542,6 +542,15 @@ class App(_dnd_root()):
             return errors.Problem("plain", str(err), "Try again", errors.TRY_AGAIN, err.details, failure=True)
         return errors.explain(err)
 
+    def details_for_support(self, details: str) -> str:
+        """The error itself, then what PhoneKeep was doing (the activity panel's lines), for one Copy."""
+        try:
+            activity = self.log_box.get("1.0", "end").strip()
+        except tk.TclError:
+            activity = ""
+        about = f"{wv.APP_NAME} {wv.VERSION}" + (f" (build {wv.BUILD_LABEL})" if wv.BUILD_LABEL else "") + f" · {sys.platform}"
+        return f"{details}\n\n--- what PhoneKeep was doing ---\n{activity}\n\n--- {about} ---" if activity else f"{details}\n\n--- {about} ---"
+
     def show_problem(self, pr: errors.Problem, retry=None):
         """Inline banner at the top: one sentence + one button; red only for real failures."""
         colour = "#fdecea" if pr.failure else "#fff4e0"
@@ -559,7 +568,7 @@ class App(_dnd_root()):
         elif pr.action == errors.INSTALL_APPLE_DEVICES:
             cmd = lambda: webbrowser.open("https://apps.microsoft.com/detail/9NP83LWLPZ9K")
         elif pr.action == errors.SHOW_DETAILS:
-            cmd = lambda: messagebox.showinfo("Details for support", pr.details or pr.message, parent=self)
+            cmd = lambda: ui.show_details(self, self.details_for_support(pr.details or pr.message))
         elif pr.action == errors.ENTER_PASSWORD and retry:
             cmd = lambda: (self.hide_problem(), retry())
         if cmd:

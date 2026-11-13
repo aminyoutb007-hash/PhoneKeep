@@ -704,7 +704,7 @@ class PhoneWindow(tk.Toplevel):
         if details:
             lk = tk.Label(holder, text="Show details", bg=BG, fg=MUTED, font=font(11), cursor="hand2")
             lk.pack(pady=(10, 0))
-            lk.bind("<Button-1>", lambda e, d=details: messagebox.showinfo("Details for support", d, parent=self))
+            lk.bind("<Button-1>", lambda e, d=details: ui.show_details(self, d))
 
     def _problem_parts(self, e: BaseException, retry=None):
         """From an exception: (message, (button label, command), details) using the one errors table."""
@@ -725,7 +725,7 @@ class PhoneWindow(tk.Toplevel):
         elif pr.action == errors.INSTALL_APPLE_DEVICES:
             button = (pr.button, lambda: __import__("webbrowser").open("https://apps.microsoft.com/detail/9NP83LWLPZ9K"))
         elif pr.action == errors.SHOW_DETAILS and pr.details:
-            button = (pr.button, lambda d=pr.details: messagebox.showinfo("Details for support", d, parent=self))
+            button = (pr.button, lambda d=pr.details: ui.show_details(self, d))
             return pr.message, button, ""
         elif retry:
             button = retry

@@ -96,6 +96,7 @@ for key, _pats, msg, button, _action in errors.TABLE:
 try:
     import tkinter as tk
     import app as appmod
+    import ui
     import tempfile
     tmp = Path(tempfile.mkdtemp(prefix="phonekeep-e3-"))
     appmod.SETTINGS_FILE = tmp / "settings.json"
@@ -126,6 +127,32 @@ try:
     m, t, b = shown()
     check(t.startswith("Something went wrong") and "boom" not in t and "boom" in a.bar_details_text,
           "a raw exception from a job shows the plain sentence; the text is behind Show details")
+
+    # Show details (13 Nov): where an unexpected error happened, in a window big enough to read and copy
+    import zlib
+    try:
+        zlib.decompress(b"not compressed")
+    except zlib.error as ex:
+        pr = errors.explain(ex)
+    check("Traceback" in pr.details and "zlib" in pr.details and "test_e3_errors.py" in pr.details,
+          "an unexpected error's details say where it happened (traceback)")
+    check(errors.is_plain(pr.message), "while the sentence on screen stays plain")
+    a.log("Backing up 'Test iPhone'…")
+    import time as _t
+    t_end = _t.time() + 5
+    while _t.time() < t_end and "Test iPhone" not in a.log_box.get("1.0", "end"):
+        a.update(); _t.sleep(0.02)
+    dlg = ui.show_details(a, a.details_for_support(pr.details))
+    a.update()
+    shown_text = dlg.text.get("1.0", "end")
+    check(dlg.winfo_width() >= 700 and dlg.resizable() == (True, True), f"the details window is large and resizable ({dlg.winfo_width()} px)")
+    check("Traceback" in shown_text and "what PhoneKeep was doing" in shown_text and "Backing up 'Test iPhone'" in shown_text
+          and wv.VERSION in shown_text, "it shows the error, what PhoneKeep was doing and the version")
+    dlg.copy()
+    check(a.clipboard_get() == dlg.content and "Copied" in dlg.copy_btn.text, "Copy all puts it on the clipboard")
+    dlg.destroy()
+    src = "".join((HERE.parent / f).read_text(encoding="utf-8") for f in ("app.py", "phone.py"))
+    check('messagebox.showinfo("Details for support"' not in src, "no details squeezed into a small message box any more")
     a.destroy()
 
     # phone window: an app screen failing shows the sentence and a button, not the exception
