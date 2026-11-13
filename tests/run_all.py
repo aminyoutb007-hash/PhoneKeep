@@ -3,7 +3,7 @@
 Usage (from the repository root):  python tests/run_all.py
 Generated data goes to tests/work/ (ignored by git).
 """
-import os, shutil, subprocess, sys, time
+import os, shutil, signal, subprocess, sys, time
 from pathlib import Path
 
 # The app and its exports are UTF-8 everywhere; make Python on Windows read and print them that way too.
@@ -44,11 +44,25 @@ for name, script, needs_display in STEPS:
             continue
         cmd = XVFB + cmd
     t0 = time.time()
+    posix = sys.platform != "win32"
+    p = subprocess.Popen(cmd, cwd=HERE.parent, start_new_session=posix)   # own group: xvfb-run and the test
     try:
-        r = subprocess.run(cmd, cwd=HERE.parent, timeout=TIMEOUT)
-        code = r.returncode
+        code = p.wait(timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
-        print(f"TIMED OUT after {TIMEOUT} s", flush=True)
+        print(f"TIMED OUT after {TIMEOUT} s; where it was stuck:", flush=True)
+        if posix:
+            os.killpg(p.pid, signal.SIGABRT)       # faulthandler prints every thread's stack
+            try:
+                p.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            p.kill()
+        p.wait()
         code = 1
     print(f"--- {script}: {'ok' if not code else 'FAILED'} in {time.time() - t0:.0f} s", flush=True)
     if code:
