@@ -233,15 +233,21 @@ class Helper:
             return "off"
         now = self.now()
         start = plan.window_start(now)
+        ticked0 = settings().get("auto_backup_phones")
         if start is not None and now >= start and not self.busy and any(
                 not sch.is_fresh(now, sch.Health.load(self.backup_dir / p["udid"]).last_ok)
-                for p in self.phones() if p["udid"] and sn.has_backup(self.backup_dir, p["udid"])):
+                for p in self.phones() if p["udid"] and sn.has_backup(self.backup_dir, p["udid"])
+                and (ticked0 is None or p["udid"] in ticked0)):
             self.refresh_devices(force=True)          # look for the phone only while a backup is due
         done = []
+        ticked = settings().get("auto_backup_phones")          # B8: None = not set up yet (every backed-up phone)
         for ph in self.phones():
             udid = ph["udid"]
             if not udid or not sn.has_backup(self.backup_dir, udid):
                 continue                          # the first backup is made from the window (S1 password)
+            if ticked is not None and udid not in ticked:
+                done.append(f"skip:{udid}")       # not ticked for automatic backups in Settings
+                continue
             health = sch.Health.load(self.backup_dir / udid)
             charging = None
             if plan.only_when_charging and ph["connected"]:

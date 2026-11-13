@@ -222,10 +222,38 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _wait_for_other_phone(backup_root: Path, udid: str, say: Callable[[str], None], poll: float = 3.0) -> None:
+    """If another process is backing up a different phone, wait for it (B8: never two backups at once).
+    Cancel works while waiting. The same phone is refused by its own lock (key "busy") instead."""
+    marker = backup_root / "backup-running.lock"
+    told = False
+    while True:
+        owner = _marker_owner(marker)
+        if not owner:
+            break
+        try:
+            _pid, other_udid, other_name = (marker.read_text(encoding="utf-8").split("\n") + ["", ""])[:3]
+        except OSError:
+            break
+        if other_udid == udid:
+            break                                 # the phone's own lock gives the "already running" message
+        if not told:
+            say(f"Waiting for the backup of '{other_name or 'another iPhone'}' to finish; this one starts right after.")
+            told = True
+        _backup_proc["waiting"] = True
+        try:
+            if _backup_proc.get("cancelled"):
+                _backup_proc["cancelled"] = False
+                raise BackupCancelled()
+            time.sleep(poll)
+        finally:
+            _backup_proc["waiting"] = False
+
+
 def _marker_owner(marker: Path) -> Optional[int]:
     """The pid of a live process that holds this backup marker, else None (a stale marker is ignored)."""
     try:
-        pid = int(marker.read_text(encoding="utf-8").strip())
+        pid = int(marker.read_text(encoding="utf-8").strip().split("\n")[0])     # first line: the pid
     except (OSError, ValueError):
         return None
     return pid if pid != os.getpid() and _pid_alive(pid) else None
@@ -240,7 +268,10 @@ class BackupCancelled(PhoneKeepError):
 
 
 def cancel_backup() -> bool:
-    """Stop the running backup (from any thread). True if one was running."""
+    """Stop the running backup (from any thread). True if one was running (or waiting for another phone's)."""
+    if _backup_proc.get("waiting"):
+        _backup_proc["cancelled"] = True
+        return True
     proc = _backup_proc["proc"]
     if proc is None or proc.poll() is not None:
         return False
@@ -373,6 +404,10 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
     if warning:
         raise PhoneKeepError(warning, button="Change location", action="change_location", key="disk_full")
 
+    # B8: one backup at a time across all phones and processes (the window and the menu bar helper); a backup of
+    # another phone waits for it and says so
+    _wait_for_other_phone(backup_root, udid, status or log)
+
     # one backup of a phone at a time, across processes (the window and the menu bar helper)
     marker = _snaps.phone_dir(backup_root, udid) / "backup.lock"
     other = _marker_owner(marker)
@@ -381,6 +416,11 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
                              "Wait for it to finish, then try again.", button="Try again", action="try_again", key="busy")
     try:
         marker.write_text(str(os.getpid()), encoding="utf-8")
+    except OSError:
+        pass
+    any_marker = backup_root / "backup-running.lock"
+    try:
+        any_marker.write_text(f"{os.getpid()}\n{udid}\n{name}", encoding="utf-8")
     except OSError:
         pass
 
@@ -443,6 +483,12 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
         _backup_proc["proc"] = None
         try:
             marker.unlink()
+        except OSError:
+            pass
+        try:
+            if _marker_owner(any_marker) is None and any_marker.exists() and \
+                    any_marker.read_text(encoding="utf-8").split("\n")[0].strip() == str(os.getpid()):
+                any_marker.unlink()
         except OSError:
             pass
 

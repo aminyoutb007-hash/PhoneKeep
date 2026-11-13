@@ -117,6 +117,8 @@
 - [ ] Unplugging the chosen phone does not switch the window to the other phone.
 - [ ] With both ticked for automatic backups, the helper backs up both, one after the other, each named in its notification.
 
+**How it's built (5.1):** the device card lists the reachable phones (`App._fill_phone_list`) when there's more than one, or when the chosen one went away; the choice is kept in Settings (`chosen_udid`). Each row shows the iOS version rather than the model (PhoneKeep has no model-name table yet). Automatic backups follow `auto_backup_phones`; on the first start of 5.1 it is filled with the phones already backed up, so nothing changes for them. One backup at a time across processes: `backup-running.lock` in the backup folder; another phone's backup waits and says so, and Cancel works while it waits.
+
 Related: [E5](05-ease-of-use.md#e5-all-phones-and-backups-in-one-list) (a card per phone ever backed up, P2) builds on this list.
 
 ## B6. Restore a backup to an iPhone

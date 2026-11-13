@@ -59,6 +59,20 @@ def reveal(path: Path) -> None:
         pass
 
 
+def sn_has(backup_dir: Path, udid: str) -> bool:
+    import snapshots as _snaps
+    return bool(_snaps.latest_backup_path(backup_dir, udid))
+
+
+def known_backed_up_phones(backup_dir: Path) -> list:
+    """UDIDs of the phones that have a PhoneKeep backup in this backup folder."""
+    import snapshots as _snaps
+    try:
+        return sorted(p.name for p in backup_dir.iterdir() if p.is_dir() and _snaps.latest_backup_path(backup_dir, p.name))
+    except OSError:
+        return []
+
+
 class Settings:
     DEFAULTS = {
         "preset": "chats",
@@ -77,6 +91,7 @@ class Settings:
         "lock_idle_minutes": 10,     # S2: hide phone windows after this many idle minutes
         "start_at_login": False,     # E2: the helper starts at login (asked once in E1 step 5)
         "auto_backup_paused": False, # E2: Pause automatic backups
+        "auto_backup_phones": None,  # B8: UDIDs backed up automatically (None = not set up yet: see migrate)
         "auto_backup_hour": 21,      # B2: "around 9 pm"
         "auto_backup_weekday": 6,    # B2: weekly on Sunday
         "auto_backup_charging": False,  # B2: only when charging
@@ -225,6 +240,10 @@ class App(_dnd_root()):
         self.configure(bg=BG)
         ui.setup_styles(self)
         self.s = Settings()
+        if self.s.data.get("auto_backup_phones") is None:
+            # B8: until now every backed-up phone was backed up automatically; keep exactly those ticked. A phone
+            # seen from now on is only backed up automatically once it's ticked in Settings.
+            self.s["auto_backup_phones"] = known_backed_up_phones(Path(self.s["backup_dir"]))
         self.q: queue.Queue = queue.Queue()
         self.busy = False
         self.device = None
@@ -312,6 +331,8 @@ class App(_dnd_root()):
         self.open_btn.pack(anchor="e")
         ui.RoundButton(btns, "Refresh", self.detect, "secondary", 100, 30, 12).pack(anchor="e", pady=(8, 0))
         self.open_btn.set_enabled(False)
+        # B8: every reachable iPhone, when there's more than one (or the chosen one went away)
+        self.phone_list = tk.Frame(dc, bg=CARD)
         for w in (self.phone, self.dev_name):
             w.configure(cursor="hand2")
             w.bind("<Button-1>", lambda e: self.open_phone())
@@ -825,6 +846,81 @@ class App(_dnd_root()):
                 pass
         return out
 
+    def _show_device(self, d: dict):
+        self.device = d
+        self.udid = d.get("UniqueDeviceID") or d.get("Identifier")
+        if self.s.data.get("chosen_udid") != self.udid:
+            self.s["chosen_udid"] = self.udid
+        if self.s.data.get("chosen_name") != (d.get("DeviceName") or "iPhone"):
+            self.s["chosen_name"] = d.get("DeviceName") or "iPhone"
+        how = "USB cable" if d.get("ConnectionType") == "USB" else "Wi-Fi"
+        self.phone.set_state("ok")
+        self.dev_name.configure(text=d.get("DeviceName") or "iPhone")
+        self.dev_line.configure(text=f"iOS {d.get('ProductVersion', '?')} · connected by {how}"
+                                + ("  (a cable is faster for the first backup)" if how == "Wi-Fi" else ""), fg=MUTED)
+        import snapshots as _snaps
+        latest = _snaps.latest_backup_path(Path(self.s["backup_dir"]), self.udid)
+        info = wv.backup_info(latest) if latest else None
+        half = (not info) and (wv.backup_incomplete(Path(self.s["backup_dir"]) / self.udid)
+                               or wv.backup_incomplete(_snaps.current_dir(Path(self.s["backup_dir"]), self.udid)))
+        state, line = self.health_line(info)
+        if half:
+            state, line = "amber", "The last backup didn't finish. Back up again to complete it."
+        self.dev_last.configure(text=line or ("Not backed up with PhoneKeep yet" if not info else f"Last backup: {info['date']}"),
+                                fg=AMBER if state == "amber" else MUTED)
+        self.dev_lock.configure(text=self.lock_badge(info))
+        self.open_btn.set_enabled(True)
+
+    def choose_phone(self, udid: str):
+        """B8: the owner picked a phone from the list; the options below are now for it."""
+        if self.busy:
+            return
+        d = next((x for x in getattr(self, "devices", []) if (x.get("UniqueDeviceID") or x.get("Identifier")) == udid), None)
+        if d is None:
+            return
+        if getattr(self, "phone_win", None) is not None:
+            try:
+                if self.phone_win.winfo_exists() and self.phone_win.udid != udid:
+                    self.phone_win.destroy()             # the phone window was for the other phone
+            except tk.TclError:
+                pass
+            self.phone_win = None
+        self._show_device(d)
+        self._fill_phone_list()
+        self.log(f"Chose {d.get('DeviceName') or 'iPhone'}.")
+
+    def _fill_phone_list(self):
+        """The list of reachable iPhones in the device card, shown when there's a choice to make."""
+        for w in self.phone_list.winfo_children():
+            w.destroy()
+        devs = getattr(self, "devices", [])
+        if len(devs) < 2 and (len(devs) == 0 or self.udid is not None):
+            self.phone_list.pack_forget()
+            return
+        self.phone_list.pack(fill="x", padx=18, pady=(0, 14))
+        tk.Label(self.phone_list, text="iPhones nearby", bg=CARD, fg=MUTED, font=font(11, "bold"), anchor="w").pack(fill="x")
+        import snapshots as _snaps
+        self.phone_rows = {}
+        for d in devs:
+            udid = d.get("UniqueDeviceID") or d.get("Identifier")
+            on = udid == self.udid
+            latest = _snaps.latest_backup_path(Path(self.s["backup_dir"]), udid)
+            info = wv.backup_info(latest) if latest else None
+            how = "cable" if d.get("ConnectionType") == "USB" else "Wi-Fi"
+            when = f"backed up {info['date']}" if info else "not backed up yet"
+            row = tk.Frame(self.phone_list, bg=GREEN_SOFT if on else CARD, highlightthickness=1,
+                           highlightbackground=GREEN if on else LINE, cursor="hand2")
+            row.pack(fill="x", pady=3)
+            name = tk.Label(row, text=("✓  " if on else "📱  ") + (d.get("DeviceName") or "iPhone"),
+                            bg=row.cget("bg"), fg=INK, font=font(13, "bold"), anchor="w")
+            name.pack(side="left", padx=(10, 8), pady=6)
+            detail = tk.Label(row, text=f"iOS {d.get('ProductVersion', '?')} · {how} · {when}", bg=row.cget("bg"),
+                              fg=MUTED, font=font(12), anchor="w")
+            detail.pack(side="left", pady=6)
+            for w in (row, name, detail):
+                w.bind("<Button-1>", lambda e, u=udid: self.choose_phone(u))
+            self.phone_rows[udid] = row
+
     def detect(self, silent: bool = False):
         if self.busy or getattr(self, "detecting", False):
             return
@@ -835,28 +931,27 @@ class App(_dnd_root()):
         def done(devs, err=None):
             self.detecting = False
             self.detect_error = err
-            if devs:
-                d = devs[0]
-                self.device = d
-                self.udid = d.get("UniqueDeviceID") or d.get("Identifier")
-                how = "USB cable" if d.get("ConnectionType") == "USB" else "Wi-Fi"
-                self.phone.set_state("ok")
-                self.dev_name.configure(text=d.get("DeviceName") or "iPhone")
-                self.dev_line.configure(text=f"iOS {d.get('ProductVersion', '?')} · connected by {how}"
-                                        + ("  (a cable is faster for the first backup)" if how == "Wi-Fi" else ""),
-                                        fg=MUTED)
-                import snapshots as _snaps
-                latest = _snaps.latest_backup_path(Path(self.s["backup_dir"]), self.udid)
-                info = wv.backup_info(latest) if latest else None
-                half = (not info) and (wv.backup_incomplete(Path(self.s["backup_dir"]) / self.udid)
-                                       or wv.backup_incomplete(_snaps.current_dir(Path(self.s["backup_dir"]), self.udid)))
-                state, line = self.health_line(info)
-                if half:
-                    state, line = "amber", "The last backup didn't finish. Back up again to complete it."
-                self.dev_last.configure(text=line or ("Not backed up with PhoneKeep yet" if not info else f"Last backup: {info['date']}"),
-                                        fg=AMBER if state == "amber" else MUTED)
-                self.dev_lock.configure(text=self.lock_badge(info))
-                self.open_btn.set_enabled(True)
+            self.devices = devs or []
+            ids = [d.get("UniqueDeviceID") or d.get("Identifier") for d in self.devices]
+            chosen = self.s.data.get("chosen_udid")
+            pick = None
+            if chosen in ids:
+                pick = self.devices[ids.index(chosen)]
+            elif not chosen and len(self.devices) == 1:
+                pick = self.devices[0]
+            if pick is not None:
+                self._show_device(pick)
+            elif self.devices:
+                # several phones and none chosen yet, or the chosen one went away: never switch by itself (B8)
+                self.device = self.udid = None
+                self.phone.set_state("none")
+                gone = chosen and chosen not in ids
+                self.dev_name.configure(text=(f"{self.s.data.get('chosen_name') or 'Your iPhone'} is no longer connected"
+                                              if gone else f"{len(self.devices)} iPhones nearby"))
+                self.dev_line.configure(text="Choose the iPhone to back up below.", fg=MUTED)
+                self.dev_last.configure(text="")
+                self.dev_lock.configure(text="")
+                self.open_btn.set_enabled(False)
             else:
                 self.device = self.udid = None
                 self.phone.set_state("none")
@@ -866,6 +961,7 @@ class App(_dnd_root()):
                 self.dev_last.configure(text="")
                 self.dev_lock.configure(text="")
                 self.open_btn.set_enabled(False)
+            self._fill_phone_list()
         if not silent:
             self.phone.set_state("searching")
             self.dev_name.configure(text="Looking for your iPhone…")
@@ -1198,6 +1294,9 @@ class App(_dnd_root()):
                 "active", detail="Connecting… Keep your iPhone unlocked and nearby. If it asks for its "
                                  "passcode, enter it. Your chats appear for you to choose as soon as "
                                  "the backup finishes."))
+            d = self.device or {}
+            self.log(f"Backing up {d.get('DeviceName') or 'your iPhone'} "
+                     f"({'cable' if d.get('ConnectionType') == 'USB' else 'Wi-Fi'})…")     # B8: names the phone
             path = wv.make_backup(Path(self.s["backup_dir"]), self.udid, log=self.log,
                                   progress=lambda p: self._progress_backup(p, t0),
                                   status=lambda text: self.call(
@@ -1620,6 +1719,26 @@ class SettingsWindow(tk.Toplevel):
         self.charging_var = tk.BooleanVar(value=bool(self.s["auto_backup_charging"]))
         ui.Chip(ab, "Only when charging", self.charging_var,
                 lambda: self.s.__setitem__("auto_backup_charging", self.charging_var.get()), size=12, bg=CARD).pack(anchor="w", pady=3)
+        # B8: which phones are backed up automatically
+        phones = {}
+        for udid in known_backed_up_phones(Path(self.s["backup_dir"])):
+            import snapshots as _snaps
+            info = wv.backup_info(_snaps.latest_backup_path(Path(self.s["backup_dir"]), udid))
+            phones[udid] = info.get("name") or "iPhone"
+        for d in getattr(app, "devices", []):
+            phones.setdefault(d.get("UniqueDeviceID") or d.get("Identifier"), d.get("DeviceName") or "iPhone")
+        self.phone_vars = {}
+        if phones:
+            tk.Label(ab, text="Back up automatically:", bg=CARD, fg=INK, font=font(12), anchor="w").pack(fill="x", pady=(8, 2))
+            for udid, name in phones.items():
+                v = tk.BooleanVar(value=udid in (self.s.data.get("auto_backup_phones") or []))
+                self.phone_vars[udid] = v
+
+                def toggle(u=udid, var=v):
+                    cur = [x for x in (self.s.data.get("auto_backup_phones") or []) if x != u]
+                    self.s["auto_backup_phones"] = cur + ([u] if var.get() else [])
+                ttk.Checkbutton(ab, text=name + ("" if sn_has(Path(self.s["backup_dir"]), udid) else "  (after its first backup)"),
+                                variable=v, command=toggle).pack(anchor="w", padx=(12, 0))
         self.sched_line = tk.Label(ab, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w")
         self.sched_line.pack(fill="x", pady=(4, 0))
         self.sched_line.configure(text=sch.Plan.from_settings(self.s.data).next_run_text(dt.datetime.now(), None).capitalize())
