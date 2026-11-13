@@ -23,7 +23,7 @@ COLOURS = {
     "messages": ("#5ac8fa", "#2f6bff"),
     "whatsapp": ("#3ddc84", "#0b9e6f"),
     "whatsappbusiness": ("#1fa58a", "#0b5c55"),
-    "calls": ("#4cd97b", "#169c62"),
+    "calls": ("#2fd3a8", "#0f8f86"),
     "contacts": ("#b8c0cc", "#6e7a8a"),
     "voicemail": ("#a58bff", "#6a3fe0"),
     "notes": ("#ffd84d", "#f5a623"),
@@ -104,17 +104,28 @@ def draw(key: str) -> Image.Image:
             d.rounded_rectangle((238, 238, 296, 286), radius=10, fill=dark)
             d.rounded_rectangle((254, 224, 280, 244), radius=6, outline=dark, width=7)
             d.rectangle((238, 256, 296, 260), fill=W)
-    elif key == "calls":                     # a handset inside a circular "history" arrow
-        d.arc((70, 70, 298, 298), start=-60, end=250, fill=W, width=LINE)
-        a = math.radians(-60)
-        tip = (c + 114 * math.cos(a), c + 114 * math.sin(a))
-        d.polygon([(tip[0] - 30, tip[1] - 8), (tip[0] + 22, tip[1] - 30), (tip[0] + 12, tip[1] + 28)], fill=W)
-        h = Image.new("RGBA", (S, S), (0, 0, 0, 0))          # a handset: a thick C with a cup at each end
-        hd = ImageDraw.Draw(h)
-        hd.arc((122, 112, 246, 256), start=105, end=255, fill=W, width=40)
-        hd.rounded_rectangle((150, 96, 214, 140), radius=20, fill=W)
-        hd.rounded_rectangle((150, 228, 214, 272), radius=20, fill=W)
-        g.alpha_composite(h.rotate(-35, center=(c, c), resample=Image.BICUBIC))
+    elif key == "calls":                     # a list of recent calls: arrows in/out, and a handset badge
+        for n, (y, out) in enumerate(((104, False), (172, True), (240, False))):
+            x0 = 78
+            if out:                          # outgoing: arrow up-right
+                d.line((x0 + 8, y + 40, x0 + 44, y + 4), fill=W, width=14)
+                d.polygon([(x0 + 22, y), (x0 + 50, y - 2), (x0 + 48, y + 26)], fill=W)
+            else:                            # incoming: arrow down-left
+                d.line((x0 + 44, y + 4, x0 + 8, y + 40), fill=W, width=14)
+                d.polygon([(x0 + 2, y + 18), (x0 + 4, y + 46), (x0 + 30, y + 44)], fill=W)
+            d.rounded_rectangle((x0 + 74, y + 12, 290 if n != 2 else 214, y + 34), radius=11, fill=W)
+        # handset badge: white circle, handset drawn as a thick curved stroke with rounded ends
+        d.ellipse((216, 216, 320, 320), fill=W)
+        col = _hex(COLOURS[key][1])
+        pts = []
+        for k in range(41):                  # a quarter-ellipse from the ear piece to the mouth piece
+            t = math.pi * (0.5 + k / 40 * 0.5)
+            pts.append((268 + 30 * math.cos(t) + 6, 268 + 30 * math.sin(t) - 6))
+        pts = [(x - 4, y + 4) for x, y in pts]
+        for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+            d.line((x1, y1, x2, y2), fill=col, width=16)
+        for (x, y) in (pts[0], pts[-1]):
+            d.ellipse((x - 13, y - 13, x + 13, y + 13), fill=col)
     elif key == "contacts":                  # a person in a circle
         d.ellipse((74, 74, 294, 294), outline=W, width=LINE)
         d.ellipse((144, 110, 224, 190), fill=W)
