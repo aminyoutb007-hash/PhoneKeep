@@ -40,8 +40,15 @@ def check(cond, what):
         failures.append(what)
 
 
-A = {"DeviceName": "Test iPhone A", "UniqueDeviceID": "00008030-B8AAAA", "ConnectionType": "USB", "ProductVersion": "26.5"}
-B = {"DeviceName": "Test iPhone B", "UniqueDeviceID": "00008030-B8BBBB", "ConnectionType": "Network", "ProductVersion": "18.6"}
+A = {"DeviceName": "Test iPhone A", "UniqueDeviceID": "00008030-B8AAAA", "ConnectionType": "USB", "ProductVersion": "26.5",
+     "ProductType": "iPhone15,3"}
+B = {"DeviceName": "Test iPhone B", "UniqueDeviceID": "00008030-B8BBBB", "ConnectionType": "Network", "ProductVersion": "18.6",
+     "ProductType": "iPhone18,2"}
+
+import models
+check(models.model_name("iPhone15,3") == "iPhone 14 Pro Max" and models.model_name("iPhone18,2") == "iPhone 17 Pro Max"
+      and models.model_name("iPhone18,4") == "iPhone Air" and models.model_name("iPhone99,9") == "iPhone"
+      and models.model_name(None) == "iPhone", "model names from the phone's code; an unknown code says just 'iPhone'")
 
 # -- one phone over cable and Wi-Fi is listed once, as cable -------------------------------------------------
 real_pmd3, real_check = wv._pmd3, wv.check_pmd3
@@ -83,11 +90,15 @@ try:
     rows = getattr(a, "phone_rows", {})
     check(a.udid is None and a.dev_name.cget("text") == "2 iPhones nearby" and not a.open_btn.enabled,
           f"two iPhones and none chosen yet: the card says so and nothing is picked ({a.dev_name.cget('text')!r})")
-    texts = {u: " ".join(w.cget("text") for w in r.winfo_children()) for u, r in rows.items()}
+    texts = {u: " ".join(r.itemcget(i, "text") for i in r.find_all() if r.type(i) == "text") for u, r in rows.items()}
     check(set(rows) == {A["UniqueDeviceID"], B["UniqueDeviceID"]} and "cable" in texts[A["UniqueDeviceID"]]
-          and "Wi-Fi" in texts[B["UniqueDeviceID"]] and "backed up" in texts[A["UniqueDeviceID"]]
-          and "not backed up yet" in texts[B["UniqueDeviceID"]],
-          f"both are listed with their connection and last backup: {list(texts.values())}")
+          and "Wi-Fi" in texts[B["UniqueDeviceID"]] and "iPhone 14 Pro Max · iOS 26.5" in texts[A["UniqueDeviceID"]]
+          and "iPhone 17 Pro Max · iOS 18.6" in texts[B["UniqueDeviceID"]],
+          f"both are shown as phones with their name, model, iOS and connection: {list(texts.values())}")
+    _pc = rows[A["UniqueDeviceID"]]
+    _pc.set_battery({"level": 80, "charging": True})
+    check(any("🔋 80% ⚡" in _pc.itemcget(i, "text") for i in _pc.find_all() if _pc.type(i) == "text"),
+          "the battery level and charging show on the card")
 
     a.choose_phone(B["UniqueDeviceID"])
     a.update()
@@ -96,7 +107,8 @@ try:
     check(a.s["chosen_udid"] == B["UniqueDeviceID"], "and the choice is remembered")
     detect()
     check(a.udid == B["UniqueDeviceID"], "looking for phones again keeps the chosen one")
-    check(a.phone_rows[B["UniqueDeviceID"]].cget("bg") == appmod.GREEN_SOFT, "the chosen phone is highlighted in the list")
+    check(a.phone_rows[B["UniqueDeviceID"]].chosen and not a.phone_rows[A["UniqueDeviceID"]].chosen,
+          "the chosen phone is highlighted (green outline and ✓)")
 
     # the chosen phone goes away: no switching by itself
     reach["devs"] = [A]

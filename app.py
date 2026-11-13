@@ -890,7 +890,9 @@ class App(_dnd_root()):
         self.log(f"Chose {d.get('DeviceName') or 'iPhone'}.")
 
     def _fill_phone_list(self):
-        """The list of reachable iPhones in the device card, shown when there's a choice to make."""
+        """B8: the reachable iPhones side by side as phones (wallpaper, name, model · iOS, cable / Wi-Fi, battery),
+        shown when there's a choice to make. Wallpapers and battery are read in the background, once per phone."""
+        import models
         for w in self.phone_list.winfo_children():
             w.destroy()
         devs = getattr(self, "devices", [])
@@ -898,28 +900,52 @@ class App(_dnd_root()):
             self.phone_list.pack_forget()
             return
         self.phone_list.pack(fill="x", padx=18, pady=(0, 14))
-        tk.Label(self.phone_list, text="iPhones nearby", bg=CARD, fg=MUTED, font=font(11, "bold"), anchor="w").pack(fill="x")
-        import snapshots as _snaps
+        tk.Label(self.phone_list, text="iPhones nearby · click one to back it up", bg=CARD, fg=MUTED,
+                 font=font(11, "bold"), anchor="w").pack(fill="x")
+        row = tk.Frame(self.phone_list, bg=CARD)
+        row.pack(pady=(6, 0))
         self.phone_rows = {}
+        self._phone_extra = getattr(self, "_phone_extra", {})          # udid -> {"wall": path, "battery": dict}
         for d in devs:
             udid = d.get("UniqueDeviceID") or d.get("Identifier")
-            on = udid == self.udid
-            latest = _snaps.latest_backup_path(Path(self.s["backup_dir"]), udid)
-            info = wv.backup_info(latest) if latest else None
             how = "cable" if d.get("ConnectionType") == "USB" else "Wi-Fi"
-            when = f"backed up {info['date']}" if info else "not backed up yet"
-            row = tk.Frame(self.phone_list, bg=GREEN_SOFT if on else CARD, highlightthickness=1,
-                           highlightbackground=GREEN if on else LINE, cursor="hand2")
-            row.pack(fill="x", pady=3)
-            name = tk.Label(row, text=("✓  " if on else "📱  ") + (d.get("DeviceName") or "iPhone"),
-                            bg=row.cget("bg"), fg=INK, font=font(13, "bold"), anchor="w")
-            name.pack(side="left", padx=(10, 8), pady=6)
-            detail = tk.Label(row, text=f"iOS {d.get('ProductVersion', '?')} · {how} · {when}", bg=row.cget("bg"),
-                              fg=MUTED, font=font(12), anchor="w")
-            detail.pack(side="left", pady=6)
-            for w in (row, name, detail):
-                w.bind("<Button-1>", lambda e, u=udid: self.choose_phone(u))
-            self.phone_rows[udid] = row
+            card = ui.PhoneCard(row, d.get("DeviceName") or "iPhone", models.model_name(d.get("ProductType")),
+                                d.get("ProductVersion", "?"), how, lambda u=udid: self.choose_phone(u), bg=CARD)
+            card.pack(side="left", padx=10)
+            card.set(udid == self.udid)
+            self.phone_rows[udid] = card
+            extra = self._phone_extra.get(udid)
+            if extra:
+                card.set_wallpaper(extra.get("wall"))
+                card.set_battery(extra.get("battery"))
+            elif not self.busy:
+                self._phone_extra[udid] = {}
+                threading.Thread(target=self._read_phone_extra, args=(udid,), daemon=True).start()
+
+    def _read_phone_extra(self, udid: str):
+        """Wallpaper (lock screen, else home screen) and battery of one phone, for its card."""
+        extra = {}
+        try:
+            import device as devmod
+            live = devmod.LiveDevice(udid)
+            try:
+                extra["wall"] = live.wallpaper("lockscreen") or live.wallpaper("homescreen")
+            finally:
+                live.close()
+        except Exception:
+            pass
+        extra["battery"] = wv.battery_state(udid)
+        self._phone_extra[udid] = extra
+
+        def show():
+            card = getattr(self, "phone_rows", {}).get(udid)
+            if card is not None:
+                try:
+                    card.set_wallpaper(extra.get("wall"))
+                    card.set_battery(extra.get("battery"))
+                except tk.TclError:
+                    pass
+        self.call(show)
 
     def detect(self, silent: bool = False):
         if self.busy or getattr(self, "detecting", False):
