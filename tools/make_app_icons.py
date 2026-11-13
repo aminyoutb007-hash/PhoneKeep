@@ -35,6 +35,11 @@ COLOURS = {
     "files": ("#6ab7ff", "#2b7de9"),
     "apps": ("#7f7cff", "#4b47d6"),
     "allfiles": ("#9aa5b1", "#55606e"),
+    # the four "What do you want to keep?" choices on the main screen
+    "keep_chats": ("#3ddc84", "#0b9e6f"),
+    "keep_chats_photos": ("#ffb347", "#ff5e7e"),
+    "keep_everything": ("#7f7cff", "#4b47d6"),
+    "keep_custom": ("#9aa5b1", "#55606e"),
 }
 
 
@@ -196,6 +201,26 @@ def draw(key: str) -> Image.Image:
         col = _hex(COLOURS[key][1])
         for y in (162, 196, 230):
             d.rounded_rectangle((116, y, 204, y + 12), radius=6, fill=col)
+    elif key == "keep_chats":               # two speech bubbles
+        _bubble(d, (70, 100, 250, 216), "left")
+        _bubble(d, (150, 176, 300, 266), "right", fill=(255, 255, 255, 200))
+    elif key == "keep_chats_photos":        # a photo with a speech bubble in front
+        d.rounded_rectangle((70, 80, 262, 232), radius=26, outline=W, width=LINE)
+        d.ellipse((190, 104, 226, 140), fill=W)
+        d.polygon([(84, 220), (140, 156), (186, 206), (210, 184), (248, 220)], fill=W)
+        _bubble(d, (160, 196, 304, 284), "right")
+    elif key == "keep_everything":          # a phone with its app grid
+        d.rounded_rectangle((116, 60, 252, 308), radius=30, outline=W, width=LINE)
+        d.rounded_rectangle((164, 76, 204, 88), radius=6, fill=W)
+        for r in range(3):
+            for k in range(3):
+                x, y = 142 + k * 32, 110 + r * 36
+                d.rounded_rectangle((x, y, x + 22, y + 22), radius=6, fill=W)
+        d.rounded_rectangle((162, 270, 206, 280), radius=5, fill=W)
+    elif key == "keep_custom":              # three sliders
+        for n, (y, kx) in enumerate(((112, 220), (184, 136), (256, 196))):
+            d.rounded_rectangle((76, y - 9, 292, y + 9), radius=9, fill=(255, 255, 255, 150))
+            d.ellipse((kx - 26, y - 26, kx + 26, y + 26), fill=W)
     # a soft shadow under the symbol, then the symbol
     sh = g.getchannel("A").filter(ImageFilter.GaussianBlur(10)).point(lambda v: v * 0.22)
     base = _base(*COLOURS[key])
@@ -211,11 +236,12 @@ def draw(key: str) -> Image.Image:
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
-    sheet = Image.new("RGBA", (8 * 100, 2 * 100), (242, 244, 247, 255))
+    sheet = Image.new("RGBA", (8 * 100, 3 * 100), (242, 244, 247, 255))
     for n, key in enumerate(COLOURS):
         big = draw(key)
         big.resize((92, 92), Image.LANCZOS).save(OUT / f"{key}.png")
         big.resize((28, 28), Image.LANCZOS).save(OUT / f"{key}-28.png")
+        big.resize((48, 48), Image.LANCZOS).save(OUT / f"{key}-48.png")
         sheet.alpha_composite(big.resize((92, 92), Image.LANCZOS), ((n % 8) * 100 + 4, (n // 8) * 100 + 4))
     sheet.save(OUT.parent / "icons-sheet.png")
     print(f"{len(COLOURS)} icons in {OUT}")

@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import queue
 import sys
+from pathlib import Path
 import threading
 import tkinter as tk
 import tkinter.font as tkfont
@@ -127,15 +128,79 @@ class RoundButton(tk.Canvas):
                          font=font(self.size, "bold" if self.kind == "primary" else "normal"))
 
 
+ICON_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "assets" / "icons"
+_ICON_CACHE: dict = {}
+
+
+def app_icon(key: str, small: bool = False, size: int = 0):
+    """PhoneKeep's own drawn icon for an app (tools/make_app_icons.py), or None (then the emoji is shown).
+    small = the 28 px version; size=48 the main screen's choice icons."""
+    k = (key, small, size)
+    if k not in _ICON_CACHE:
+        img = None
+        p = ICON_DIR / (f"{key}-28.png" if small else f"{key}-{size}.png" if size else f"{key}.png")
+        if p.exists():
+            try:
+                from PIL import Image as _Image, ImageTk as _itk
+                img = _itk.PhotoImage(_Image.open(p))
+            except Exception:
+                img = None
+        _ICON_CACHE[k] = img
+    return _ICON_CACHE[k]
+
+
+class ChoiceCard(tk.Canvas):
+    """One of the "What do you want to keep?" choices: a soft rounded card with PhoneKeep's drawn icon,
+    a title and one line of detail; chosen = green outline, light green fill and a ✓ badge
+    (owner, 13 Nov: the old boxes with emoji looked messy)."""
+
+    H = 138
+
+    def __init__(self, parent, icon, title: str, sub: str, command: Callable, bg: str = None):
+        super().__init__(parent, height=self.H, highlightthickness=0, bd=0, bg=bg or parent.cget("bg"), cursor="hand2")
+        self.icon, self.title, self.sub, self.chosen, self.hover = icon, title, sub, False, False
+        self.bind("<Configure>", lambda e: self._draw())
+        self.bind("<ButtonRelease-1>", lambda e: command())
+        self.bind("<Enter>", lambda e: self._hover(True))
+        self.bind("<Leave>", lambda e: self._hover(False))
+
+    def _hover(self, on):
+        self.hover = on
+        self._draw()
+
+    def set(self, chosen: bool):
+        self.chosen = chosen
+        self._draw()
+
+    def _round(self, x0, y0, x1, y1, r, **kw):
+        pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1,
+               x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
+        return self.create_polygon(pts, smooth=True, **kw)
+
+    def _draw(self):
+        self.delete("all")
+        w, h = max(self.winfo_width(), 120), self.H
+        fill = GREEN_SOFT if self.chosen else "#ffffff"
+        line = GREEN if self.chosen else ("#b9c3c9" if self.hover else LINE)
+        self._round(2, 2, w - 2, h - 2, 16, fill=fill, outline=line, width=2 if self.chosen else 1)
+        if self.icon is not None:
+            self.create_image(w // 2, 38, image=self.icon)
+        self.create_text(w // 2, 82, text=self.title, fill=INK, font=font(14, "bold"))
+        self.create_text(w // 2, 108, text=self.sub, fill=MUTED, font=font(11), width=w - 24, justify="center")
+        if self.chosen:
+            self.create_oval(w - 30, 10, w - 10, 30, fill=GREEN, outline=GREEN)
+            self.create_text(w - 20, 20, text="✓", fill="#ffffff", font=font(11, "bold"))
+
+
 class Chip(tk.Canvas):
     """A toggle chip: rounded, green with a tick when on, outlined when off."""
 
     def __init__(self, parent, text: str, variable: tk.BooleanVar, command: Callable = None,
-                 size: int = 13, bg: str = None):
+                 size: int = 13, bg: str = None, height: int = 32):
         f = tkfont.Font(font=font(size))
         self.text, self.var, self.command, self.size = text, variable, command, size
         self.w = f.measure("✓ " + text) + 28
-        self.h = 32
+        self.h = height
         super().__init__(parent, width=self.w, height=self.h, highlightthickness=0, bd=0,
                          bg=bg or parent.cget("bg"), cursor="hand2")
         self.bind("<ButtonRelease-1>", self._toggle)

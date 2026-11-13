@@ -400,6 +400,17 @@ check(len(_fake.snap_choices) == 12 and _fake.snap_choices[0] == "Today 12:29  (
 _fake.snap_var.set(_fake.snap_choices[2]); _fake.snap_box.event_generate("<<ComboboxSelected>>"); root.update()
 check(_opened and _opened[-1] is _snaps[2], "choosing one opens that snapshot")
 _tl_host.destroy()
+check(all((_ui.ICON_DIR / f"keep_{k}-48.png").exists() for k in ("chats", "chats_photos", "everything", "custom")),
+      "the main screen's four choices have drawn icons")
+_picked = []
+_cc = _ui.ChoiceCard(root, _ui.app_icon("keep_chats", size=48), "Chats", "WhatsApp and Messages", lambda: _picked.append(1))
+_cc.pack(fill="x"); root.update()
+_cc.set(True); root.update()
+_texts = [_cc.itemcget(i, "text") for i in _cc.find_all() if _cc.type(i) == "text"]
+check("Chats" in _texts and "✓" in _texts, f"a chosen card shows its title and a ✓ badge: {_texts}")
+_cc.event_generate("<ButtonRelease-1>", x=10, y=10); root.update()
+check(_picked == [1], "clicking a card chooses it")
+_cc.destroy()
 import phone as _phone
 check(all((_phone.ICON_DIR / f"{k}.png").exists() and (_phone.ICON_DIR / f"{k}-28.png").exists() for k, *_r in _phone.APPS),
       "every app on the home screen has PhoneKeep's own drawn icon (big and small)")

@@ -60,24 +60,8 @@ APPS = [
     ("allfiles", "All files", "🗂", "#8e8e93", "backup"),
 ]
 LABEL = {k: l for k, l, *_ in APPS}
-ICON_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "assets" / "icons"
-_ICON_CACHE: dict = {}
-
-
-def app_icon(key: str, small: bool = False):
-    """PhoneKeep's own drawn icon for an app (tools/make_app_icons.py), or None (then the emoji is shown)."""
-    k = (key, small)
-    if k not in _ICON_CACHE:
-        img = None
-        p = ICON_DIR / (f"{key}-28.png" if small else f"{key}.png")
-        if Image is not None and p.exists():
-            try:
-                from PIL import ImageTk as _itk
-                img = _itk.PhotoImage(Image.open(p))
-            except Exception:
-                img = None
-        _ICON_CACHE[k] = img
-    return _ICON_CACHE[k]
+ICON_DIR = ui.ICON_DIR
+app_icon = ui.app_icon              # PhoneKeep's drawn icons (tools/make_app_icons.py)
 CHAT_APPS = ("messages", "whatsapp", "whatsappbusiness")
 
 
