@@ -221,13 +221,15 @@ class PhoneCard(tk.Canvas):
         x0, y0 = (W - PW) // 2, 12
         self._rr(x0, y0, x0 + PW, y0 + PH, 20, fill="#1c1c1e")                      # the phone
         if self.wall is not None:
+            # the phone's own picture already has its clock, island and home bar: draw nothing over it
+            # (owner, 13 Nov: "two clocks")
             self.create_image(W // 2, y0 + PH // 2, image=self.wall)
         else:
             self._rr(x0 + 5, y0 + 5, x0 + PW - 5, y0 + PH - 5, 18, fill="#2f6f63")
-        self._rr(W // 2 - 17, y0 + 9, W // 2 + 17, y0 + 19, 5, fill="#000000")       # Dynamic Island
-        now = dt.datetime.now().strftime("%H:%M")
-        self.create_text(W // 2, y0 + 50, text=now, fill="white", font=font(19, "bold"))
-        self._rr(W // 2 - 26, y0 + PH - 14, W // 2 + 26, y0 + PH - 11, 1, fill="#ffffff")  # home bar
+            self._rr(W // 2 - 17, y0 + 9, W // 2 + 17, y0 + 19, 5, fill="#000000")   # Dynamic Island
+            now = dt.datetime.now().strftime("%H:%M")
+            self.create_text(W // 2, y0 + 50, text=now, fill="white", font=font(19, "bold"))
+            self._rr(W // 2 - 26, y0 + PH - 14, W // 2 + 26, y0 + PH - 11, 1, fill="#ffffff")  # home bar
         ty = y0 + PH + 20
         self.create_text(W // 2, ty, text=self.name, fill=INK, font=font(14, "bold"), width=W - 16, justify="center")
         self.create_text(W // 2, ty + 24, text=f"{self.model} · iOS {self.ios}", fill=MUTED, font=font(11),

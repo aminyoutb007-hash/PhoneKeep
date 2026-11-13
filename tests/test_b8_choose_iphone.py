@@ -96,6 +96,11 @@ try:
           and "iPhone 17 Pro Max · iOS 18.6" in texts[B["UniqueDeviceID"]],
           f"both are shown as phones with their name, model, iOS and connection: {list(texts.values())}")
     _pc = rows[A["UniqueDeviceID"]]
+    from PIL import Image as _Im
+    _Im.new("RGB", (300, 600), (40, 90, 160)).save(W / "wall.png")
+    _pc.set_wallpaper(W / "wall.png")
+    check(not any(":" in _pc.itemcget(i, "text") for i in _pc.find_all() if _pc.type(i) == "text"),
+          "with the phone's own picture, no clock is drawn over it (it has its own)")
     _pc.set_battery({"level": 80, "charging": True})
     check(any("🔋 80% ⚡" in _pc.itemcget(i, "text") for i in _pc.find_all() if _pc.type(i) == "text"),
           "the battery level and charging show on the card")
