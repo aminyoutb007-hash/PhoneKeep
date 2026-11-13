@@ -60,6 +60,24 @@ APPS = [
     ("allfiles", "All files", "🗂", "#8e8e93", "backup"),
 ]
 LABEL = {k: l for k, l, *_ in APPS}
+ICON_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)) / "assets" / "icons"
+_ICON_CACHE: dict = {}
+
+
+def app_icon(key: str, small: bool = False):
+    """PhoneKeep's own drawn icon for an app (tools/make_app_icons.py), or None (then the emoji is shown)."""
+    k = (key, small)
+    if k not in _ICON_CACHE:
+        img = None
+        p = ICON_DIR / (f"{key}-28.png" if small else f"{key}.png")
+        if Image is not None and p.exists():
+            try:
+                from PIL import ImageTk as _itk
+                img = _itk.PhotoImage(Image.open(p))
+            except Exception:
+                img = None
+        _ICON_CACHE[k] = img
+    return _ICON_CACHE[k]
 CHAT_APPS = ("messages", "whatsapp", "whatsappbusiness")
 
 
@@ -365,10 +383,11 @@ class PhoneWindow(tk.Toplevel):
         row = tk.Frame(self.timeline, bg=BG)
         row.pack(fill="x")
         current = self.snapshot.id if self.snapshot else snaps[0].id
+        titles = sn.timeline_titles(snaps[:8])
         for i, snap in enumerate(snaps[:8]):
-            lab = tk.Label(row, text=(("🔒 " if snap.locked else "") + snap.title), bg=GREEN if snap.id == current else CARD,
+            lab = tk.Label(row, text=(("🔒 " if snap.locked else "") + titles[i]), bg=GREEN if snap.id == current else CARD,
                            fg="white" if snap.id == current else INK, font=font(11), padx=8, pady=3, cursor="hand2")
-            lab.pack(side="left", padx=(0, 4), pady=2)
+            lab.grid(row=i // 3, column=i % 3, padx=(0, 4), pady=2, sticky="w")     # wraps, 3 a row
             lab.bind("<Button-1>", lambda e, s_=snap: self.open_snapshot(s_))
             lab.bind("<Button-3>", lambda e, s_=snap: self._snapshot_menu(e, s_))
             lab.bind("<Button-2>", lambda e, s_=snap: self._snapshot_menu(e, s_))
@@ -685,10 +704,14 @@ class PhoneWindow(tk.Toplevel):
             t.grid(row=i // cols, column=i % cols, padx=10, pady=10, sticky="n")
             cv = tk.Canvas(t, width=92, height=92, bg=BG, highlightthickness=0, cursor="hand2")
             cv.pack()
-            pts = [8 + 22, 8, 84 - 22, 8, 84, 8, 84, 8 + 22, 84, 84 - 22, 84, 84, 84 - 22, 84,
-                   8 + 22, 84, 8, 84, 8, 84 - 22, 8, 8 + 22, 8, 8]
-            cv.create_polygon(pts, smooth=True, fill=colour, outline=LINE if colour == "#ffffff" else "")
-            cv.create_text(46, 46, text=icon, font=font(34))
+            img = app_icon(key)
+            if img is not None:
+                cv.create_image(46, 46, image=img)
+            else:
+                pts = [8 + 22, 8, 84 - 22, 8, 84, 8, 84, 8 + 22, 84, 84 - 22, 84, 84, 84 - 22, 84,
+                       8 + 22, 84, 8, 84, 8, 84 - 22, 8, 8 + 22, 8, 8]
+                cv.create_polygon(pts, smooth=True, fill=colour, outline=LINE if colour == "#ffffff" else "")
+                cv.create_text(46, 46, text=icon, font=font(34))
             tk.Label(t, text=label, bg=BG, fg=INK, font=font(12, "bold"), wraplength=120).pack()
             cl = tk.Label(t, text="", bg=BG, fg=MUTED, font=font(11))
             cl.pack()
@@ -723,7 +746,12 @@ class PhoneWindow(tk.Toplevel):
         top.pack(fill="x", pady=(0, 8))
         RoundButton(top, "‹  Home", self.show_home, "secondary", 100, 32, 12).pack(side="left")
         icon = next(i for k, _l, i, *_ in APPS if k == key)
-        tk.Label(top, text=f"{icon}  {LABEL[key]}", bg=BG, fg=INK, font=font(19, "bold")).pack(side="left", padx=12)
+        small = app_icon(key, small=True)
+        if small is not None:
+            tk.Label(top, image=small, text=f"  {LABEL[key]}", compound="left", bg=BG, fg=INK,
+                     font=font(19, "bold")).pack(side="left", padx=12)
+        else:
+            tk.Label(top, text=f"{icon}  {LABEL[key]}", bg=BG, fg=INK, font=font(19, "bold")).pack(side="left", padx=12)
         self.view_sub = tk.Label(top, text=sub, bg=BG, fg=MUTED, font=font(12))
         self.view_sub.pack(side="left")
         return top

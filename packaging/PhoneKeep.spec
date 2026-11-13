@@ -40,6 +40,7 @@ hiddenimports += ["sections", "phonekeep", "app", "ui", "photos", "tables", "pho
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))  # project folder
 datas += [(os.path.join(ROOT, "assets", "fonts"), os.path.join("assets", "fonts"))]   # PDF fonts (M3)
+datas += [(os.path.join(ROOT, "assets", "icons"), os.path.join("assets", "icons"))]   # app icons (tools/make_app_icons.py)
 ICON = os.path.join(SPECPATH, "icon.ico" if sys.platform == "win32" else "icon.png")
 
 a = Analysis([os.path.join(ROOT, "launcher.py")], pathex=[ROOT], binaries=binaries, datas=datas,

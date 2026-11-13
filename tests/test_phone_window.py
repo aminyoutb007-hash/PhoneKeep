@@ -375,6 +375,10 @@ check(pp.selected == {i.id for i in pp.months["2025-06"]} and pp.mlist.item("202
       "and the month is ticked, 4/4")
 pp._set_month(False); pp._set_all(True); root.update()
 check(len(_placed()) == 4 and pp.mlist.selection() == ("2025-06",), "Clear this month and Select all keep the same month open")
+import phone as _phone
+check(all((_phone.ICON_DIR / f"{k}.png").exists() and (_phone.ICON_DIR / f"{k}-28.png").exists() for k, *_r in _phone.APPS),
+      "every app on the home screen has PhoneKeep's own drawn icon (big and small)")
+check(_phone.app_icon("messages") is not None, "and it loads")
 check(ttk.Style().lookup("Months.Treeview", "background") == _ui.CARD, "the month list uses PhoneKeep's colours, not the system's dark ones")
 pp.destroy()
 

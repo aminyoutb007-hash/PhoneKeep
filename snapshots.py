@@ -174,6 +174,21 @@ class Snapshot:
         return f"{day} {self.when.strftime('%b')}" + ("" if d.year == today.year else f" {d.year}")
 
 
+def timeline_titles(snaps: list) -> list[str]:
+    """Titles for the timeline: the day, plus the time when there are several snapshots that day
+    ("Today 11:33", "Today 12:11"; owner, 13 Nov: four buttons all said "Today")."""
+    per_day: dict = {}
+    for s in snaps:
+        per_day[s.when.date()] = per_day.get(s.when.date(), 0) + 1
+    out = []
+    for s in snaps:
+        if s.label or per_day[s.when.date()] == 1:
+            out.append(s.title)
+        else:
+            out.append(f"{s.title} {s.when.strftime('%H:%M')}")
+    return out
+
+
 def _choices(backup_dir: Path, udid: str) -> dict:
     try:
         return json.loads((phone_dir(backup_dir, udid) / "snapshots.json").read_text(encoding="utf-8"))
