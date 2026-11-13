@@ -669,6 +669,54 @@ class Eta:
         return f"{pct:.0f}%" + (f" · {eta}" if eta else " · working out time left…")
 
 
+def touchpad_deltas(delta: int) -> tuple[int, int]:
+    """Tk 9's <TouchpadScroll> packs the horizontal and vertical pixel deltas in one number (what
+    tk::PreciseScrollDeltas unpacks): the high 16 bits are x, the low 16 bits y, both signed."""
+    dx = delta >> 16
+    dy = ((delta & 0xFFFF) ^ 0x8000) - 0x8000
+    if dx >= 0x8000:
+        dx -= 0x10000
+    return dx, dy
+
+
+def wheel_scroll(canvas: tk.Canvas) -> None:
+    """Scroll `canvas` with a mouse wheel, Linux's buttons 4/5, and a Mac trackpad's two-finger scroll
+    (Tk 9 sends that as <TouchpadScroll>, not <MouseWheel>; owner, 13 Nov: two-finger scroll did nothing in
+    Photos), wherever the pointer is inside it, including over the tiles and labels it holds."""
+    canvas.configure(yscrollincrement=1)                 # scroll in pixels, so a trackpad moves smoothly
+    top = canvas.winfo_toplevel()
+
+    def inside(w) -> bool:
+        while w is not None:
+            if w is canvas:
+                return True
+            w = getattr(w, "master", None)
+        return False
+
+    def pixels(n: float):
+        if canvas.winfo_exists() and n:
+            canvas.yview_scroll(int(n), "units")
+
+    def on_wheel(e):
+        if inside(e.widget):
+            d = e.delta
+            steps = d / 120 if abs(d) >= 120 else d      # Windows/Tk 9 notches are 120; Tk 8.6 on a Mac sends small ints
+            pixels(-steps * 40)
+
+    def on_touchpad(e):
+        if inside(e.widget):
+            _dx, dy = touchpad_deltas(int(e.delta))
+            pixels(-dy)
+
+    top.bind("<MouseWheel>", on_wheel, add="+")
+    top.bind("<Button-4>", lambda e: inside(e.widget) and pixels(-120), add="+")
+    top.bind("<Button-5>", lambda e: inside(e.widget) and pixels(120), add="+")
+    try:
+        top.bind("<TouchpadScroll>", on_touchpad, add="+")
+    except tk.TclError:                                  # Tk 8.6 has no such event
+        pass
+
+
 def use_light_appearance(win) -> bool:
     """PhoneKeep is drawn in light colours; on a Mac in dark mode the standard controls (lists, text boxes,
     drop-downs) would otherwise turn black (owner, 13 Nov: "the chats in black look untidy"). Until a real
@@ -811,10 +859,7 @@ class PhotoPanel(tk.Frame):
         self.gridf.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self._laid_out = None          # (month, cols, shown) of the last layout: re-grid only when it changes,
         self.canvas.bind("<Configure>", lambda e: self._relayout())   # or a Configure storm can loop (macOS)
-        for w in (self.canvas, self.gridf):
-            w.bind("<MouseWheel>", self._wheel)
-            w.bind("<Button-4>", lambda e: self.canvas.yview_scroll(-3, "units"))
-            w.bind("<Button-5>", lambda e: self.canvas.yview_scroll(3, "units"))
+        wheel_scroll(self.canvas)          # wheel, Linux buttons and the Mac trackpad, over tiles too
 
         self.foot = tk.Frame(self, bg=BG)
         self.foot.pack(side="bottom", fill="x", padx=16, pady=12, before=body)
@@ -825,9 +870,6 @@ class PhotoPanel(tk.Frame):
         if self.month_keys:
             self.mlist.selection_set(self.month_keys[0])
         self._update_count()
-
-    def _wheel(self, e):
-        self.canvas.yview_scroll(int(-e.delta / (1 if sys.platform == "darwin" else 120)), "units")
 
     def _fill_months(self):
         """Month rows with their ☑/◪/☐ and counts. Rows are updated in place: deleting and re-inserting them
@@ -884,7 +926,6 @@ class PhotoPanel(tk.Frame):
         c.bind("<ButtonRelease-1>", lambda e, i=item: self._toggle(i))
         if self.on_open:
             c.bind("<Double-Button-1>", lambda e, i=item: self.on_open(i))
-        c.bind("<MouseWheel>", self._wheel)
         self.tiles[item.id] = c
         self._draw_tile(item)
         if item.id in self.images:

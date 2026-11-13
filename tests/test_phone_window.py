@@ -407,6 +407,25 @@ check(_phone.app_icon("messages") is not None, "and it loads")
 check(ttk.Style().lookup("Months.Treeview", "background") == _ui.CARD, "the month list uses PhoneKeep's colours, not the system's dark ones")
 pp.destroy()
 
+# scrolling (13 Nov): the wheel scrolls the photos with the pointer over a tile; a Mac trackpad's two-finger
+# scroll (Tk 9 <TouchpadScroll>) is unpacked the way Tk packs it
+_many = [_ph.PhotoItem(f"DCIM/100APPLE/IMG_{n:04}.JPG", f"IMG_{n:04}.JPG", 1000, _dt.datetime(2025, 3, 1 + n % 28), False)
+         for n in range(80)]
+pp2 = _ui.PhotoPanel(root, _Src(), _many)
+pp2.pack(fill="both", expand=True); root.update()
+pp2.mlist.selection_set("2025-03")
+for _ in range(30):
+    root.update()
+_tile = next(iter(pp2.tiles.values()))
+_y0 = pp2.canvas.yview()[0]
+for _ in range(3):
+    _tile.event_generate("<MouseWheel>", delta=-120, x=5, y=5)
+    root.update()
+check(pp2.canvas.yview()[0] > _y0, f"the mouse wheel over a photo scrolls the grid ({_y0:.3f} → {pp2.canvas.yview()[0]:.3f})")
+check(_ui.touchpad_deltas((3 << 16) | (0x10000 - 25)) == (3, -25) and _ui.touchpad_deltas(40) == (0, 40)
+      and _ui.touchpad_deltas(((0x10000 - 2) << 16) | 7) == (-2, 7), "two-finger trackpad deltas are unpacked (Tk 9)")
+pp2.destroy()
+
 # chat chooser (13 Nov): Select all / none sit right above the list, with a count; the ✓ header toggles all
 _lists = {"whatsapp": ("WhatsApp", [{"id": f"c{n}", "name": f"Chat {n}", "group": False, "messages": 3, "last": f"2025-10-0{n+1}", "first": "2025-01-01", "days": ["2025-01-01"]} for n in range(4)])}
 cp = _ui.ChatPanel(root, _lists)
