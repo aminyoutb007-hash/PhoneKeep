@@ -143,10 +143,14 @@ try:
     t_end = _t.time() + 5
     while _t.time() < t_end and "Test iPhone" not in a.log_box.get("1.0", "end"):
         a.update(); _t.sleep(0.02)
+    a.deiconify()                                       # Windows doesn't show a dialog of a hidden window
     dlg = ui.show_details(a, a.details_for_support(pr.details))
-    a.update()
+    t_end = _t.time() + 5
+    while _t.time() < t_end and not (dlg.winfo_ismapped() and dlg.winfo_width() > 1):
+        a.update(); _t.sleep(0.02)
     shown_text = dlg.text.get("1.0", "end")
-    check(dlg.winfo_width() >= 700 and dlg.resizable() == (True, True), f"the details window is large and resizable ({dlg.winfo_width()} px)")
+    w_set = dlg.winfo_width()
+    check(w_set >= 700 and dlg.resizable() == (True, True), f"the details window is large and resizable ({w_set} px)")
     check("Traceback" in shown_text and "what PhoneKeep was doing" in shown_text and "Backing up 'Test iPhone'" in shown_text
           and wv.VERSION in shown_text, "it shows the error, what PhoneKeep was doing and the version")
     dlg.copy()
