@@ -39,6 +39,19 @@ TIMEOUT = int(os.environ.get("PHONEKEEP_TEST_TIMEOUT", "420"))
 # any real failure still fails the run.
 RUNNER_TK_HANG = {"test_s3_no_network.py", "test_b4_location.py", "test_b5_open_backup.py"}
 ON_GITHUB_MAC = sys.platform == "darwin" and os.environ.get("GITHUB_ACTIONS") == "true"
+# every test writes PhoneKeep's own files (activity log, settings, locks) to a test folder, never ~/PhoneKeep
+os.environ["PHONEKEEP_HOME"] = str(HERE / "work" / "home")
+REAL_HOME = Path.home() / "PhoneKeep"
+
+
+def _real_home_state():
+    try:
+        return sorted((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in REAL_HOME.iterdir() if p.is_file())
+    except OSError:
+        return None
+
+
+real_before = _real_home_state()
 failed = []
 runner_hangs = []
 for name, script, needs_display in STEPS:
@@ -78,6 +91,9 @@ for name, script, needs_display in STEPS:
     print(f"--- {script}: {'ok' if not code else 'FAILED'} in {time.time() - t0:.0f} s", flush=True)
     if code:
         failed.append(script)
+if _real_home_state() != real_before:
+    print(f"\nFAIL: the tests changed files in the real {REAL_HOME} (they must use PHONEKEEP_HOME)")
+    failed.append("real ~/PhoneKeep untouched")
 if runner_hangs:
     print(f"\nNot counted (GitHub Mac runner hang, run them on a real Mac): {', '.join(runner_hangs)}")
 print("\nALL TESTS PASSED" if not failed else f"\nFAILED: {', '.join(failed)}")

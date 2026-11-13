@@ -14,6 +14,7 @@ import datetime as dt, json, os, shutil, sqlite3, subprocess, sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+os.environ.setdefault("PHONEKEEP_HOME", str(HERE / "work" / "home"))   # never the real ~/PhoneKeep
 sys.path.insert(0, str(HERE.parent))
 os.environ["PYTHONUTF8"] = "1"
 

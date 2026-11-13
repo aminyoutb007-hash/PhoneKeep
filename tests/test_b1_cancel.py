@@ -10,6 +10,7 @@ import os, shutil, subprocess, sys, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+os.environ.setdefault("PHONEKEEP_HOME", str(HERE / "work" / "home"))   # never the real ~/PhoneKeep
 sys.path.insert(0, str(HERE.parent))
 os.environ["PYTHONUTF8"] = "1"
 os.environ["PHONEKEEP_NO_HELPER"] = "1"
