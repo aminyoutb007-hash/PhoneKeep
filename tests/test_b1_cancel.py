@@ -48,8 +48,11 @@ elif args[0] == "--pk-backup":
     print("PKSTAGE started", flush=True)
     import os
     if os.environ.get("PK_STUB_PASSCODE"):          # the iPhone waits for its passcode first
-        print("Please enter your passcode on the device to continue", flush=True)
+        print("PKPASSCODE shown", flush=True)
+        print("Please enter the device passcode to continue the backup", flush=True)
         print("PKPCT 0.0", flush=True)
+        time.sleep(1.5)
+        print("PKPASSCODE done", flush=True)        # entered; the phone then prepares for a while
         time.sleep(1.5)
     for p in range(1, 400):
         print(f"PKPCT {p/10:.1f}", flush=True); time.sleep(0.25)
@@ -220,20 +223,34 @@ out2 = {}
 
 def run2():
     try:
-        wv.make_backup(root, UD, log=lambda m: None, progress=lambda p: None, attention=events.append)
+        wv.make_backup(root, UD, log=lambda m: None, progress=lambda p: events.append(("pct", p)), attention=events.append)
     except Exception as e:
         out2["e"] = e
 
 
 t = threading.Thread(target=run2); t.start()
 t0 = time.time()
-while time.time() - t0 < 20 and None not in events:
+while time.time() - t0 < 20 and not any(isinstance(e, tuple) and e[1] > 1 for e in events):
     time.sleep(0.05)
 wv.cancel_backup(); t.join(30)
 del os.environ["PK_STUB_PASSCODE"]
 check(events[:1] == [wv.PASSCODE_PROMPT] and "passcode" in wv.PASSCODE_PROMPT and "unlock" in wv.PASSCODE_PROMPT.lower(),
       f"the passcode prompt reaches the window as its own notice: {events[:1]}")
-check(None in events and events.count(wv.PASSCODE_PROMPT) == 1, f"and is taken down once copying starts: {events}")
+notices = [e for e in events if not isinstance(e, tuple)]
+check(notices[:2] == [wv.PASSCODE_PROMPT, None], f"and is taken down once, as soon as the passcode is entered: {notices}")
+first_copy = next((i for i, e in enumerate(events) if isinstance(e, tuple) and e[1] > 0), len(events))
+check(events.index(None) < first_copy, "before any copying starts (the phone prepares for minutes after the passcode)")
+
+# the real helper turns pymobiledevice3's log lines into PKPASSCODE lines
+import contextlib, io, logging
+import launcher
+buf = io.StringIO()
+lg = logging.getLogger("pk-test-mb2"); lg.setLevel(logging.INFO); lg.propagate = False
+lg.addHandler(launcher._passcode_handler())
+with contextlib.redirect_stdout(buf):
+    lg.warning("Please enter the device passcode to continue the backup")
+    lg.info("Device passcode prompt dismissed")
+check(buf.getvalue().split() == ["PKPASSCODE", "shown", "PKPASSCODE", "done"], f"the helper reports the passcode screen: {buf.getvalue()!r}")
 try:
     import tkinter as tk
     import app as appmod

@@ -277,6 +277,15 @@ def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int,
         elif line.startswith("PKSTAGE"):
             seen["connected"] = True
             continue
+        elif line.startswith("PKPASSCODE"):
+            shown = line.split()[-1] == "shown"
+            if shown != bool(seen.get("passcode")):
+                seen["passcode"] = shown
+                if seen.get("attention"):
+                    seen["attention"](PASSCODE_PROMPT if shown else None)
+            if shown:
+                log("Enter your passcode on the iPhone to continue.")
+            continue
         elif line.startswith("PKAPI"):
             tail.append(line)
             continue
