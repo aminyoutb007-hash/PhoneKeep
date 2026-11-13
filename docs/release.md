@@ -5,7 +5,8 @@ Copy this list into the release pull request ("Release 5.0") and tick each line.
 ## Before the release pull request
 
 - [ ] Every feature planned for this release is **Done** in [spec/02-roadmap.md](spec/02-roadmap.md); nothing is partly done.
-- [ ] `tests/run_all.py` passes on Mac and Windows in GitHub Actions on the release branch.
+- [ ] `tests/run_all.py` passes on Mac and Windows in GitHub Actions on the release branch (run the Tests workflow by hand with Mac and Windows ticked; they don't run on pull requests).
+- [ ] `tests/run_all.py` passes on a **real Mac** too (`.build-venv/bin/python tests/run_all.py` in the source folder). Three window tests hang inside Tk on GitHub's Mac runner only and are not counted there (see `RUNNER_TK_HANG` in `tests/run_all.py`), so the real Mac is where they count.
 - [ ] **Usability test** ([spec/00-user-experience.md](spec/00-user-experience.md)): five people, five tasks, 4 of 5 pass each task without help. Times and hesitations noted; notes attached to the pull request.
 - [ ] **Five journeys** timed on a fresh install with a real iPhone; none slower or longer than the last release (table attached).
 - [ ] **Speed targets** checked with the large test backup (300,000 messages / 50,000 photos) on a base-model Mac.

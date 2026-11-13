@@ -84,6 +84,10 @@ import firstrun
 
 firstrun.NO_PHONE_SECONDS = 2
 appmod.SETTINGS_FILE = W / "settings.json"
+# a fresh install's settings, pointing at the test's own empty folders from the start (never this computer's
+# real backup folder: on a Mac with backups, the guide would rightly not appear)
+import json
+appmod.SETTINGS_FILE.write_text(json.dumps({"backup_dir": str(W / "Backups"), "archive_dir": str(W / "Archive")}), encoding="utf-8")
 a = appmod.App()
 a.withdraw()
 a.s["backup_dir"] = str(W / "Backups")
