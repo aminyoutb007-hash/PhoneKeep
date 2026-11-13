@@ -24,11 +24,17 @@ grep -v -i '^rumps' requirements.txt > .build-venv/req.txt
 "$V" -m pip install -q --no-deps rumps
 "$V" -c "import Foundation, AppKit, Quartz, rumps" || { echo "rumps/pyobjc not importable in the build venv" >&2; exit 1; }
 
-# label: "<next release>-dev+<ID>-local", like GitHub's pull-request builds, from the branch name
+# label: "<next release>-dev+<ID>-local", like GitHub's pull-request builds, from the branch name.
+# --release (on a release tag only): no label, like GitHub's tag builds, for when GitHub's Macs are unavailable.
 NEXT=$(cat packaging/next-release.txt 2>/dev/null || echo 0)
 BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo local)
 ID=$(echo "$BR" | cut -d- -f1 | tr '[:lower:]' '[:upper:]')
 LABEL="${NEXT}-dev+${ID}-local"
+RELEASE_TAG=""
+if [ "$1" = "--release" ]; then
+  RELEASE_TAG=$(git describe --exact-match --tags HEAD 2>/dev/null || true)
+  case "$RELEASE_TAG" in v*) LABEL="" ;; *) echo "--release needs a release tag checked out (git checkout v5.0.1)" >&2; exit 1 ;; esac
+fi
 printf 'BUILD_LABEL = "%s"\n' "$LABEL" > build_label.py
 
 "$V" packaging/make_icons.py
@@ -52,9 +58,14 @@ rm -rf /Applications/PhoneKeep.app
 cp -R dist/PhoneKeep.app /Applications/
 echo "Installed /Applications/PhoneKeep.app ($LABEL)"
 
-if [ "$1" = "--dmg" ]; then
+if [ "$1" = "--dmg" ] || [ -n "$RELEASE_TAG" ]; then
   rm -rf dmg && mkdir dmg && cp -R dist/PhoneKeep.app dmg/ && ln -s /Applications dmg/Applications
   hdiutil create -volname "PhoneKeep" -srcfolder dmg -ov -format UDZO PhoneKeep.dmg
   rm -rf dmg
   echo "Done: $(pwd)/PhoneKeep.dmg"
+  if [ -n "$RELEASE_TAG" ]; then        # named and checksummed like GitHub's release files
+    mv PhoneKeep.dmg PhoneKeep-Mac-AppleSilicon.dmg
+    shasum -a 256 PhoneKeep-Mac-AppleSilicon.dmg > PhoneKeep-Mac-AppleSilicon.dmg.sha256
+    echo "Release file: $(pwd)/PhoneKeep-Mac-AppleSilicon.dmg ($RELEASE_TAG, no build label)"
+  fi
 fi
