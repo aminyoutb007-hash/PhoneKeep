@@ -137,6 +137,14 @@ try:
     a.require_unlock(wins[0].uncover)
     check(pump(lambda: all(getattr(w, "_lock_cover", 1) is None for w in wins)), "Unlock, confirmed: all windows show again")
 
+    # the pointer moving over a PhoneKeep window while another app is in front doesn't count as use
+    a._activity = time.time() - 6 * 60
+    real_focus = a.focus_get
+    a.focus_get = lambda: None
+    a._touch(None)
+    a.focus_get = real_focus
+    check(time.time() - a._activity > 5 * 60, "moving the pointer over PhoneKeep while using another app isn't 'use'")
+
     # activity keeps it unlocked
     a._activity = time.time() - 60
     a._idle_check()

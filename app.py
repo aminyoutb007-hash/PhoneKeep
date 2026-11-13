@@ -255,6 +255,9 @@ class App(_dnd_root()):
             self.bind_all(seq, self._touch, add="+")
         self._activity = time.time()
         self.after(20000, self._idle_check)
+        self.after(500, lambda: self.log("App lock: " + (f"on ({applock.describe(self.lock_kind())}), locks after "
+                                                         f"{self.s['lock_idle_minutes']} idle minutes" if self.lock_on()
+                                                         else "off" if self.lock_kind() else "not available on this computer") + "."))
         self.after(1500, self.start_helper)
 
     # ------------------------------------------------------------------ layout
@@ -777,7 +780,14 @@ class App(_dnd_root()):
                 return False
         return box["ok"]
 
-    def _touch(self, _e=None):
+    def _touch(self, e=None):
+        """Activity counts only while PhoneKeep is the app in front: the pointer passing over a PhoneKeep
+        window while the owner works in another app kept it unlocked forever (owner's Mac, 13 Nov)."""
+        try:
+            if self.focus_get() is None:
+                return
+        except (tk.TclError, KeyError):
+            return
         self._activity = time.time()
 
     def _idle_check(self):
