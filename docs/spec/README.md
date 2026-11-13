@@ -28,6 +28,7 @@ Previews and nice touches come third. A feature that weakens either priority doe
 | [10-device.md](10-device.md) | Device overview, battery, storage, moving to a new iPhone, screenshots |
 | [11-previews.md](11-previews.md) | Previews and nice touches |
 | [12-engineering.md](12-engineering.md) | Code map, architecture, tests, pull requests, build and release, what is out of scope |
+| [13-phone-health.md](13-phone-health.md) | Phone check-up (storage, battery, stability, security) and photo clean-up |
 | [../release.md](../release.md) | The release checklist (copied into each release pull request) |
 
 ## How to work
