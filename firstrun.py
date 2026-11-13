@@ -380,7 +380,8 @@ class FirstRunGuide(tk.Frame):
         def work():
             from pathlib import Path
             return wv.make_backup(Path(app.s["backup_dir"]), app.udid, log=app.log, progress=progress, status=status,
-                                  keep=app.s["snapshots_keep"], until_disk_full=app.s["snapshots_until_full"])
+                                  keep=app.s["snapshots_keep"], until_disk_full=app.s["snapshots_until_full"],
+                                  attention=lambda text: app.call(lambda: app.passcode_notice(text)))
 
         def done(result):
             self.cancel_btn.pack_forget()

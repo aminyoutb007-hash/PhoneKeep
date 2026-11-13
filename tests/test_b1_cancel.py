@@ -46,6 +46,14 @@ elif args[0] == "--pk-backup":
     d.mkdir(parents=True, exist_ok=True)
     (d / "Info.plist").write_bytes(b"x" * 1000)
     print("PKSTAGE started", flush=True)
+    import os
+    if os.environ.get("PK_STUB_PASSCODE"):          # the iPhone waits for its passcode first
+        print("PKPASSCODE shown", flush=True)
+        print("Please enter the device passcode to continue the backup", flush=True)
+        print("PKPCT 0.0", flush=True)
+        time.sleep(1.5)
+        print("PKPASSCODE done", flush=True)        # entered; the phone then prepares for a while
+        time.sleep(1.5)
     for p in range(1, 400):
         print(f"PKPCT {p/10:.1f}", flush=True); time.sleep(0.25)
 ''')
@@ -188,6 +196,77 @@ try:
     g.destroy(); a.destroy()
 except tk.TclError as ex:
     print(f"(window checks skipped: no display: {ex})")
+
+# progress during an update backup (13 Nov, 5.0.1): the phone rewrites files that are already there, so the
+# folder hardly grows; what was written since the start is what counts
+upd = W / "update-backup"
+upd.mkdir(parents=True, exist_ok=True)
+old_file = upd / "aa" / "old"
+old_file.parent.mkdir(exist_ok=True)
+old_file.write_bytes(b"x" * 3_000_000)
+os.utime(old_file, (time.time() - 3600, time.time() - 3600))
+rewritten = upd / "bb" / "rewritten"
+rewritten.parent.mkdir(exist_ok=True)
+rewritten.write_bytes(b"y" * 1_000_000)
+os.utime(rewritten, (time.time() - 3600, time.time() - 3600))
+t0 = time.time()
+rewritten.write_bytes(b"z" * 1_000_000)          # same size: the folder doesn't grow
+(upd / "bb" / "new").write_bytes(b"n" * 500_000)
+check(wv._bytes_written_since(upd, t0 - 2) == 1_500_000,
+      f"an update backup counts rewritten and new files, not folder growth ({wv._bytes_written_since(upd, t0 - 2):,} bytes)")
+
+# the iPhone asks for its passcode (13 Nov): the windows get a clear notice, then it goes once copying starts
+events = []
+os.environ["PK_STUB_PASSCODE"] = "1"
+out2 = {}
+
+
+def run2():
+    try:
+        wv.make_backup(root, UD, log=lambda m: None, progress=lambda p: events.append(("pct", p)), attention=events.append)
+    except Exception as e:
+        out2["e"] = e
+
+
+t = threading.Thread(target=run2); t.start()
+t0 = time.time()
+while time.time() - t0 < 20 and not any(isinstance(e, tuple) and e[1] > 1 for e in events):
+    time.sleep(0.05)
+wv.cancel_backup(); t.join(30)
+del os.environ["PK_STUB_PASSCODE"]
+check(events[:1] == [wv.PASSCODE_PROMPT] and "passcode" in wv.PASSCODE_PROMPT and "unlock" in wv.PASSCODE_PROMPT.lower(),
+      f"the passcode prompt reaches the window as its own notice: {events[:1]}")
+notices = [e for e in events if not isinstance(e, tuple)]
+check(notices[:2] == [wv.PASSCODE_PROMPT, None], f"and is taken down once, as soon as the passcode is entered: {notices}")
+first_copy = next((i for i, e in enumerate(events) if isinstance(e, tuple) and e[1] > 0), len(events))
+check(events.index(None) < first_copy, "before any copying starts (the phone prepares for minutes after the passcode)")
+
+# the real helper turns pymobiledevice3's log lines into PKPASSCODE lines
+import contextlib, io, logging
+import launcher
+buf = io.StringIO()
+lg = logging.getLogger("pk-test-mb2"); lg.setLevel(logging.INFO); lg.propagate = False
+lg.addHandler(launcher._passcode_handler())
+with contextlib.redirect_stdout(buf):
+    lg.warning("Please enter the device passcode to continue the backup")
+    lg.info("Device passcode prompt dismissed")
+check(buf.getvalue().split() == ["PKPASSCODE", "shown", "PKPASSCODE", "done"], f"the helper reports the passcode screen: {buf.getvalue()!r}")
+try:
+    import tkinter as tk
+    import app as appmod
+    appmod.SETTINGS_FILE = W / "settings-pass.json"
+    a = appmod.App(); a.withdraw(); a.update()
+    a.passcode_notice(wv.PASSCODE_PROMPT); a.update()
+    check(a.bar_frame.winfo_manager() == "pack" and wv.PASSCODE_PROMPT in a.bar_text.cget("text")
+          and "bold" in str(a.bar_text.cget("font")) and a.bar_btn is None,
+          f"main window: big amber notice at the top: {a.bar_text.cget('text')!r}")
+    a.passcode_notice(None); a.update()
+    check(a.bar_frame.winfo_manager() == "", "and it goes away when copying starts")
+    a.show_problem(appmod.errors.explain("RuntimeError: x")); a.update()
+    check("bold" not in str(a.bar_text.cget("font")), "other banners keep the normal text size")
+    a.destroy()
+except tk.TclError as ex:
+    print(f"(window check skipped: {ex})")
 
 print("\nB1 CANCEL TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

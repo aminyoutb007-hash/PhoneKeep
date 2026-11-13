@@ -10,9 +10,27 @@ import os
 import sys
 
 
+def _passcode_handler():
+    """pymobiledevice3 logs the iPhone's passcode-screen notifications ("Please enter the device passcode…",
+    "Device passcode prompt dismissed"); print them as PKPASSCODE lines, so the window can ask for the passcode
+    and take the notice down as soon as it's entered (owner, 13 Nov)."""
+    import logging
+
+    class Passcode(logging.Handler):
+        def emit(self, record):
+            msg = record.getMessage().lower()
+            if "passcode" in msg and "dismissed" in msg:
+                print("PKPASSCODE done", flush=True)
+            elif "passcode" in msg and "enter" in msg:
+                print("PKPASSCODE shown", flush=True)
+    return Passcode(logging.INFO)
+
+
 def _pk_backup(args: list) -> None:
     """Internal: back up the iPhone and print machine-readable progress, one line each:
          PKPCT 37.5            percent done, as reported by the iPhone
+         PKPASSCODE shown      the iPhone shows its passcode screen for this backup
+         PKPASSCODE done       ... and it was dismissed (passcode entered)
          PKERR <message>       what went wrong
     Exit code 3 = this pymobiledevice3 lacks the API (the caller falls back to its CLI)."""
     import asyncio
@@ -26,6 +44,11 @@ def _pk_backup(args: list) -> None:
     except ImportError as e:
         print(f"PKAPI {e}", flush=True)
         sys.exit(3)
+
+    import logging
+    mb2_log = logging.getLogger("pymobiledevice3.services.mobilebackup2")
+    mb2_log.addHandler(_passcode_handler())
+    mb2_log.setLevel(min(mb2_log.level or logging.INFO, logging.INFO))
 
     async def run():
         async with await create_using_usbmux(serial=udid) as lockdown:

@@ -42,7 +42,7 @@ from typing import Callable, Optional
 from tables import csv_safe as _csv_safe
 
 APP_NAME = "PhoneKeep"
-VERSION = "5.0.0"
+VERSION = "5.0.1"
 
 try:
     from build_label import BUILD_LABEL   # "5.0-dev+B3" on a test build, "" on a release
@@ -61,6 +61,9 @@ APPLE_EPOCH = 978307200  # 2001-01-01 in Unix seconds
 
 DEFAULT_HOME = Path.home() / "PhoneKeep"
 DEFAULT_BACKUP_DIR = DEFAULT_HOME / "Backups"
+
+# what the windows and the menu bar say, big, while the iPhone waits for its passcode
+PASSCODE_PROMPT = "Look at your iPhone: unlock it and enter its passcode to start the backup."
 DEFAULT_ARCHIVE_DIR = DEFAULT_HOME / "Archive"
 
 Log = Callable[[str], None]
@@ -182,6 +185,22 @@ def _folder_bytes(folder: Path) -> int:
     return total
 
 
+def _bytes_written_since(folder: Path, since: float) -> int:
+    """Bytes in files written to `folder` since `since` (a time.time()). An update backup rewrites
+    files that are already there, so the folder hardly grows while gigabytes arrive (13 Nov: the
+    window said "getting ready" all through a backup); new and rewritten files both count here."""
+    total = 0
+    for root, _dirs, files in os.walk(folder):
+        for f in files:
+            try:
+                st = os.stat(os.path.join(root, f))
+            except OSError:
+                continue
+            if st.st_mtime >= since:
+                total += st.st_size
+    return total
+
+
 _backup_proc: dict = {"proc": None, "cancelled": False}
 
 
@@ -258,6 +277,15 @@ def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int,
         elif line.startswith("PKSTAGE"):
             seen["connected"] = True
             continue
+        elif line.startswith("PKPASSCODE"):
+            shown = line.split()[-1] == "shown"
+            if shown != bool(seen.get("passcode")):
+                seen["passcode"] = shown
+                if seen.get("attention"):
+                    seen["attention"](PASSCODE_PROMPT if shown else None)
+            if shown:
+                log("Enter your passcode on the iPhone to continue.")
+            continue
         elif line.startswith("PKAPI"):
             tail.append(line)
             continue
@@ -268,6 +296,10 @@ def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int,
         if pct is not None:
             pct = max(0.0, min(100.0, pct))
             seen["pct"] = pct
+            if pct >= 0.5 and seen.get("passcode"):
+                seen["passcode"] = False
+                if seen.get("attention"):
+                    seen["attention"](None)
             if progress:
                 progress(pct)
             if int(pct) // 5 != last_pct // 5:
@@ -278,6 +310,10 @@ def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int,
             line = line[6:]
         if "passcode" in line.lower() and "enter" in line.lower():
             line = "Enter your passcode on the iPhone to continue."      # the phone's own prompt, in our words
+            if not seen.get("passcode") and (seen.get("pct") or 0) < 0.5:
+                seen["passcode"] = True
+                if seen.get("attention"):
+                    seen["attention"](PASSCODE_PROMPT)
         tail.append(line)
         tail = tail[-15:]
         if "--udid" in line and "no such option" in line.lower():
@@ -289,11 +325,14 @@ def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int,
 def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = None,
                 log: Log = _print, progress: Optional[Callable[[float], None]] = None,
                 status: Optional[Callable[[str], None]] = None,
-                keep: int = 10, until_disk_full: bool = False) -> Path:
+                keep: int = 10, until_disk_full: bool = False,
+                attention: Optional[Callable[[Optional[str]], None]] = None) -> Path:
     """Back up the connected iPhone into backup_root/<UDID>/current, incremental after the first run,
     then record it as a snapshot (B3) and tidy old ones. Returns the folder to open (the new snapshot).
     progress(percent) follows the iPhone's own estimate; status(text) gets a plain-language line
-    every few seconds (what is happening, how much has been copied)."""
+    every few seconds (what is happening, how much has been copied). attention(text) is called when the
+    iPhone is waiting for its passcode (show it big: 13 Nov, one log line was easy to miss), and
+    attention(None) once copying has started."""
     import snapshots as _snaps
     check_pmd3()
     devices = list_devices()
@@ -350,17 +389,23 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
     log("Keep the phone unlocked and awake. If it asks for your passcode, enter it on the phone.")
 
     # a small watcher that reports how much has been copied, so there is always a sign of life
-    seen: dict = {"pct": None, "connected": False}
+    seen: dict = {"pct": None, "connected": False, "passcode": False, "attention": attention}
+
+    def copying_started():
+        if seen["passcode"]:
+            seen["passcode"] = False
+            if attention:
+                attention(None)
     stop = threading.Event()
-    start_bytes = _folder_bytes(target) if target.exists() else 0
     t_start = time.time()
 
     def watch():
         while not stop.wait(4):
-            if not status:
+            if not status and not attention:
                 continue
+            status_ = status or (lambda _t: None)
             try:
-                copied = max(0, _folder_bytes(target) - start_bytes) if target.exists() else 0
+                copied = _bytes_written_since(target, t_start - 2) if target.exists() else 0
             except Exception:
                 continue
             mins = int((time.time() - t_start) // 60)
@@ -369,12 +414,14 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
                 # Info.plist (with app icons) alone is ~20 MB and lands before the phone has even
                 # built its snapshot; only real file data means copying has started
                 if copied < 50_000_000:
-                    status("Your iPhone is getting the backup ready. This can take a few minutes "
+                    status_("Your iPhone is getting the backup ready. This can take a few minutes "
                            "before copying starts. Keep it unlocked." + took)
                 else:
-                    status(f"{_human_bytes(copied)} copied from the iPhone{took}")
+                    copying_started()
+                    status_(f"{_human_bytes(copied)} copied from the iPhone{took}")
             else:
-                status(f"{_human_bytes(copied)} copied from the iPhone{took}")
+                copying_started()
+                status_(f"{_human_bytes(copied)} copied from the iPhone{took}")
 
     threading.Thread(target=watch, daemon=True).start()
     try:
@@ -391,6 +438,7 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
                 code, tail = _stream_backup([*_helper(), *args], log, progress, seen)
     finally:
         stop.set()
+        copying_started()            # whatever happened, the passcode notice goes away
         _backup_proc["proc"] = None
         try:
             marker.unlink()

@@ -116,6 +116,11 @@ def explain(error, where: Optional[Path] = None, needed_bytes: Optional[int] = N
                 message = f"Not enough space on {_disk_name(where)}: {need}{_free_text(where)} free."
             return Problem(key, message, button, action, details=text)
     key, message, button, action = UNKNOWN
+    if isinstance(error, BaseException) and error.__traceback__ is not None:
+        # an error nobody expected: where it happened is what support needs (13 Nov: "error: Error -3 while
+        # decompressing data" alone didn't say which file or which step)
+        import traceback
+        text += "\n\n" + "".join(traceback.format_exception(type(error), error, error.__traceback__, limit=-12)).rstrip()
     return Problem(key, message, button, action, details=text)
 
 

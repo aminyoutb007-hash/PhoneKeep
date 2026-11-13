@@ -215,6 +215,7 @@ def _dnd_root():
 class App(_dnd_root()):
     def __init__(self):
         super().__init__()
+        ui.use_light_appearance(self)
         self.title(wv.APP_NAME)
         self._build_menu()
         self.geometry("820x860")
@@ -270,7 +271,7 @@ class App(_dnd_root()):
         self.bar_btn = None
         self.bar_details = tk.Label(self.bar_frame, text="Show details", bg="#fdecea", fg=MUTED, font=font(11), cursor="hand2")
         self.bar_details_text = ""
-        self.bar_details.bind("<Button-1>", lambda e: messagebox.showinfo("Details for support", self.bar_details_text, parent=self))
+        self.bar_details.bind("<Button-1>", lambda e: ui.show_details(self, self.details_for_support(self.bar_details_text)))
 
         self.body = tk.Frame(self, bg=BG)
         self.body.pack(fill="both", expand=True, padx=22, pady=16)
@@ -523,7 +524,7 @@ class App(_dnd_root()):
             for r in self.steps.values():
                 if r.state == "active":
                     r.set("error", detail=pr.message)
-            self.log("ERROR: " + pr.message + (f"  [{pr.details}]" if pr.details else ""))
+            self.log("ERROR: " + pr.message + (f"  [{pr.details.splitlines()[0]}]" if pr.details else ""))   # full text: Show details
             if not quiet:
                 self.show_problem(pr, retry=(lambda: self._run(fn, done)) if fn else None)
         else:
@@ -542,11 +543,40 @@ class App(_dnd_root()):
             return errors.Problem("plain", str(err), "Try again", errors.TRY_AGAIN, err.details, failure=True)
         return errors.explain(err)
 
+    def passcode_notice(self, text):
+        """The iPhone is waiting for its passcode: say so at the top in big amber, bring the window to the
+        front and ring once (13 Nov: a line in the activity text was easy to miss). text=None hides it."""
+        if text is None:
+            if getattr(self, "_passcode_up", False):
+                self._passcode_up = False
+                self.hide_problem()
+            return
+        self._passcode_up = True
+        self.show_problem(errors.Problem("passcode", "📱  " + text, "", "", failure=False))
+        self.bar_text.configure(font=font(16, "bold"))
+        try:
+            self.deiconify()
+            self.lift()
+            self.attributes("-topmost", True)
+            self.after(1500, lambda: self.attributes("-topmost", False))
+            self.bell()
+        except tk.TclError:
+            pass
+
+    def details_for_support(self, details: str) -> str:
+        """The error itself, then what PhoneKeep was doing (the activity panel's lines), for one Copy."""
+        try:
+            activity = self.log_box.get("1.0", "end").strip()
+        except tk.TclError:
+            activity = ""
+        about = f"{wv.APP_NAME} {wv.VERSION}" + (f" (build {wv.BUILD_LABEL})" if wv.BUILD_LABEL else "") + f" · {sys.platform}"
+        return f"{details}\n\n--- what PhoneKeep was doing ---\n{activity}\n\n--- {about} ---" if activity else f"{details}\n\n--- {about} ---"
+
     def show_problem(self, pr: errors.Problem, retry=None):
         """Inline banner at the top: one sentence + one button; red only for real failures."""
         colour = "#fdecea" if pr.failure else "#fff4e0"
         self.bar_frame.configure(bg=colour)
-        self.bar_text.configure(text=pr.message, bg=colour)
+        self.bar_text.configure(text=pr.message, bg=colour, font=font(13))
         self.bar_details.configure(bg=colour)
         if self.bar_btn is not None:
             self.bar_btn.destroy()
@@ -559,7 +589,7 @@ class App(_dnd_root()):
         elif pr.action == errors.INSTALL_APPLE_DEVICES:
             cmd = lambda: webbrowser.open("https://apps.microsoft.com/detail/9NP83LWLPZ9K")
         elif pr.action == errors.SHOW_DETAILS:
-            cmd = lambda: messagebox.showinfo("Details for support", pr.details or pr.message, parent=self)
+            cmd = lambda: ui.show_details(self, self.details_for_support(pr.details or pr.message))
         elif pr.action == errors.ENTER_PASSWORD and retry:
             cmd = lambda: (self.hide_problem(), retry())
         if cmd:
@@ -1064,7 +1094,8 @@ class App(_dnd_root()):
                                   progress=lambda p: self._progress_backup(p, t0),
                                   status=lambda text: self.call(
                                       lambda: self.steps["backup"].set("active", detail=text)),
-                                  keep=self.s["snapshots_keep"], until_disk_full=self.s["snapshots_until_full"])
+                                  keep=self.s["snapshots_keep"], until_disk_full=self.s["snapshots_until_full"],
+                                  attention=lambda text: self.call(lambda: self.passcode_notice(text)))
             self.call(lambda: self.steps["backup"].set("done", detail="Backup complete", right=""))
             return self._export(path)
         self._run(work, self._exported)

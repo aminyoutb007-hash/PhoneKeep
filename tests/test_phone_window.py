@@ -24,6 +24,7 @@ import faulthandler
 faulthandler.dump_traceback_later(120, repeat=True)   # if this ever stalls in CI, show where
 
 import tkinter as tk
+from tkinter import ttk
 from PIL import Image
 
 import phonekeep as wv
@@ -339,6 +340,61 @@ check(e.feed(100) == "100%", "done")
 win.close()
 root.update()
 check(("close",) in win.live.calls, "closing the window disconnects the simulated iPhone")
+
+# photo chooser (13 Nov): Select none, then Select this month, must keep the month's photos on screen
+import datetime as _dt
+import photos as _ph
+import ui as _ui
+
+
+class _Src:
+    label = "the iPhone"
+
+    def thumbnail(self, item):
+        return None
+
+
+_items = [_ph.PhotoItem(f"DCIM/100APPLE/IMG_{n:04}.JPG", f"IMG_{n:04}.JPG", 1000, _dt.datetime(2025, 6 if n < 4 else 5, 1 + n), False)
+          for n in range(6)]
+pp = _ui.PhotoPanel(root, _Src(), _items)
+pp.pack(fill="both", expand=True)
+root.geometry("1000x700"); root.deiconify(); root.update()
+pp.mlist.selection_set("2025-06"); root.update()
+
+
+def _placed():
+    root.update()
+    return [i for i in pp.months["2025-06"] if i.id in pp.tiles and pp.tiles[i.id].winfo_manager() == "grid"]
+
+
+check(len(_placed()) == 4, f"June shows its 4 photos ({len(_placed())})")
+pp._set_all(False); root.update()
+pp._set_month(True); root.update()
+check(len(_placed()) == 4, f"after Select none, then Select this month, the photos are still shown ({len(_placed())})")
+check(pp.selected == {i.id for i in pp.months["2025-06"]} and pp.mlist.item("2025-06", "values")[1] == "4/4",
+      "and the month is ticked, 4/4")
+pp._set_month(False); pp._set_all(True); root.update()
+check(len(_placed()) == 4 and pp.mlist.selection() == ("2025-06",), "Clear this month and Select all keep the same month open")
+check(ttk.Style().lookup("Months.Treeview", "background") == _ui.CARD, "the month list uses PhoneKeep's colours, not the system's dark ones")
+pp.destroy()
+
+# chat chooser (13 Nov): Select all / none sit right above the list, with a count; the ✓ header toggles all
+_lists = {"whatsapp": ("WhatsApp", [{"id": f"c{n}", "name": f"Chat {n}", "group": False, "messages": 3, "last": f"2025-10-0{n+1}", "first": "2025-01-01", "days": ["2025-01-01"]} for n in range(4)])}
+cp = _ui.ChatPanel(root, _lists)
+cp.pack(fill="both", expand=True); root.update()
+tbar = cp.tick_count.master
+btn_texts = [w.text for w in tbar.winfo_children() if hasattr(w, "text")]
+check(btn_texts == ["Select all", "Select none"] and tbar.master is cp.tree.master,
+      f"Select all / Select none are in the bar right above the chat list: {btn_texts}")
+check(tbar.winfo_y() < cp.tree.winfo_y(), "above it, not elsewhere in the window")
+check(cp.tick_count.cget("text") == "4 of 4 shown are ticked", f"with a count: {cp.tick_count.cget('text')!r}")
+cp._set_all(not cp._all_shown_ticked()); root.update()
+check(not cp.selected and cp.tick_count.cget("text") == "0 of 4 shown are ticked", "the ✓ header unticks all shown")
+cp._set_all(not cp._all_shown_ticked()); root.update()
+check(len(cp.selected) == 4, "and ticks them again")
+cp.destroy()
+# light appearance: applied on a Mac (dark mode drew the lists black); nothing to do elsewhere
+check(_ui.use_light_appearance(root) == (sys.platform == "darwin"), "every PhoneKeep window uses the light appearance on a Mac")
 root.destroy()
 
 print("\nPHONE WINDOW TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
