@@ -127,6 +127,8 @@ Related: [E5](05-ease-of-use.md#e5-all-phones-and-backups-in-one-list) (a card p
 - Checks Find My is off first and explains how to turn it off if not.
 - Encrypted backups restore with their password (from the keychain).
 - Logged in the activity log.
+- Writes to the phone, so it follows the standing rule: nothing is written to an iPhone without the owner confirming first, every time. The confirmation names the phone and the snapshot date, and its button says **Restore**, never OK.
+- Tested on a spare iPhone only (a restore replaces everything on the phone), never on the owner's own.
 
 **Done when**
 - [ ] A test phone restored from a snapshot shows that snapshot's messages and photos.
