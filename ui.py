@@ -26,6 +26,7 @@ except Exception:  # previews need Pillow; everything else works without it
 # ---------------------------------------------------------------------------
 GREEN = "#008069"
 GREEN_DARK = "#006a57"
+SELECT_BLUE = "#0a84ff"          # selected photos (the system's blue)
 GREEN_SOFT = "#e7f6f2"
 BG = "#f0f2f5"
 CARD = "#ffffff"
@@ -886,7 +887,8 @@ class PhotoPanel(tk.Frame):
         self.on_open = on_open
         self.source, self.items = source, items
         self.selected = {i.id for i in items} if select_all else set()
-        self.images: dict = {}
+        self.images: dict = {}          # (item id, tile size) -> image
+        self.paths: dict = {}           # item id -> its thumbnail file
         self.tiles: dict = {}
         self.worker = BgWorker(self)
         self.bind("<Destroy>", lambda e: self.worker.stop() if e.widget is self else None)
@@ -899,10 +901,12 @@ class PhotoPanel(tk.Frame):
 
         bar = tk.Frame(self, bg=BG)
         bar.pack(fill="x", padx=16, pady=(12, 6))
-        RoundButton(bar, "Select all", lambda: self._set_all(True), "secondary", 110, 32, 12).pack(side="left")
-        RoundButton(bar, "Select none", lambda: self._set_all(False), "secondary", 120, 32, 12).pack(side="left", padx=6)
-        RoundButton(bar, "Select this month", lambda: self._set_month(True), "light", 160, 32, 12).pack(side="left", padx=(18, 0))
-        RoundButton(bar, "Clear this month", lambda: self._set_month(False), "light", 150, 32, 12).pack(side="left", padx=6)
+        # one button that flips between Select all and Select none; a month or a year is (un)ticked with the box in
+        # its row of the list (owner, 13 Nov: four buttons were confusing)
+        self.all_btn = RoundButton(bar, "Select none", self._flip_all, "secondary", 120, 32, 12)
+        self.all_btn.pack(side="left")
+        tk.Label(bar, text="Tick a month or a year in the list to select all of it · click a photo to select it",
+                 bg=BG, fg=MUTED, font=font(11)).pack(side="left", padx=12)
 
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True, padx=16)
@@ -913,12 +917,16 @@ class PhotoPanel(tk.Frame):
         st.configure("Months.Treeview", background=CARD, fieldbackground=CARD, foreground=INK, rowheight=28,
                      font=font(12))
         st.map("Months.Treeview", background=[("selected", GREEN_SOFT)], foreground=[("selected", INK)])
+        st.configure("Months.Treeview", rowheight=26)
         self.mlist = ttk.Treeview(side, columns=("m", "n"), show="", selectmode="browse", height=18,
                                   style="Months.Treeview")
-        self.mlist.column("m", width=130)
-        self.mlist.column("n", width=86, anchor="e")
+        self.mlist.column("m", width=140)
+        self.mlist.column("n", width=64, anchor="e")
+        self.mlist.tag_configure("year", font=font(12, "bold"), foreground=INK)
+        self.mlist.tag_configure("month", foreground=INK)
         self.mlist.pack(fill="y", expand=True, padx=4, pady=4)
-        self.mlist.bind("<<TreeviewSelect>>", lambda e: self._open_month())
+        self.mlist.bind("<<TreeviewSelect>>", lambda e: self._on_select())
+        self.mlist.bind("<ButtonRelease-1>", self._row_click, add="+")
 
         grid_frame = card(body)
         grid_frame.pack(side="left", fill="both", expand=True, padx=(10, 0))
@@ -945,22 +953,70 @@ class PhotoPanel(tk.Frame):
         self._update_count()
 
     def _fill_months(self):
-        """Month rows with their ☑/◪/☐ and counts. Rows are updated in place: deleting and re-inserting them
-        re-selected the open month, which emptied the photo grid (13 Nov: Select none, then Select this month)."""
+        """A line per year, its months under it by name, each with "selected/total" (owner, 13 Nov: "September 20…"
+        was cut off). Rows are updated in place: deleting and re-inserting them re-selected the open month,
+        which emptied the photo grid (13 Nov: Select none, then Select this month)."""
+        years: dict = {}
         for m in self.month_keys:
-            items = self.months[m]
+            years.setdefault("Unknown" if m == "1970-01" else m[:4], []).append(m)
+        for y, months in years.items():
+            items = [i for m in months for i in self.months[m]]
             n_sel = sum(1 for i in items if i.id in self.selected)
-            label = dt.datetime.strptime(m, "%Y-%m").strftime("%B %Y") if m != "1970-01" else "Unknown date"
-            mark = "☑" if n_sel == len(items) else ("◪" if n_sel else "☐")
-            values = (f"{mark} {label}", f"{n_sel}/{len(items)}")
-            if self.mlist.exists(m):
-                self.mlist.item(m, values=values)
+            yid = f"year-{y}"
+            yv = (f"{self._box(n_sel, len(items))} " + (y if y != "Unknown" else "Unknown date"), f"{n_sel}/{len(items)}")
+            if self.mlist.exists(yid):
+                self.mlist.item(yid, values=yv)
             else:
-                self.mlist.insert("", "end", iid=m, values=values)
+                self.mlist.insert("", "end", iid=yid, values=yv, tags=("year",), open=True)
+            for m in months:
+                its = self.months[m]
+                k = sum(1 for i in its if i.id in self.selected)
+                label = f"    {self._box(k, len(its))} " + (dt.datetime.strptime(m, "%Y-%m").strftime("%B") if m != "1970-01" else "No date")
+                values = (label, f"{k}/{len(its)}")
+                if self.mlist.exists(m):
+                    self.mlist.item(m, values=values)
+                else:
+                    self.mlist.insert(yid, "end", iid=m, values=values, tags=("month",))
+
+    @staticmethod
+    def _box(n: int, total: int) -> str:
+        return "☑" if total and n == total else ("◪" if n else "☐")
+
+    def _row_click(self, e):
+        """A click on a row's box (un)ticks that whole month or year; a click elsewhere just opens it."""
+        row = self.mlist.identify_row(e.y)
+        if not row:
+            return
+        x0 = 30 if row.startswith("year-") else 52          # the box sits at the start of the row
+        if e.x > x0:
+            return
+        if row.startswith("year-"):
+            items = [i for m in self.mlist.get_children(row) for i in self.months[m]]
+        else:
+            items = self.months[row]
+        on = not all(i.id in self.selected for i in items)
+        for i in items:
+            (self.selected.add if on else self.selected.discard)(i.id)
+        for i in self.months.get(self._month(), []):
+            self._draw_tile(i)
+        self._fill_months()
+        self._update_count()
+
+    def _flip_all(self):
+        self._set_all(len(self.selected) < len(self.items))
+
+    def _on_select(self):
+        sel = self.mlist.selection()
+        if sel and sel[0].startswith("year-"):          # a year line opens its newest month
+            kids = self.mlist.get_children(sel[0])
+            if kids:
+                self.mlist.selection_set(kids[0])
+            return
+        self._open_month()
 
     def _month(self) -> Optional[str]:
         s = self.mlist.selection()
-        return s[0] if s else None
+        return s[0] if s and not s[0].startswith("year-") else None
 
     def _open_month(self):
         self.worker.clear()
@@ -972,8 +1028,14 @@ class PhotoPanel(tk.Frame):
         self.canvas.yview_moveto(0)
         self._more()
 
+    GAP = 6
+
     def _cols(self) -> int:
-        return max(3, (self.canvas.winfo_width() - 10) // (self.TILE + 8))
+        return max(3, (self.canvas.winfo_width() - self.GAP) // (self.TILE + self.GAP))
+
+    def _tile_size(self, cols: int) -> int:
+        """Tiles grow so the columns fill the width exactly (owner, 13 Nov: white space on the right)."""
+        return max(self.TILE, (self.canvas.winfo_width() - self.GAP * (cols + 1)) // cols)
 
     def _more(self):
         m = self._month()
@@ -994,22 +1056,20 @@ class PhotoPanel(tk.Frame):
         self._relayout()
 
     def _tile(self, item):
-        c = tk.Canvas(self.gridf, width=self.TILE, height=self.TILE, bg="#e9edef", highlightthickness=0,
-                      cursor="hand2")
+        t = getattr(self, "tile", self.TILE)
+        c = tk.Canvas(self.gridf, width=t, height=t, bg="#e9edef", highlightthickness=0, cursor="hand2")
         c.bind("<ButtonRelease-1>", lambda e, i=item: self._toggle(i))
         if self.on_open:
             c.bind("<Double-Button-1>", lambda e, i=item: self.on_open(i))
         self.tiles[item.id] = c
         self._draw_tile(item)
-        if item.id in self.images:
+        if item.id in self.paths:
             return
         self.worker.submit(lambda i=item: self.source.thumbnail(i),
                            lambda path, i=item, m=self._month(): self._thumb_ready(i, path, m))
 
     def _thumb_ready(self, item, path, month):
-        img = load_photo(path, self.TILE, square=True)
-        if img is not None:
-            self.images[item.id] = img
+        self.paths[item.id] = path
         if month == self._month() and item.id in self.tiles:
             self._draw_tile(item)
 
@@ -1018,8 +1078,12 @@ class PhotoPanel(tk.Frame):
         if c is None:
             return
         c.delete("all")
-        T = self.TILE
-        img = self.images.get(item.id)
+        T = getattr(self, "tile", self.TILE)
+        img = self.images.get((item.id, T))
+        if img is None and self.paths.get(item.id):
+            img = load_photo(self.paths[item.id], T, square=True)
+            if img is not None:
+                self.images[(item.id, T)] = img
         if img is not None:
             c.create_image(T // 2, T // 2, image=img)
         else:
@@ -1031,22 +1095,25 @@ class PhotoPanel(tk.Frame):
         if item.live_video:
             c.create_rectangle(4, 4, 36, 20, fill="#000000", outline="")
             c.create_text(20, 12, text="LIVE", fill="white", font=font(8, "bold"))
-        on = item.id in self.selected
-        # (no see-through "stipple" overlay: macOS draws it solid and hides the photo)
-        if on:
-            c.create_rectangle(2, 2, T - 2, T - 2, outline=GREEN, width=4)
-        c.create_oval(T - 28, 6, T - 6, 28, fill=GREEN if on else "", outline="white" if on else "#ffffff", width=2)
-        if not on:
-            c.create_oval(T - 27, 7, T - 7, 27, fill="", outline="#5f6b72", width=1)
-        if on:
-            c.create_text(T - 17, 17, text="✓", fill="white", font=font(12, "bold"))
+        # selected: a blue frame, nothing else (owner, 13 Nov: no tick circle)
+        if item.id in self.selected:
+            c.create_rectangle(2, 2, T - 2, T - 2, outline=SELECT_BLUE, width=5)
 
     def _relayout(self):
         cols = self._cols()
         m = self._month()
         if not m:
             return
-        key = (m, cols, self.shown, len(self.tiles))
+        tile = self._tile_size(cols)
+        if tile != getattr(self, "tile", None):
+            self.tile = tile
+            self.images = {k: v for k, v in self.images.items() if k[1] == tile}     # drop other sizes
+            for item in self.months[m][:self.shown]:
+                c = self.tiles.get(item.id)
+                if c is not None:
+                    c.configure(width=tile, height=tile)
+                    self._draw_tile(item)
+        key = (m, cols, tile, self.shown, len(self.tiles))
         if key == getattr(self, "_laid_out", None):
             return
         self._laid_out = key
@@ -1055,7 +1122,7 @@ class PhotoPanel(tk.Frame):
             c = self.tiles.get(item.id)
             if c is not None:
                 r, col = divmod(n, cols)
-                c.grid(row=r, column=col, padx=4, pady=4)
+                c.grid(row=r, column=col, padx=(self.GAP, 0), pady=(self.GAP, 0))
         btn = getattr(self, "_more_btn", None)
         if btn is not None:
             btn.grid(row=r + 1, column=0, columnspan=cols, pady=12)
@@ -1087,6 +1154,8 @@ class PhotoPanel(tk.Frame):
         n_p = len(chosen) - nv
         self.count.configure(text=f"{n_p:,} photo{'s' if n_p != 1 else ''} and {nv:,} video{'s' if nv != 1 else ''} "
                                   f"selected of {len(self.items):,} · about {self.human_size(size)}")
+        if hasattr(self, "all_btn"):
+            self.all_btn.configure_text("Select none" if len(self.selected) == len(self.items) and self.items else "Select all")
 
 
 class PhotoPicker(tk.Toplevel):

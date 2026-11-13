@@ -266,12 +266,15 @@ class App(_dnd_root()):
         head = tk.Frame(self, bg=GREEN)
         head.pack(fill="x")
         tk.Label(head, text="PhoneKeep", bg=GREEN, fg="white", font=font(21, "bold")).pack(side="left", padx=(22, 10), pady=14)
-        tk.Label(head, text="Back up your iPhone to this computer", bg=GREEN, fg="#d7efe9",
-                 font=font(13)).pack(side="left", pady=14)
+        # right-hand items first, so a narrow window trims the tagline instead of overlapping it; a test build
+        # shows "· test build" here and its full label in About (13 Nov: the long label ran over the tagline)
         ui.RoundButton(head, "⚙  Settings", self.open_settings, "ghost", 130, 34, 13).pack(side="right", padx=16)
-        ver = tk.Label(head, text=f"v{wv.full_version()}", bg=GREEN, fg="#d7efe9", font=font(11), cursor="hand2")
+        ver = tk.Label(head, text=f"v{wv.VERSION}" + (" · test build" if wv.BUILD_LABEL else ""), bg=GREEN,
+                       fg="#d7efe9", font=font(11), cursor="hand2")
         ver.pack(side="right", padx=(0, 4))
         ver.bind("<Button-1>", lambda e: self.open_about())
+        tk.Label(head, text="Back up your iPhone to this computer", bg=GREEN, fg="#d7efe9",
+                 font=font(13)).pack(side="left", pady=14)
 
         # problem banner (E3): one sentence, one button, Show details. Packed only when needed.
         self.bar_frame = tk.Frame(self, bg="#fdecea")

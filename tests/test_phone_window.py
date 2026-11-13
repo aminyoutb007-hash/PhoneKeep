@@ -411,6 +411,12 @@ check("Chats" in _texts and "✓" in _texts, f"a chosen card shows its title and
 _cc.event_generate("<ButtonRelease-1>", x=10, y=10); root.update()
 check(_picked == [1], "clicking a card chooses it")
 _cc.destroy()
+# headers (13 Nov): the right-hand buttons are packed first, so text on the left is trimmed, never drawn over them
+_ps = (HERE.parent / "phone.py").read_text(encoding="utf-8")
+_as = (HERE.parent / "app.py").read_text(encoding="utf-8")
+check(_ps.index("Refresh from iPhone\", self.refresh") < _ps.index("self.sub = tk.Label(head")
+      and _as.index("\"⚙  Settings\", self.open_settings") < _as.index("text=\"Back up your iPhone to this computer\""),
+      "window headers pack their buttons before the text, so nothing overlaps")
 import phone as _phone
 check(all((_phone.ICON_DIR / f"{k}.png").exists() and (_phone.ICON_DIR / f"{k}-28.png").exists() for k, *_r in _phone.APPS),
       "every app on the home screen has PhoneKeep's own drawn icon (big and small)")
@@ -427,6 +433,34 @@ pp2.pack(fill="both", expand=True); root.update()
 pp2.mlist.selection_set("2025-03")
 for _ in range(30):
     root.update()
+# 13 Nov: a line per year with its months under it; tiles fill the width; selected = a blue frame, no circle
+check(pp2.mlist.exists("year-2025") and "2025-03" in pp2.mlist.get_children("year-2025")
+      and pp2.mlist.item("2025-03", "values")[0].strip()[2:] == "March", "months are listed under their year, by name")
+pp2.mlist.selection_set("year-2025"); root.update()
+check(pp2._month() == "2025-03", "clicking a year opens its newest month")
+_cw = pp2.canvas.winfo_width()
+_used = pp2._cols() * (pp2.tile + pp2.GAP) + pp2.GAP
+check(0 <= _cw - _used < pp2._cols() + pp2.GAP, f"the photos fill the width ({_used} of {_cw} px)")
+_it = pp2.months["2025-03"][0]
+pp2.selected.add(_it.id); pp2._draw_tile(_it)
+_c = pp2.tiles[_it.id]
+_kinds = [(_c.type(i), _c.itemcget(i, "outline") if _c.type(i) in ("rectangle", "oval") else "") for i in _c.find_all()]
+check(("rectangle", _ui.SELECT_BLUE) in _kinds and not any(k == "oval" for k, _o in _kinds),
+      "a selected photo has a blue frame and no tick circle")
+# 13 Nov: one Select all / Select none button; a month's or a year's box in the list ticks all of it
+pp2._set_all(False); root.update()
+check(pp2.all_btn.text == "Select all", "with nothing selected the button says Select all")
+_y = pp2.mlist.bbox("2025-03")[1] + 5
+pp2._row_click(type("E", (), {"x": 40, "y": _y})()); root.update()
+check(all(i.id in pp2.selected for i in pp2.months["2025-03"]) and pp2.mlist.item("2025-03", "values")[0].strip().startswith("☑"),
+      "ticking a month's box selects the whole month")
+pp2._row_click(type("E", (), {"x": 120, "y": _y})()); root.update()
+check(all(i.id in pp2.selected for i in pp2.months["2025-03"]), "clicking the month's name only opens it")
+_yy = pp2.mlist.bbox("year-2025")[1] + 5
+pp2._row_click(type("E", (), {"x": 10, "y": _yy})()); root.update()
+check(not pp2.selected, "ticking the year's box when all of it is selected clears the year")
+pp2._flip_all(); root.update()
+check(len(pp2.selected) == len(_many) and pp2.all_btn.text == "Select none", "Select all selects everything and becomes Select none")
 _tile = next(iter(pp2.tiles.values()))
 _y0 = pp2.canvas.yview()[0]
 for _ in range(3):
