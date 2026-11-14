@@ -51,7 +51,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | --- | --- | --- | --- | --- |
 | H1 | Check-up screen: Storage, Battery, Stability, Security cards; "Why is my phone slow?" (needs V2, V3) | Not available | Partial (Stability and Security data come with H4, H5) | [13-phone-health.md](13-phone-health.md#h1-check-up-screen) |
 | H2 | Storage card: clean-up suggestions and forecast | Not available | Partial (owner's freed-space check to do; C1's two suggestions come with C1) | [13-phone-health.md](13-phone-health.md#h2-storage-card-and-clean-up-suggestions) |
-| H3 | Battery card: battery health history | Not available | To build | [13-phone-health.md](13-phone-health.md#h3-battery-card-and-battery-history) |
+| H3 | Battery card: battery health history | Not available | Partial (owner's three-backups check to do) | [13-phone-health.md](13-phone-health.md#h3-battery-card-and-battery-history) |
 | C1 | Photo clean-up: find and save (duplicates, similar, poor quality, old screenshots, large videos, chat clutter) | Not available | To build | [13-phone-health.md](13-phone-health.md#c1-photo-clean-up-find-and-save) |
 | H4 | Stability card: app crashes and unexpected restarts | Not available | To build | [13-phone-health.md](13-phone-health.md#h4-stability-card) |
 | H5 | Security card (includes S5) | Not available | To build | [13-phone-health.md](13-phone-health.md#h5-security-card) |

@@ -112,6 +112,123 @@ def details(win, key: str):
     tk.Frame(box, bg=CARD, height=14).pack()
     if key == "storage":
         storage_suggestions(win, r)
+    elif key == "battery":
+        battery_history_view(win, r)
+
+
+# -- H3: battery health over time, a plain note, tips for this iPhone ---------------------------------------------
+def draw_health_chart(cv: tk.Canvas, pts: list, width: int = 640, height: int = 210) -> None:
+    """One line, one point per backup: battery health (%) over time. One axis, a recessive grid, the 80% line,
+    the latest point labelled, and a tooltip on hover for every point."""
+    import battery_history as bh
+    left, right, top, bottom = 44, 70, 14, 26
+    lo = min(min(h for _w, h in pts) - 5, bh.REPLACE_BELOW - 5)
+    lo = max(0, (lo // 5) * 5)
+    t0, t1 = pts[0][0], pts[-1][0]
+    span = (t1 - t0).total_seconds()
+
+    def x(i, w):
+        frac = ((w - t0).total_seconds() / span) if span > 0 else (i / max(1, len(pts) - 1))
+        return left + frac * (width - left - right)
+
+    def y(h):
+        return top + (100 - h) / (100 - lo) * (height - top - bottom)
+
+    for g in range(lo, 101, 5):                        # recessive grid and its labels, in text colours
+        cv.create_line(left, y(g), width - right, y(g), fill=LINE)
+        cv.create_text(left - 8, y(g), text=f"{g}%", anchor="e", fill=MUTED, font=font(10))
+    cv.create_line(left, y(bh.REPLACE_BELOW), width - right, y(bh.REPLACE_BELOW), fill=MUTED, dash=(4, 3))
+    # named at the left, just above its line: clear of the latest point's label at the right
+    cv.create_text(left + 4, y(bh.REPLACE_BELOW) - 3, text="80%: replace", anchor="sw", fill=MUTED, font=font(10))
+    xy = [(x(i, w), y(h)) for i, (w, h) in enumerate(pts)]
+    if len(xy) > 1:
+        cv.create_line(*[c for p in xy for c in p], fill=ui.GREEN, width=2, smooth=False)
+    for (px, py) in xy:                               # 8 px points with a 2 px ring of the card colour
+        cv.create_oval(px - 4, py - 4, px + 4, py + 4, fill=ui.GREEN, outline=CARD, width=2)
+    lx, ly = xy[-1]
+    cv.create_text(lx + 8, ly - 10, text=f"about {pts[-1][1]}%", anchor="w", fill=INK, font=font(11, "bold"))
+    for i in sorted({0, len(pts) - 1}):
+        cv.create_text(xy[i][0], height - bottom + 12, text=checkup.day_text(pts[i][0]), fill=MUTED, font=font(10),
+                       anchor="w" if i == 0 and len(pts) > 1 else "e" if i else "center")
+    tip = {}
+
+    def hover(e):
+        cv.delete("tip")
+        near = min(range(len(xy)), key=lambda i: abs(xy[i][0] - e.x) + abs(xy[i][1] - e.y))
+        if abs(xy[near][0] - e.x) > 14 or abs(xy[near][1] - e.y) > 14:
+            return
+        w, h = pts[near]
+        t = cv.create_text(xy[near][0], xy[near][1] - 16, text=f"{checkup.day_text(w)} · about {h}%",
+                           fill=INK, font=font(11), anchor="s", tags="tip")
+        x0, y0, x1, y1 = cv.bbox(t)
+        cv.tag_lower(cv.create_rectangle(x0 - 6, y0 - 3, x1 + 6, y1 + 3, fill=CARD, outline=LINE, tags="tip"), t)
+        tip["shown"] = near
+    cv.bind("<Motion>", hover)
+    cv.bind("<Leave>", lambda e: cv.delete("tip"))
+    cv.hover = hover
+
+
+def battery_history_view(win, r: checkup.Report):
+    import battery_history as bh
+    pd = phone_dir(win)
+    history = checkup.load(pd)["history"] if pd else []
+    ov = getattr(win, "overview", None)
+    last = next((e for e in reversed(history) if e.get("product_type")), {})
+    product_type = (getattr(ov, "product_type", "") if ov is not None else "") or last.get("product_type")
+    sec = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+    sec.pack(fill="x", pady=(12, 0))
+    b = ov.battery if ov is not None else None
+    now = history[-1] if history else {}
+    health = b.health if b is not None else now.get("health")
+    cycles = b.cycles if b is not None else now.get("cycles")
+    bits = [f"about {health}% health" if health is not None else "", f"{cycles} charge cycles" if cycles is not None else "",
+            f"charge now {b.level}%" + (" (charging)" if b.charging else "") if b is not None and b.level is not None else ""]
+    win.battery_today = ("Today: " if b is not None else f"{r.as_of()}: ") + " · ".join(x for x in bits if x)
+    tk.Label(sec, text=win.battery_today, bg=CARD, fg=INK, font=font(13, "bold"), anchor="w").pack(
+        fill="x", padx=18, pady=(14, 0))
+    tk.Label(sec, text="Battery health over time", bg=CARD, fg=INK, font=font(15, "bold"), anchor="w").pack(
+        fill="x", padx=18, pady=(12, 2))
+    pts = bh.points(history)
+    win.battery_points = pts
+    if len(pts) >= bh.CHART_MIN_POINTS:
+        cv = tk.Canvas(sec, width=640, height=210, bg=CARD, highlightthickness=0)
+        cv.pack(anchor="w", padx=18, pady=(4, 0))
+        draw_health_chart(cv, pts)
+        win.battery_chart = cv
+    else:
+        win.battery_chart = None
+        tk.Label(sec, text="The chart fills in as PhoneKeep backs up: one point per backup.", bg=CARD, fg=MUTED,
+                 font=font(12), anchor="w").pack(fill="x", padx=18, pady=(4, 0))
+    win.battery_note = bh.note(history, product_type)
+    if win.battery_note:
+        tk.Label(sec, text=win.battery_note, bg=CARD, fg=INK, font=font(12), anchor="w", justify="left",
+                 wraplength=680).pack(fill="x", padx=18, pady=(8, 0))
+    win.battery_tips = bh.tips(history, product_type)
+    tk.Label(sec, text="Tips for this iPhone", bg=CARD, fg=INK, font=font(13, "bold"), anchor="w").pack(
+        fill="x", padx=18, pady=(14, 2))
+    for t in win.battery_tips:
+        tk.Label(sec, text="•  " + t, bg=CARD, fg=INK, font=font(12), anchor="w", justify="left",
+                 wraplength=680).pack(fill="x", padx=18, pady=1)
+    RoundButton(sec, "Save details…", lambda: save_battery_details(win, history, ov), "secondary", 150, 34, 12).pack(
+        anchor="w", padx=18, pady=(12, 16))
+
+
+def save_battery_details(win, history: list, ov, path: Optional[Path] = None) -> Optional[Path]:
+    """The history as CSV, and today's details as V2's JSON next to it when the phone is connected."""
+    import battery_history as bh
+    from tkinter import filedialog
+    name = getattr(ov, "name", None) or "iPhone"
+    if path is None:
+        p = filedialog.asksaveasfilename(parent=win, defaultextension=".csv", initialfile=f"{name} battery history.csv",
+                                         filetypes=[("CSV", "*.csv")])
+        if not p:
+            return None
+        path = Path(p)
+    path.write_text(bh.csv_text(history), encoding="utf-8")
+    if ov is not None:
+        import deviceinfo as di
+        path.with_suffix(".json").write_text(di.details_json(ov), encoding="utf-8")
+    return path
 
 
 # -- H2: what to clear, biggest saving first, and when the iPhone will be full ------------------------------------
