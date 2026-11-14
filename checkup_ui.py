@@ -121,7 +121,11 @@ def draw_health_chart(cv: tk.Canvas, pts: list, width: int = 640, height: int = 
     """One line, one point per backup: battery health (%) over time. One axis, a recessive grid, the 80% line,
     the latest point labelled, and a tooltip on hover for every point."""
     import battery_history as bh
-    left, right, top, bottom = 44, 70, 14, 26
+    right, top, bottom = 70, 14, 26
+    probe = cv.create_text(0, 0, text="100%", font=font(10), anchor="nw")
+    pw, ph = cv.bbox(probe)[2] - cv.bbox(probe)[0], cv.bbox(probe)[3] - cv.bbox(probe)[1]
+    cv.delete(probe)                                  # the axis labels' room comes from the font, which differs by system
+    left, top = max(44, pw + 14), max(top, ph // 2 + 2)
     lo = min(min(h for _w, h in pts) - 5, bh.REPLACE_BELOW - 5)
     lo = max(0, (lo // 5) * 5)
     t0, t1 = pts[0][0], pts[-1][0]
@@ -173,10 +177,11 @@ def draw_health_chart(cv: tk.Canvas, pts: list, width: int = 640, height: int = 
         if y0 - 3 < 0:                                # no room above a point at the top: below it
             cv.coords(t, xy[near][0], xy[near][1] + 16)
             cv.itemconfigure(t, anchor="n")
-        b = cv.bbox(t)                                # keep it and its box (6 px padding, outline) inside
-        cv.move(t, max(0, 9 - b[0]) - max(0, b[2] + 9 - width), 0)
         x0, y0, x1, y1 = cv.bbox(t)
-        cv.tag_lower(cv.create_rectangle(x0 - 6, y0 - 3, x1 + 6, y1 + 3, fill=CARD, outline=LINE, tags="tip"), t)
+        box = cv.create_rectangle(x0 - 6, y0 - 3, x1 + 6, y1 + 3, fill=CARD, outline=LINE, tags="tip")
+        cv.tag_lower(box, t)
+        b = cv.bbox(box)                              # the box with its outline, kept inside the canvas
+        cv.move("tip", max(0, -b[0]) - max(0, b[2] - width), max(0, -b[1]) - max(0, b[3] - height))
         tip["shown"] = near
     cv.bind("<Motion>", hover)
     cv.bind("<Leave>", lambda e: cv.delete("tip"))
