@@ -100,6 +100,10 @@ class PhotoSource:
     def copy(self, item_id: str, dest: Path) -> bool:
         raise NotImplementedError
 
+    def read(self, item_id: str) -> Optional[bytes]:
+        """The photo itself in memory, for the Space preview (Q1); None when it can't be read."""
+        return None
+
     def close(self) -> None:
         pass
 
@@ -133,6 +137,13 @@ class BackupPhotoSource(PhotoSource):
         if ok and m[1]:
             os.utime(dest, (m[1], m[1]))
         return ok
+
+    def read(self, item_id: str) -> Optional[bytes]:
+        m = self.meta.get("Media/" + item_id)
+        if not m:
+            return None
+        with self._lock:
+            return self.reader.read_bytes("CameraRollDomain", "Media/" + item_id, m[0])
 
     def thumbnail(self, item: PhotoItem) -> Optional[Path]:
         tp = self._thumb_path(item)
@@ -256,6 +267,16 @@ class DevicePhotoSource(PhotoSource):
             return True
         with self._lock:
             return self._run(self._pull(item_id, dest))
+
+    def read(self, item_id: str) -> Optional[bytes]:
+        full = self.cache / "full" / item_id
+        if full.exists():
+            return full.read_bytes()
+        with self._lock:
+            try:
+                return self._run(_aw(self.afc.get_file_contents(item_id)), timeout=300)
+            except Exception:
+                return None
 
     def close(self) -> None:
         try:

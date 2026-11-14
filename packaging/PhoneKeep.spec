@@ -29,7 +29,7 @@ for pkg in ("typer", "rich", "click", "construct", "asn1", "srptools", "pycrashr
         hiddenimports += collect_submodules(pkg)
     except Exception:
         pass
-hiddenimports += ["deviceinfo", "sections", "phonekeep", "app", "ui", "photos", "tables", "phone", "device", "build_label",
+hiddenimports += ["quicklook", "overview_ui", "deviceinfo", "sections", "phonekeep", "app", "ui", "photos", "tables", "phone", "device", "build_label",
                   "keychain", "phone_write", "netguard", "certifi", "errors", "firstrun", "helper_core", "helper_ui", "login_item",
                   "scheduler", "snapshots", "location", "chat_pdf", "applock", "models",
                   *(["Foundation", "AppKit", "objc", "PyObjCTools", "Quartz", "LocalAuthentication"] if sys.platform == "darwin" else []),   # rumps; PDFKit; S2

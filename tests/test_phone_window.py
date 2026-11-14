@@ -340,6 +340,44 @@ check(t.startswith("21%") and ("about 3 min left" in t or "about 4 min left" in 
 check(_ui2.Eta.fmt(30) == "under 2 min left" and _ui2.Eta.fmt(2 * 3600 + 5 * 60) == "about 2 h 05 min left", "wording")
 check(e.feed(100) == "100%", "done")
 
+# Q1: Space previews in the phone window's lists and photo grid
+import quicklook as _ql
+import ui as _uiq
+_ql.play = lambda p: None
+for _key, _want in (("music", "Artist A - Song One.m4a"), ("books", "Writer - A Novel.epub")):
+    win.open_app(_key)
+    pump(root, lambda: not still_loading(win) and hasattr(win, "table_preview"), 60, f"{_key} screen")
+    win.table_preview()
+    root.update()
+    _v = _ql.Viewer.current
+    check(_v is not None and _v.items[0].name == _want and len(_v.items) == 2,
+          f"Q1: Space in {_key} previews the row, with the others a → away ({_v.items[0].name if _v else None})")
+    if _v is not None:
+        pump(root, lambda: _v.shown_kind == "play", 20, "play card")
+        _p = _v.open_from_file(wait=True)
+        check(_p is not None and _p.read_bytes() == b"simulated" and _p.parent == _ql.private_dir(),
+              f"Q1: {_key}: Play copies it from the iPhone into the private folder")
+        _v.close()
+    del win.table_preview
+win.open_app("photos")
+pump(root, lambda: not still_loading(win) and _find(win.content, _uiq.PhotoPanel) is not None, 60, "photos screen")
+_pp = _find(win.content, _uiq.PhotoPanel)
+if _pp is not None:
+    for _ in range(20):
+        root.update()
+    _pp.preview_current()
+    pump(root, lambda: _ql.Viewer.current is not None and _ql.Viewer.current.shown_kind not in ("", "loading"), 30, "photo preview")
+    _v = _ql.Viewer.current
+    check(_v is not None and _v.shown_kind in ("image", "play"), f"Q1: Space in Photos previews a photo ({_v.shown_kind if _v else None}: {_v.items[_v.index].name if _v else None})")
+    if _v is not None:
+        for _ in range(len(_v.items)):
+            if _v.items[_v.index].kind == "image":
+                break
+            _v.move(1)
+        pump(root, lambda: _v.shown_kind not in ("", "loading"), 30, "photo")
+        check(_v.shown_kind == "image", f"Q1: → reaches a photo, drawn from the backup in memory ({_v.items[_v.index].name}: {_v.shown_kind})")
+        _v.close()
+win.show_home()
 win.close()
 root.update()
 check(("close",) in win.live.calls, "closing the window disconnects the simulated iPhone")

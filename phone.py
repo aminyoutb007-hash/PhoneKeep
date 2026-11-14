@@ -30,6 +30,7 @@ from typing import Callable, Optional
 
 import keychain
 import overview_ui
+import quicklook
 import phonekeep as wv
 import snapshots as sn
 import sections as sx
@@ -245,6 +246,10 @@ class BackupData:
     def copy(self, domain: str, rel: str, dest: Path) -> bool:
         with self.lock:
             return self.ctx.copy(domain, rel, dest)
+
+    def read(self, domain: str, rel: str) -> Optional[bytes]:
+        with self.lock:
+            return self.ctx.read(domain, rel)
 
     def close(self):
         try:
@@ -1076,7 +1081,7 @@ class PhoneWindow(tk.Toplevel):
         src, items = value
         nv = sum(1 for i in items if i.video)
         self.view_sub.configure(text=f"{len(items) - nv:,} photos · {nv:,} videos · from {src.label}")
-        tmp = Path(tempfile.mkdtemp(prefix="phonekeep-view-"))
+        tmp = quicklook.private_dir()      # Q1: private, deleted when PhoneKeep closes
 
         def open_one(item):
             dest = tmp / item.name
@@ -1084,7 +1089,12 @@ class PhoneWindow(tk.Toplevel):
             self.live_runner.submit(lambda: src.copy(item.id, dest) and dest,
                                     lambda p: (self.banner(""), open_file(p)) if p else None,
                                     lambda e: self.banner(f"Couldn't open it: {describe_error(e)}", color="#fdecea"))
-        panel = ui.PhotoPanel(self.content, src, items, select_all=False, on_open=open_one)
+        def preview(shown, idx):
+            quicklook.Viewer(self, [quicklook.Item(i.name, read=lambda i=i: src.read(i.id),
+                                                   to_file=lambda d, i=i: src.copy(i.id, d), size=i.size,
+                                                   kind="video" if i.video else "")
+                                    for i in shown], idx)
+        panel = ui.PhotoPanel(self.content, src, items, select_all=False, on_open=open_one, on_preview=preview)
         panel.pack(fill="both", expand=True)
 
         def save():
@@ -1109,12 +1119,14 @@ class PhoneWindow(tk.Toplevel):
             self.run_save(f"{len(chosen):,} photos & videos", go, folder, "photo/video",
                           self.live_runner if src.label == "the iPhone" else self.backup_runner)
         RoundButton(panel.foot, "Save selected", save, "primary", 170, 38, 12).pack(side="right")
-        tk.Label(panel.foot, text="Double-click to open", bg=BG, fg=MUTED, font=font(11)).pack(side="right", padx=12)
+        tk.Label(panel.foot, text="Click, then Space to preview · double-click to open", bg=BG, fg=MUTED,
+                 font=font(11)).pack(side="right", padx=12)
 
     # tables -----------------------------------------------------------------------
     def table_view(self, key, headers: list, rows: list, widths: Optional[list] = None, actions=(),
-                   on_double=None, multi=True, title_extra=""):
-        """A searchable, sortable table with Excel/CSV saving. actions: [(label, fn(selected rows))]."""
+                   on_double=None, multi=True, title_extra="", preview=None):
+        """A searchable, sortable table with Excel/CSV saving. actions: [(label, fn(selected rows))].
+        preview(row) -> quicklook.Item: Space previews the selected row; the arrows go through the list (Q1)."""
         top = tk.Frame(self.content, bg=BG)
         top.pack(fill="x", pady=(0, 6))
         tk.Label(top, text="🔍", bg=BG, font=font(13)).pack(side="left")
@@ -1162,6 +1174,15 @@ class PhoneWindow(tk.Toplevel):
             return [by_id[i] for i in tree.selection() if i in by_id]
         if on_double:
             tree.bind("<Double-1>", lambda e: on_double(selected()))
+        if preview:
+            def make():
+                vis = shown()
+                sel = selected()
+                idx = next((n for n, r in enumerate(vis) if sel and r is sel[0]), 0)
+                lo = max(0, idx - 1000)
+                return [preview(r) for r in vis[lo:idx + 1000]], idx - lo
+            quicklook.bind_space(tree, make)
+            self.table_preview = tree.quick_preview        # also reachable for the tests
 
         foot = tk.Frame(self.content, bg=BG)
         foot.pack(fill="x", pady=(10, 0))
@@ -1329,14 +1350,19 @@ class PhoneWindow(tk.Toplevel):
             return out
 
         def preview(_e=None):
-            sel = [meta[i] for i in tree.selection() if meta.get(i, ("",))[0] == "file"]
+            """Q1: Space, Return or double-click previews the file; the arrows go through its folder."""
+            sel = [i for i in tree.selection() if meta.get(i, ("",))[0] == "file"]
             if not sel:
-                return
-            _k, domain, rel, size, mtime = sel[0]
-            tmp = Path(tempfile.mkdtemp(prefix="phonekeep-view-"))
-            dest = tmp / Path(rel).name
-            if self.data.copy(domain, rel, dest):
-                open_file(dest)
+                return "break"
+            siblings = [i for i in tree.get_children(tree.parent(sel[0])) if meta.get(i, ("",))[0] == "file"]
+            items = []
+            for i in siblings:
+                _k, domain, rel, size, _mtime = meta[i]
+                items.append(quicklook.Item(Path(rel).name, read=lambda d=domain, r=rel: self.data.read(d, r),
+                                            to_file=lambda dest, d=domain, r=rel: self.data.copy(d, r, dest), size=size))
+            self.allfiles_viewer = quicklook.Viewer(self, items, siblings.index(sel[0]),
+                                                    on_close=lambda: tree.focus_set())
+            return "break"
         tree.bind("<Double-Button-1>", preview)
         tree.bind("<space>", preview)
         tree.bind("<Return>", preview)
@@ -1470,9 +1496,17 @@ class PhoneWindow(tk.Toplevel):
         RoundButton(foot, "Save this note (.txt)", save_one, "secondary", 190, 38, 12).pack(side="right", padx=6)
 
     # audio ----------------------------------------------------------------------
+    @staticmethod
+    def _preview_from(getter):
+        """Q1 for lists of recordings, songs and books: Space shows the item with a Play / Open button."""
+        def item(r):
+            copy, name = getter(r)
+            return quicklook.Item(name, to_file=copy)
+        return item
+
     def _audio_actions(self, key, getter):
         """getter(row) -> (copy function(dest) -> bool, file name). Returns Play/Save actions."""
-        tmp = Path(tempfile.mkdtemp(prefix="phonekeep-play-"))
+        tmp = quicklook.private_dir()      # Q1: private, deleted when PhoneKeep closes
 
         def play(sel):
             if not sel:
@@ -1518,7 +1552,7 @@ class PhoneWindow(tk.Toplevel):
             return (lambda dest: bool(v["rel"]) and self.data.copy(sx.HOME, v["rel"], dest)), name
         play, save = self._audio_actions(key, getter)
         self.table_view(key, ["Date", "From", "Number", "Length", "Status"], [r for r in rows],
-                        [150, 200, 150, 80, 80], on_double=play,
+                        [150, 200, 150, 80, 80], on_double=play, preview=self._preview_from(getter),
                         actions=[("▶  Play", play), ("Save selected", save)])
 
     def v_voicememos(self, key, items):
@@ -1532,6 +1566,7 @@ class PhoneWindow(tk.Toplevel):
             return (lambda dest: self.data.copy(m["domain"], m["rel"], dest)), name
         play, save = self._audio_actions(key, getter)
         self.table_view(key, ["Date", "Title", "Length"], rows, [160, 360, 90], on_double=play,
+                        preview=self._preview_from(getter),
                         actions=[("▶  Play", play), ("Save selected", save)])
 
     def v_music(self, key, tracks):
@@ -1552,7 +1587,7 @@ class PhoneWindow(tk.Toplevel):
             return (lambda dest: self.live.copy_media(t.path, dest)), name
         play, save = self._audio_actions(key, getter)
         self.table_view(key, ["Title", "Artist", "Album", "Length", "Kind", "Size"], rows,
-                        [240, 170, 170, 70, 90, 80], on_double=play,
+                        [240, 170, 170, 70, 90, 80], on_double=play, preview=self._preview_from(getter),
                         actions=[("▶  Play", play), ("Save selected", save)],
                         title_extra=" · purchased songs may only play on your own devices")
 
@@ -1572,6 +1607,7 @@ class PhoneWindow(tk.Toplevel):
             return (lambda dest: self.live.copy_media(b.path, dest, b.is_dir)), name
         play, save = self._audio_actions(key, getter)
         self.table_view(key, ["Title", "Author", "Kind", "Size"], rows, [320, 220, 90, 90], on_double=play,
+                        preview=self._preview_from(getter),
                         actions=[("Open", play), ("Save selected", save)])
 
     # app files ------------------------------------------------------------------------
@@ -1652,6 +1688,34 @@ class PhoneWindow(tk.Toplevel):
                                         lambda err: self.banner(f"Couldn't open it: {describe_error(err)}", color="#fdecea"))
         alist.bind("<<TreeviewSelect>>", lambda e: alist.selection() and load(alist.selection()[0], "Documents"))
         files.bind("<Double-1>", dbl)
+
+        def pull_to(app_id, entry, dest: Path) -> bool:
+            """An app's file from the phone into the preview's private folder (Q1)."""
+            box = dest.parent / (dest.name + ".d")
+            box.mkdir(exist_ok=True)
+            if not self.live.app_pull(app_id, entry.path, box):
+                return False
+            shutil.move(str(box / entry.name), str(dest))
+            shutil.rmtree(box, ignore_errors=True)
+            return True
+
+        def read(app_id, entry):
+            dest = quicklook.private_dir() / f"read-{entry.name}"
+            try:
+                return dest.read_bytes() if pull_to(app_id, entry, dest) else None
+            finally:
+                dest.unlink(missing_ok=True)
+
+        def make():
+            sel = files.selection()
+            ents = [(i, e) for i, e in state["entries"].items() if not e.is_dir]
+            if not ents:
+                return None
+            idx = next((n for n, (i, _e) in enumerate(ents) if sel and i == sel[0]), 0)
+            app_id = state["app"]
+            return [quicklook.Item(e.name, read=lambda e=e: read(app_id, e), to_file=lambda d, e=e: pull_to(app_id, e, d),
+                                   size=getattr(e, "size", None)) for _i, e in ents], idx
+        quicklook.bind_space(files, make)
 
         foot = tk.Frame(self.content, bg=BG)
         foot.pack(fill="x", pady=(10, 0))
@@ -1755,6 +1819,8 @@ class PhoneWindow(tk.Toplevel):
             return
         for r in (self.backup_runner, self.live_runner, self.info_runner):
             r.stop()
+        if quicklook.Viewer.current is not None:
+            quicklook.Viewer.current.close()
         for x in (self.data, self.live, self.photo_src):
             try:
                 x and x.close()
