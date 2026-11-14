@@ -666,9 +666,32 @@ class App(_dnd_root()):
         finally:
             os._exit(0)
 
+    def show_all_windows(self):
+        """Bring back every PhoneKeep window (minimised, hidden behind other apps or off the screen)."""
+        wins = [self] + [w for w in self.winfo_children() if isinstance(w, tk.Toplevel)]
+        for w in wins:
+            try:
+                # deiconify whatever Tk says the state is: on Tk 9 a window minimised to the Dock doesn't
+                # always report "iconic". Only dialogs PhoneKeep withdrew on purpose stay hidden.
+                if w is self or w.state() != "withdrawn":
+                    w.deiconify()
+                x, y = w.winfo_x(), w.winfo_y()
+                sw, sh = w.winfo_screenwidth(), w.winfo_screenheight()
+                if x > sw - 80 or y > sh - 80 or x + w.winfo_width() < 80 or y < 0:
+                    w.geometry(f"+{max(0, (sw - w.winfo_width()) // 2)}+{max(30, (sh - w.winfo_height()) // 3)}")
+                w.lift()
+            except tk.TclError:
+                pass
+        try:
+            self.focus_force()
+        except tk.TclError:
+            pass
+
     def _build_menu(self):
         if sys.platform == "darwin":
             self.createcommand("tk::mac::Quit", self.quit_app)
+            # a click on the Dock icon brings PhoneKeep's windows back, even minimised or behind others
+            self.createcommand("tk::mac::ReopenApplication", self.show_all_windows)
         self.protocol("WM_DELETE_WINDOW", self.quit_app)
         bar = tk.Menu(self)
         filem = tk.Menu(bar, tearoff=0)
