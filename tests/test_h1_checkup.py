@@ -111,7 +111,7 @@ for change, level, reason in (
     c = card("security", **{**clean, **change})
     check(c.level == level and c.reason == reason, f"security {list(change)[0]}: {c.reason}")
 c = card("security", **{**clean, "ios_outdated": True, "no_passcode": True})
-check(c.level == "red" and c.details[0] == "No passcode is set." and c.details[1] == "iOS is out of date.",
+check(c.level == "red" and c.details[0].startswith("No passcode is set.") and c.details[1].startswith("iOS is out of date."),
       "the most serious finding leads")
 check(card("security").level == "unknown", "security checks not built yet: not checked")
 

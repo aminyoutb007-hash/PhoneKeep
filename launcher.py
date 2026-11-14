@@ -227,6 +227,92 @@ def _pk_crashes(args: list) -> None:
         sys.exit(1)
 
 
+JAILBREAK_APPS = ("com.saurik.Cydia", "org.coolstar.SileoStore", "xyz.willy.Zebra", "com.opa334.Dopamine",
+                  "com.opa334.TrollStore", "com.tigisoftware.Filza", "me.apptapp.installer", "com.electrateam.chimera",
+                  "org.coolstar.electra1131", "science.xnu.undecimus", "com.checkra1n.checkra1n", "in.palera.loader",
+                  "com.serena.Antoine", "com.sukisu.loader")
+
+
+def _pk_security(args: list) -> None:
+    """Internal (H5): what the security checks need, read-only, printed as PKSECURITY <json>.
+    Only reads: lockdown values, the profile list and cloud configuration (com.apple.mobile.MCInstall's
+    GetProfileList / GetCloudConfiguration), the app list, and whether the jailbreak-only file service answers.
+        --pk-security [--udid UDID]"""
+    import asyncio
+    import json
+    udid = args[args.index("--udid") + 1] if "--udid" in args else None
+    try:
+        from pymobiledevice3.lockdown import create_using_usbmux
+        from pymobiledevice3.services.installation_proxy import InstallationProxyService
+        from pymobiledevice3.services.mobile_config import MobileConfigService
+    except ImportError as e:
+        print(f"PKAPI {e}", flush=True)
+        sys.exit(3)
+
+    async def run():
+        out = {"problems": {}}
+        async with await create_using_usbmux(serial=udid) as lockdown:
+            for k, key in (("password_protected", "PasswordProtected"), ("ios", "ProductVersion"),
+                           ("product_type", "ProductType"), ("build", "BuildVersion")):
+                try:
+                    out[k] = await lockdown.get_value(key=key)
+                except Exception as e:
+                    out["problems"][k] = f"{type(e).__name__}: {e}"
+            try:
+                async with MobileConfigService(lockdown) as mc:
+                    reply = await mc.get_profile_list()
+                    meta = reply.get("ProfileMetadata") or {}
+                    out["profiles"] = [{"id": pid, "name": m.get("PayloadDisplayName") or pid,
+                                        "org": m.get("PayloadOrganization") or "",
+                                        "removable": not m.get("PayloadRemovalDisallowed", False)}
+                                       for pid, m in meta.items()]
+                    manifest = reply.get("ProfileManifest") or {}
+                    for prof in out["profiles"]:
+                        man = manifest.get(prof["id"]) or {}
+                        prof["active"] = bool(man.get("IsActive", True))
+                    cc = await mc.get_cloud_configuration() or {}
+                    out["management"] = {"supervised": bool(cc.get("IsSupervised")),
+                                         "org": cc.get("OrganizationName") or "",
+                                         "server": cc.get("ConfigurationURL") or "",
+                                         "mdm_unremovable": bool(cc.get("IsMDMUnremovable"))}
+            except Exception as e:
+                out["problems"]["profiles"] = f"{type(e).__name__}: {e}"
+            try:
+                async with InstallationProxyService(lockdown) as ip:
+                    apps = await ip.get_apps(application_type="Any")
+                outside, jb = [], []
+                for b, a in (apps or {}).items():
+                    name = a.get("CFBundleDisplayName") or a.get("CFBundleName") or b
+                    if b in JAILBREAK_APPS:
+                        jb.append(f"the jailbreak app {name}")
+                    if a.get("ApplicationType") != "User":
+                        continue
+                    signer = str(a.get("SignerIdentity") or "")
+                    market = a.get("MarketplaceID") or a.get("DistributorID") or ""
+                    if market or (signer and not signer.startswith("Apple iPhone OS Application Signing")):
+                        outside.append({"bundle": b, "name": name, "signer": signer, "marketplace": str(market)})
+                out["outside"] = outside
+                out["user_apps"] = sum(1 for a in (apps or {}).values() if a.get("ApplicationType") == "User")
+                out["jailbreak"] = jb
+            except Exception as e:
+                out["problems"]["apps"] = f"{type(e).__name__}: {e}"
+            try:
+                svc = await lockdown.start_lockdown_service("com.apple.afc2")
+                out.setdefault("jailbreak", []).append("the full-disk file service (afc2), which only jailbreaks add")
+                try:
+                    await svc.aclose()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        print("PKSECURITY " + json.dumps(out, default=str), flush=True)
+    try:
+        asyncio.run(run())
+    except Exception as e:
+        print(f"PKERR {type(e).__name__}: {e}", flush=True)
+        sys.exit(1)
+
+
 def _pk_battery(args: list) -> None:
     """Internal: print PKBATTERY charging=<0|1> level=<0-100> from the phone's battery domain."""
     import asyncio
@@ -370,6 +456,9 @@ def main() -> None:
         return
     if args and args[0] == "--pk-battery":
         _pk_battery(args[1:])
+        return
+    if args and args[0] == "--pk-security":
+        _pk_security(args[1:])
         return
     if len(args) >= 2 and args[0] == "--pk-crashes":
         _pk_crashes(args[1:])

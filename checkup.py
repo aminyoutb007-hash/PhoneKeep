@@ -208,27 +208,38 @@ def stability_card(f: Facts) -> Card:
 
 
 def security_card(f: Facts) -> Card:
+    import security as sx
     checks = (f.no_passcode, f.unknown_profiles, f.jailbreak, f.spyware_matched, f.ios_outdated, f.outside_app_store)
     if all(c is None for c in checks):
-        return Card("security", UNKNOWN, "Not checked yet: the security checks come in a later version of PhoneKeep.")
-    red, amber = [], []
+        return Card("security", UNKNOWN, "Not checked yet: connect the iPhone so PhoneKeep can run the security checks.")
+    red, amber = [], []                               # each finding: its line on the card, then what to do
     if f.no_passcode:
-        red.append("No passcode is set.")
+        red.append("No passcode is set. " + sx.ADVICE["passcode"].split(". ", 1)[1])
     for p in f.unknown_profiles or []:
-        red.append(f"An unknown configuration profile or device management is installed: {p}.")
+        red.append(f"An unknown configuration profile or device management is installed: {p}. " + sx.ADVICE["profile"])
     if f.jailbreak:
-        red.append("Signs of a jailbreak were found: " + ", ".join(f.jailbreak) + ".")
+        red.append("Signs of a jailbreak were found: " + ", ".join(f.jailbreak) + ". " + sx.ADVICE["jailbreak"])
     if f.spyware_matched:
         red.append("A spyware indicator matched.")
     if f.ios_outdated:
-        amber.append("iOS is out of date.")
+        amber.append("iOS is out of date. " + sx.ADVICE["ios"])
     for a in f.outside_app_store or []:
-        amber.append(f"An app from outside the App Store: {a}.")
+        amber.append(f"An app from outside the App Store: {a}. " + sx.ADVICE["outside"])
     found = red + amber
     if not found:
         return Card("security", GREEN, "Green: No problems found in these checks.", ["No problems found in these checks."])
     level = RED if red else AMBER
-    return Card("security", level, f"{level.capitalize()}: {found[0]}", found, found[0][0].lower() + found[0][1:-1])
+    first = _first_sentence(found[0])
+    return Card("security", level, f"{level.capitalize()}: {first}", found, first[0].lower() + first[1:-1])
+
+
+def _first_sentence(text: str) -> str:
+    """The finding without its advice: up to the first '. ' that isn't inside a name."""
+    for advice in ("Anyone holding", "If you don't recognise", "A jailbreak turns", "Updates fix", "Apps from outside"):
+        i = text.find(" " + advice)
+        if i > 0:
+            return text[:i]
+    return text
 
 
 def evaluate(f: Facts) -> Report:
@@ -299,15 +310,48 @@ def facts(phone_dir: Optional[Path], ov=None, now: Optional[dt.datetime] = None)
     hist = [(w, e.get("health")) for e in d["history"] if (w := _when(e)) is not None]
     import crashes as cr
     crash, restarts = cr.counts(d.get("stability"), THRESHOLDS["crash_days"])   # H4: as of the last read
+    sec = security_facts(d)                                                    # H5: as of the last read
     if ov is not None and entry_from(ov, now or dt.datetime.now()) is not None:
         return Facts(when=now or dt.datetime.now(), live=True, total=ov.total, free=ov.free,
-                     health=ov.battery.health, health_history=hist, crashes=crash, unexpected_restarts=restarts)
+                     health=ov.battery.health, health_history=hist, crashes=crash, unexpected_restarts=restarts,
+                     **sec)
     last = next((e for e in reversed(d["history"]) if _when(e) is not None), None)
     if last is None:
-        return None
+        if sec.get("ios_outdated") is None:
+            return None
+        return Facts(when=now or dt.datetime.now(), crashes=crash, unexpected_restarts=restarts, **sec)
     w = _when(last)
     return Facts(when=w, live=False, total=last.get("total"), free=last.get("free"), health=last.get("health"),
-                 health_history=[(hw, h) for hw, h in hist if hw <= w], crashes=crash, unexpected_restarts=restarts)
+                 health_history=[(hw, h) for hw, h in hist if hw <= w], crashes=crash, unexpected_restarts=restarts,
+                 **sec)
+
+
+def security_checks(d: dict) -> list:
+    """H5: the security checks from the record's last read (security.checks)."""
+    import security
+    rec = d.get("security") or {}
+    return security.checks(rec.get("raw"), frozenset(d.get("known_profiles") or ()), [rec.get("passcode_seen")])
+
+
+def security_facts(d: dict) -> dict:
+    import security
+    cs = security_checks(d)
+    return security.facts(cs) if cs else {}
+
+
+def record_security(phone_dir: Path, summary: dict) -> None:
+    """H5: the last read; remembers that a passcode was seen (a locked iPhone at any check)."""
+    d = load(phone_dir)
+    seen = bool((d.get("security") or {}).get("passcode_seen")) or bool(summary["raw"].get("password_protected"))
+    d["security"] = {**summary, "passcode_seen": seen}
+    _save(phone_dir, d)
+
+
+def recognise(phone_dir: Path, key: str) -> None:
+    """The owner recognises this profile (its id) or device management ("management:<who>"): no warning for it."""
+    d = load(phone_dir)
+    d["known_profiles"] = sorted(set(d.get("known_profiles") or []) | {key})
+    _save(phone_dir, d)
 
 
 def record_stability(phone_dir: Path, stability: dict) -> None:

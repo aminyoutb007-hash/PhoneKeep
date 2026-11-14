@@ -118,9 +118,9 @@ When anything serious is found, the card also explains Lockdown Mode (what it is
 - The overall result never says "safe": green means "No problems found in these checks".
 
 **Done when**
-- [ ] With test fixtures, each check produces its warning: no passcode, an unknown profile, an app from outside the App Store, jailbreak signs, an old iOS version.
-- [ ] A clean fixture shows all ticks and the wording "No problems found in these checks".
-- [ ] No check writes anything to the phone (verified by the phone-write gate's log).
+- [x] With test fixtures, each check produces its warning: no passcode, an unknown profile, an app from outside the App Store, jailbreak signs, an old iOS version. *(14 Nov, `tests/test_h5_security.py`. On real phones the no-passcode warning waits for one read on an unlocked iPhone: lockdown's PasswordProtected may only mean "locked right now", so until that's settled a passcode counts as set once the phone has been seen locked, and is otherwise "not decided yet". The spyware check (S5) isn't built: it waits for the owner's decision on MVT's licence.)*
+- [x] A clean fixture shows all ticks and the wording "No problems found in these checks". *(14 Nov, `tests/test_h5_security.py`; the spyware check shows as not checked.)*
+- [x] No check writes anything to the phone (verified by the phone-write gate's log). *(14 Nov: the test's fake phone records every request (only reads) and the gate's log stays empty; `tools/real_check.py` runs the reads on the owner's iPhone with the log unchanged.)*
 
 ## C1. Photo clean-up: find and save
 

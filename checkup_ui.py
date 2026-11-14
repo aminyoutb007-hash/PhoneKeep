@@ -81,15 +81,16 @@ def view(win):
         overview_ui._bind_all(f, lambda k=c.key: details(win, k))
         win.checkup_cards[c.key] = f
     tk.Label(win.content, text="Storage and Battery are what the iPhone reports, Stability what its crash reports "
-                               "say. The Security checks come in a later version of PhoneKeep. Nothing here changes "
-                               "anything on the iPhone.",
+                               "say, Security what PhoneKeep's checks found (not antivirus: See details says exactly "
+                               "what was looked at). Nothing here changes anything on the iPhone.",
              bg=BG, fg=MUTED, font=font(11), anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(12, 0))
     win.checkup_ms = (time.perf_counter() - t0) * 1000
     read_crashes(win)
 
 
 def read_crashes(win):
-    """H4: with the iPhone connected, read its crash reports once per window (read-only), then show the card again."""
+    """H4 and H5: with the iPhone connected, read its crash reports and run the security checks once per window
+    (both read-only), then show the check-up again."""
     pd = phone_dir(win)
     if pd is None or getattr(win, "live", None) is None or getattr(win, "crashes_read", False):
         return
@@ -102,9 +103,13 @@ def read_crashes(win):
         win.crash_summary = summary
         if summary is not None and win.current == "checkup":
             view(win)
-        elif summary is not None and win.current == "checkup:stability":
-            details(win, "stability")
-    win.live_runner.submit(lambda: wv.read_crash_reports(win.udid, pd, apps), done, lambda e: None)
+        elif summary is not None and win.current in ("checkup:stability", "checkup:security"):
+            details(win, win.current.split(":")[1])
+    def both():
+        crash = wv.read_crash_reports(win.udid, pd, apps)
+        sec = wv.read_security(win.udid, pd)
+        return crash if crash is not None else ({} if sec is not None else None)
+    win.live_runner.submit(both, done, lambda e: None)
 
 
 def details(win, key: str):
@@ -138,6 +143,66 @@ def details(win, key: str):
         battery_history_view(win, r)
     elif key == "stability":
         stability_view(win, r)
+    elif key == "security":
+        security_view(win, r)
+
+
+def security_view(win, r: checkup.Report):
+    """H5: each check with a tick or a warning and what to do; Lockdown Mode and help when something is serious."""
+    import security as sx
+    pd = phone_dir(win)
+    d = checkup.load(pd) if pd else {}
+    cs = checkup.security_checks(d)
+    win.security_checks = cs
+    sec = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+    sec.pack(fill="x", pady=(12, 0))
+    if not cs:
+        tk.Label(sec, text="Connect the iPhone to run the checks. They only read: nothing on the phone is changed.",
+                 bg=CARD, fg=MUTED, font=font(12), anchor="w").pack(fill="x", padx=18, pady=14)
+        return
+    read = dt.datetime.fromisoformat(d["security"]["read"])
+    tk.Label(sec, text="What PhoneKeep looked at", bg=CARD, fg=INK, font=font(15, "bold"), anchor="w").pack(
+        fill="x", padx=18, pady=(14, 0))
+    tk.Label(sec, text=f"Checked {checkup.day_text(read)} at {read:%H:%M}. A security check, not antivirus: only "
+             "these checks, and nothing on the iPhone is changed.", bg=CARD, fg=MUTED, font=font(11), anchor="w",
+             justify="left", wraplength=700).pack(fill="x", padx=18)
+    mark = {"ok": ("✓", GOOD), "warn": ("⚠", WARN), "unknown": ("–", MUTED)}
+    raw = d["security"].get("raw") or {}
+    for c in cs:
+        row = tk.Frame(sec, bg=CARD)
+        row.pack(fill="x", padx=18, pady=(10, 0))
+        sym, colour = mark[c.state]
+        tk.Label(row, text=f"{sym}  {c.title}", bg=CARD, fg=colour if c.state != "ok" else INK,
+                 font=font(13, "bold"), anchor="w").pack(fill="x")
+        tk.Label(row, text=c.text, bg=CARD, fg=INK, font=font(12), anchor="w", justify="left", wraplength=700).pack(
+            fill="x", padx=(22, 0))
+        if c.advice:
+            tk.Label(row, text=c.advice, bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left",
+                     wraplength=700).pack(fill="x", padx=(22, 0))
+        if c.key == "profiles" and c.state == "warn":
+            known = set(d.get("known_profiles") or [])
+            items = [(p["id"], p["name"]) for p in raw.get("profiles", []) if p["id"] not in known]
+            m = raw.get("management") or {}
+            who = m.get("org") or m.get("server") or ("an organisation" if m.get("supervised") else "")
+            if who and f"management:{who}" not in known:
+                items.append((f"management:{who}", f"Device management by {who}"))
+            for key, name in items:
+                RoundButton(row, f"I recognise {name[:40]}", lambda k=key: (checkup.recognise(pd, k), details(win, "security")),
+                            "light", 340, 28, 11).pack(anchor="w", padx=(22, 0), pady=(4, 0))
+    if any(c.state == "warn" and c.key in ("profiles", "jailbreak", "passcode", "spyware") for c in cs):
+        tk.Label(sec, text="Lockdown Mode", bg=CARD, fg=INK, font=font(13, "bold"), anchor="w").pack(
+            fill="x", padx=18, pady=(16, 0))
+        tk.Label(sec, text=sx.LOCKDOWN_MODE, bg=CARD, fg=INK, font=font(12), anchor="w", justify="left",
+                 wraplength=700).pack(fill="x", padx=18)
+        tk.Label(sec, text="If you think someone is spying on you, these organisations help for free:", bg=CARD,
+                 fg=INK, font=font(12), anchor="w").pack(fill="x", padx=18, pady=(8, 0))
+        import webbrowser
+        for name, url in sx.HELP:
+            lk = tk.Label(sec, text=f"{name}  ›", bg=CARD, fg=ui.SELECT_BLUE, font=font(12), anchor="w", cursor="hand2")
+            lk.pack(fill="x", padx=18)
+            lk.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))     # in the owner's browser, on their click
+        win.security_help_shown = True
+    tk.Frame(sec, bg=CARD, height=14).pack()
 
 
 def stability_view(win, r: checkup.Report):

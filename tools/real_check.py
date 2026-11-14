@@ -10,6 +10,8 @@ What it does, all read-only for the phone:
   * saves 3 photos as JPG into a temporary folder and checks each keeps its date and location;
   * Stability (H4): the crash reports of the last 30 days read twice into the temporary folder: all still on the
     phone after the first read;
+  * Security (H5): the security checks' reads (profiles, apps, version, jailbreak signs), into the temporary folder;
+    the phone-write gate's log stays unchanged;
   * Photo clean-up (C1): the six cards from the phone's photos, twice (the second visit from the cache), nothing
     offered that's a favourite, in an album, hidden or only in iCloud; 3 of them saved and checked by checksum
     (its cache and record go to the temporary folder too, not next to the real backups);
@@ -196,6 +198,16 @@ try:
     ev = cr.read_folder(cdir)
     c7, r7 = cr.counts(cr.summary(ev, dt.datetime.now()), 7)
     note(f"{n1} reports in 30 days; this week {sum(c7.values())} app crashes in {len(c7)} apps, {r7} unexpected restarts")
+
+    # -- H5: the security checks, read-only ---------------------------------------------------------------------
+    import checkup as cku5, phone_write, security as sx
+    log_before = phone_write.ACTIVITY_FILE.read_text() if phone_write.ACTIVITY_FILE.exists() else ""
+    raw = wv.read_security(win.udid, WORK / "h5", timeout=60)
+    cs = cku5.security_checks(cku5.load(WORK / "h5")) if raw else []
+    log_after = phone_write.ACTIVITY_FILE.read_text() if phone_write.ACTIVITY_FILE.exists() else ""
+    check(raw is not None and not raw.get("problems") and len(cs) == 6 and log_after == log_before,
+          "Security: every check's read works, and the phone-write gate's log is unchanged")
+    note("; ".join(f"{c.key} {c.state}" for c in cs) + f"; locked at this read: {raw.get('password_protected') if raw else None}")
 
     # -- Photos -----------------------------------------------------------------------------------------------
     win.open_app("photos")
