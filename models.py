@@ -32,6 +32,17 @@ def model_name(product_type: str | None) -> str:
     return "iPad" if product_type.startswith("iPad") else "iPhone"
 
 
+def generation(product_type: str | None) -> int | None:
+    """The number in the model's name: 15 for an iPhone 15 Pro, 16 for an iPhone 16e, 17 for an iPhone Air
+    (sold with the iPhone 17). None for an SE, an X / XS / XR or an unknown code."""
+    import re
+    name = model_name(product_type)
+    if name == "iPhone Air":
+        return 17
+    m = re.match(r"iPhone (\d+)", name)
+    return int(m.group(1)) if m else None
+
+
 # The back's colour, from the code the phone reports as DeviceEnclosureColor. Apple publishes no list, so each
 # entry is one checked on a real phone; an unknown code shows no colour rather than a guess.
 COLOURS = {

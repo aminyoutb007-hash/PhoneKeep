@@ -79,8 +79,8 @@ A short **Tips for this iPhone** list, only the ones that apply: turn on Optimis
 - **Save details** exports the history as CSV, as well as V2's JSON.
 
 **Done when**
-- [ ] After three backups, the chart shows three points that match the phone's Settings → Battery at each time (within 1%).
-- [ ] Tips that don't apply to the model or situation are not shown.
+- [ ] After three backups, the chart shows three points that match the phone's Settings → Battery at each time (within 1%). *(Owner's check, still to do over three real backups. `tests/test_h3_battery.py` shows three recorded backups give three points with exactly the recorded health.)*
+- [x] Tips that don't apply to the model or situation are not shown. *(14 Nov, `tests/test_h3_battery.py`: no 80% limit before iPhone 15, the heat tip only after a hot reading. Background App Refresh isn't shown, because the phone doesn't report which apps use it.)*
 
 ## H4. Stability card
 
