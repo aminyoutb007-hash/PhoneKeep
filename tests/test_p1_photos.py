@@ -51,6 +51,9 @@ ASSETS = [
     ("DCIM/100APPLE", "IMG_0004.HEIC", 0, 1, 0, 0, 0, 51.5, -0.12),          # hidden
     ("DCIM/100APPLE", "IMG_0005.JPG", 0, 0, 1, 0, 0, 0, 0),                  # in Recently Deleted
     ("DCIM/100APPLE", "IMG_0006.JPG", 1, 0, 0, 0, 0, 0, 0),                  # favourite, in an album
+    # iCloud Photos keeps photos from other devices in PhotoData/CPLAssets, not DCIM (found on the owner's phone)
+    ("PhotoData/CPLAssets/group338", "2DA16694-AAAA.HEIC", 1, 0, 0, 0, 0, 0, 0),   # favourite, from iCloud
+    ("PhotoData/CPLAssets/group12", "7F00AA11-BBBB.HEIC", 0, 1, 0, 0, 0, 0, 0),    # hidden, from iCloud
 ]
 
 
@@ -63,6 +66,8 @@ def make_db(path: Path, new_layout: bool):
     for n, (d, f, fav, hid, tr, kind, sub, lat, lon) in enumerate(ASSETS, 1):
         con.execute(f"INSERT INTO {at} VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                     (n, d, f, fav, hid, tr, kind, sub, apple(T0 + dt.timedelta(days=n)), lat, lon))
+    con.execute("CREATE TABLE ZADDITIONALASSETATTRIBUTES (Z_PK INTEGER PRIMARY KEY, ZASSET INT, ZORIGINALFILENAME TEXT)")
+    con.executemany("INSERT INTO ZADDITIONALASSETATTRIBUTES VALUES (?,?,?)", [(1, 7, "IMG_5001.HEIC"), (2, 8, "IMG_5002.HEIC")])
     con.execute("CREATE TABLE ZGENERICALBUM (Z_PK INTEGER PRIMARY KEY, ZTITLE TEXT, ZKIND INT, ZTRASHEDSTATE INT)")
     con.executemany("INSERT INTO ZGENERICALBUM VALUES (?,?,?,?)",
                     [(10, "Holidays", 2, 0), (11, "Recents", 1505, 0), (12, "Old", 2, 1), (13, "Family", 2, 0)])
@@ -89,12 +94,22 @@ check(library.read(W / "nothing.sqlite") is None, "a missing or unreadable libra
 
 # -- applied to the photo list: deleted left out, collections ---------------------------------------------------
 lib = library.read(W / "Photos-new.sqlite")
-items = [ph.PhotoItem(f"DCIM/100APPLE/{f}", f, 1000, dt.datetime(2026, 1, 1), f.endswith(".MOV")) for _d, f, *_ in ASSETS]
+items = [ph.PhotoItem(f"DCIM/100APPLE/{f}", f, 1000, dt.datetime(2026, 1, 1), f.endswith(".MOV")) for d, f, *_ in ASSETS
+         if d.startswith("DCIM")]
 items.append(ph.PhotoItem("DCIM/100APPLE/IMG_0001.MOV", "IMG_0001.MOV", 900, dt.datetime(2026, 1, 1), True))
 items = ph._apply_library(ph._pair_live_photos(items), lib)
 ids = {i.name: i for i in items}
 check("IMG_0005.JPG" not in ids and ids["IMG_0001.HEIC"].live_video and ids["IMG_0001.HEIC"].when == T0 + dt.timedelta(days=1),
       "deleted items are left out; the Live Photo keeps its video; dates come from the library")
+cpl = {i.id: i for i in items if i.id.startswith("PhotoData/")}
+check(set(cpl) == {"PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC", "PhotoData/CPLAssets/group12/7F00AA11-BBBB.HEIC"}
+      and cpl["PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC"].favorite
+      and cpl["PhotoData/CPLAssets/group12/7F00AA11-BBBB.HEIC"].hidden,
+      "photos kept in iCloud's folder on the phone (not DCIM) are listed too, with favourite and hidden")
+check({i.name for i in cpl.values()} == {"IMG_5001.HEIC", "IMG_5002.HEIC"}, "under the name they were taken with")
+_back = ph._apply_library([], lib, has_file=lambda k: k.endswith("AAAA.HEIC"))
+check([i.id for i in _back] == ["PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC"],
+      "from a backup, only those whose file is in the backup")
 
 try:
     import tkinter as tk
@@ -121,7 +136,7 @@ try:
     albums = [label(r) for r in pp.mlist.get_children("head-albums")]
     check(albums == ["Holidays", "Family"] or albums == ["Holidays"],
           f"then Albums, with the user's albums: {albums}")
-    check(len(pp.months["c:fav"]) == 2 and {i.name for i in pp.months["album:10"]} == {"IMG_0001.HEIC", "IMG_0006.JPG"},
+    check(len(pp.months["c:fav"]) == 3 and {i.name for i in pp.months["album:10"]} == {"IMG_0001.HEIC", "IMG_0006.JPG"},
           "favourites and an album hold the right photos")
     check("c:hidden" in rows and "🔒" in pp.mlist.item("c:hidden", "values")[0] and pp.mlist.item("c:hidden", "values")[1] == "",
           "Hidden is listed, locked, without its count")
@@ -133,7 +148,7 @@ try:
     pp.mlist.selection_set("c:hidden"); root.update()
     check(len(asked) == 1 and not pp.hidden_open and pp._month() is None, "opening Hidden asks first; nothing shown yet")
     asked[0](); root.update()
-    check(pp.hidden_open and pp._month() == "c:hidden" and {i.name for i in pp.months["c:hidden"]} == {"IMG_0004.HEIC"},
+    check(pp.hidden_open and pp._month() == "c:hidden" and {i.name for i in pp.months["c:hidden"]} == {"IMG_0004.HEIC", "IMG_5002.HEIC"},
           "once confirmed, Hidden shows its photos")
     pp.destroy()
     # the dialog for the save format
@@ -199,6 +214,18 @@ check([p.name for p in orig] == ["IMG_0101.HEIC"] and abs(orig[0].stat().st_mtim
 
 src_txt = (HERE.parent / "phone.py").read_text(encoding="utf-8")
 check("ask_photo_format" in src_txt and "photoconv.save_item" in src_txt, "the iPhone window's Save asks the format and uses it")
+
+# two different photos with the same name don't overwrite each other; saving the same one again makes no copy
+import photoconv as pc
+_f = W / "names"
+shutil.rmtree(_f, ignore_errors=True); _f.mkdir()
+(_f / "IMG_0001.JPG").write_bytes(b"x" * 10)
+pc.set_file_date(_f / "IMG_0001.JPG", dt.datetime(2025, 1, 1, 12))
+check(pc.free_name(_f, "IMG_0001.JPG", 99, dt.datetime(2024, 5, 5)) == "IMG_0001 (2).JPG",
+      "a different photo with the same name is saved as 'IMG_0001 (2).JPG'")
+check(pc.free_name(_f, "IMG_0001.JPG", 10) == "IMG_0001.JPG" and
+      pc.free_name(_f, "IMG_0001.JPG", 0, dt.datetime(2025, 1, 1, 12)) == "IMG_0001.JPG",
+      "the same photo saved again keeps its name (no copies)")
 
 print("\nP1 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

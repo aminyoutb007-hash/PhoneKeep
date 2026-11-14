@@ -1048,16 +1048,15 @@ class PhotoPanel(tk.Frame):
         groups = {"c:fav": [i for i in self.items if getattr(i, "favorite", False)],
                   "c:videos": [i for i in self.items if i.video],
                   "c:shots": [i for i in self.items if getattr(i, "screenshot", False)],
-                  "c:live": [i for i in self.items if getattr(i, "live_video", None)]}
+                  "c:live": [i for i in self.items if getattr(i, "live_video", None) or getattr(i, "live_lib", False)]}
         self.collections = [(k, label) for k, label in self.COLLECTIONS if groups[k]]
         for k, _l in self.collections:
             self.months[k] = groups[k]
         self.album_rows = []
         for key, title, _n in (lib.albums if lib else []):
-            members = [i for i in self.items if key in getattr(i, "albums", ())]
-            if members:
-                self.months[key] = members
-                self.album_rows.append((key, title))
+            # every album the Photos app lists, empty ones too (they show 0)
+            self.months[key] = [i for i in self.items if key in getattr(i, "albums", ())]
+            self.album_rows.append((key, title))
         if self.hidden_items:
             self.months["c:hidden"] = self.hidden_items
         self.shown = 0

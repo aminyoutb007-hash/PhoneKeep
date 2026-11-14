@@ -86,10 +86,32 @@ def to_jpg(src: Path, dest: Path, when: Optional[dt.datetime] = None, lat: Optio
         return False
 
 
+def free_name(folder: Path, name: str, size: int = 0, when=None) -> str:
+    """name, or "name (2).ext" when a different photo already has that name in folder. Two photos can share a
+    name (an iPhone restarts at IMG_0001, and iCloud photos from other devices keep their own numbering).
+    A file of the same size, or dated with this photo's date (saved files get it), is taken to be this photo
+    saved before, so saving again doesn't make copies."""
+    p = Path(folder) / name
+    if not p.exists() or (size and p.stat().st_size == size):
+        return name
+    if when is not None:
+        try:
+            if abs(p.stat().st_mtime - when.timestamp()) < 2:
+                return name
+        except (OSError, ValueError, OverflowError):
+            pass
+    stem, ext = Path(name).stem, Path(name).suffix
+    n = 2
+    while (Path(folder) / f"{stem} ({n}){ext}").exists():
+        n += 1
+    return f"{stem} ({n}){ext}"
+
+
 def save_item(source, item, folder: Path, compatible: bool, tmp: Path) -> list[Path]:
     """Save one photo or video (and a Live Photo's short video) into folder. Returns the files written."""
     out = []
     name = jpg_name(item.name) if compatible and not item.video else item.name
+    name = free_name(folder, name, getattr(item, "size", 0), item.when)
     dest = folder / name
     if compatible and not item.video and Path(item.name).suffix.lower() in CONVERT:
         raw = tmp / item.name

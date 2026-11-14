@@ -53,6 +53,7 @@ class PhotoItem:
     albums: tuple = ()
     lat: Optional[float] = None
     lon: Optional[float] = None
+    live_lib: bool = False
 
     @property
     def month(self) -> str:
@@ -63,11 +64,24 @@ class PhotoItem:
         return self.live_video is not None
 
 
-def _apply_library(items: list[PhotoItem], lib) -> list[PhotoItem]:
+def _apply_library(items: list[PhotoItem], lib, has_file=None) -> list[PhotoItem]:
     """Favourite / hidden / screenshot / albums / location and the date taken, from the Photos library.
-    Items in Recently Deleted are left out (the Photos app doesn't show them in the library either)."""
+    Items in Recently Deleted are left out (the Photos app doesn't show them in the library either).
+
+    With iCloud Photos, photos that came from another device (and some the iPhone re-downloaded) are kept in
+    PhotoData/CPLAssets, not in DCIM; they are only found through the library. has_file(id) says whether
+    such a file is really there (a backup knows; on the phone the library is trusted)."""
     if lib is None:
         return items
+    seen = {i.id for i in items}
+    for key, a in getattr(lib, "assets", {}).items():
+        if key in seen or a.trashed or key.startswith("DCIM/") or not key.startswith("PhotoData/"):
+            continue
+        ext = Path(key).suffix.lower()
+        if ext not in IMG_EXT | VID_EXT or (has_file is not None and not has_file(key)):
+            continue
+        name = getattr(a, "original", None) or Path(key).name       # "IMG_1234.HEIC", not the iCloud file name
+        items.append(PhotoItem(key, name, 0, a.taken or dt.datetime(1970, 1, 1), a.video or ext in VID_EXT))
     out = []
     for i in items:
         a = lib.get(i.id)
@@ -77,6 +91,7 @@ def _apply_library(items: list[PhotoItem], lib) -> list[PhotoItem]:
         if a.trashed:
             continue
         i.favorite, i.hidden, i.screenshot = a.favorite, a.hidden, a.screenshot
+        i.live_lib = a.live                     # a Live Photo per the library (its video may be kept elsewhere)
         i.albums, i.lat, i.lon = tuple(a.albums), a.lat, a.lon
         if a.taken is not None:
             i.when = a.taken
@@ -175,7 +190,12 @@ class BackupPhotoSource(PhotoSource):
                 continue
             when = dt.datetime.fromtimestamp(mtime) if mtime else dt.datetime(1970, 1, 1)
             out.append(PhotoItem(rel[len("Media/"):], Path(rel).name, size or 0, when, ext in VID_EXT))
-        return _apply_library(_pair_live_photos(out), self.library())
+        items = _apply_library(_pair_live_photos(out), self.library(),
+                               has_file=lambda key: ("Media/" + key) in self.meta)
+        for i in items:
+            if not i.size and ("Media/" + i.id) in self.meta:
+                i.size = self.meta["Media/" + i.id][2] or 0
+        return items
 
     def _library_copy(self) -> Optional[Path]:
         dest = self.cache / "library" / "Photos.sqlite"
