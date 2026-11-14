@@ -36,12 +36,12 @@ def notify_system(title: str, text: str) -> None:
 _ICON = None
 
 
-def _icon_file(progress=None, template=False) -> Path:
+def _icon_file(progress=None, template=False, dot=False) -> Path:
     TMP.mkdir(parents=True, exist_ok=True)
     key = "ring" if progress is None else f"ring{int(progress) // 4}"   # 25 ring images at most
-    p = TMP / f"{key}{'-t' if template else ''}.png"
+    p = TMP / f"{key}{'-t' if template else ''}{'-dot' if dot else ''}.png"
     if not p.exists():
-        hc.icon_image(progress, 44 if template else 64, template).save(p)
+        hc.icon_image(progress, 44 if template else 64, template, dot).save(p)
     return p
 
 
@@ -69,7 +69,7 @@ def run_mac(helper: hc.Helper):
                 item.set_callback(None)
             self.backup.title = "Backing up…" if helper.busy else "Back up now"
             self.pause.state = 1 if helper.paused else 0
-            self.icon = str(_icon_file(helper.progress, template=True))
+            self.icon = str(_icon_file(helper.progress, template=True, dot=helper.needs_attention()))
 
         def on_backup(self, _):
             if not helper.back_up_now():
@@ -138,7 +138,7 @@ def run_tray(helper: hc.Helper):
 
     def changed():
         try:
-            icon.icon = hc.icon_image(helper.progress)
+            icon.icon = hc.icon_image(helper.progress, dot=helper.needs_attention())
             icon.update_menu()
         except Exception:
             pass

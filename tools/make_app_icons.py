@@ -35,6 +35,7 @@ COLOURS = {
     "files": ("#6ab7ff", "#2b7de9"),
     "apps": ("#7f7cff", "#4b47d6"),
     "allfiles": ("#9aa5b1", "#55606e"),
+    "checkup": ("#5fd068", "#1c9b4a"),
     # the four "What do you want to keep?" choices on the main screen
     "keep_chats": ("#3ddc84", "#0b9e6f"),
     "keep_chats_photos": ("#ffb347", "#ff5e7e"),
@@ -201,6 +202,10 @@ def draw(key: str) -> Image.Image:
         col = _hex(COLOURS[key][1])
         for y in (162, 196, 230):
             d.rounded_rectangle((116, y, 204, y + 12), radius=6, fill=col)
+    elif key == "checkup":                   # a clipboard with a tick (H1)
+        d.rounded_rectangle((96, 82, 272, 300), radius=26, outline=W, width=LINE)
+        d.rounded_rectangle((144, 64, 224, 108), radius=14, fill=W)
+        d.line([(132, 196), (172, 236), (240, 154)], fill=W, width=LINE + 6, joint="curve")
     elif key == "keep_chats":               # two speech bubbles
         _bubble(d, (70, 100, 250, 216), "left")
         _bubble(d, (150, 176, 300, 266), "right", fill=(255, 255, 255, 200))

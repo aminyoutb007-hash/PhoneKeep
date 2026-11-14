@@ -27,6 +27,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
+import checkup_ui
 import keychain
 import overview_ui
 import quicklook
@@ -60,6 +61,7 @@ APPS = [
     ("files", "App Files", "📁", "#1e90ff", "live"),
     ("apps", "Apps", "📱", "#5e5ce6", "backup"),
     ("allfiles", "All files", "🗂", "#8e8e93", "backup"),
+    ("checkup", "Check-up", "🩺", "#34c759", "checkup"),      # H1: from the phone, or as of the last backup
 ]
 LABEL = {k: l for k, l, *_ in APPS}
 ICON_DIR = ui.ICON_DIR
@@ -753,6 +755,8 @@ class PhoneWindow(tk.Toplevel):
             where = next(w for k, *_r, w in APPS if k == key)
             if key in self.counts:
                 text = self.counts[key]
+            elif where == "checkup":
+                text = checkup_ui.tile_text(self)
             elif where == "live":
                 text = "on the iPhone" if self.live is not None else ("from the backup" if key == "photos" else "connect iPhone")
             elif self.data is not None:
@@ -825,6 +829,9 @@ class PhoneWindow(tk.Toplevel):
         return pr.message, button, pr.details
 
     def open_app(self, key: str):
+        if key == "checkup":
+            checkup_ui.view(self)
+            return
         self.current = key
         self._clear()
         self.view_header(key)

@@ -144,6 +144,15 @@ try:
                 and not e.startswith("No ")]          # "no data of this kind" is an answer, not an error
         check(done and not errs, f"{label} opens ({time.time() - t:.0f} s)" + (f": {errs[0][:120]}" if errs else ""))
 
+    # -- H1: the check-up ------------------------------------------------------------------------------------
+    pump(app, lambda: win.overview is not None or win.overview_problem, 120)
+    win.open_app("checkup")
+    r = getattr(win, "checkup_report", None)
+    check(r is not None and len(getattr(win, "checkup_cards", {})) == 4 and getattr(win, "checkup_ms", 1e9) < 1000,
+          f"the check-up shows four cards in under 1 second ({getattr(win, 'checkup_ms', 0):.0f} ms)")
+    if r is not None:
+        note(f"{r.as_of()}: " + ", ".join(f"{c.title} {c.level}" for c in r.cards) + f"; {r.summary()}")
+
     # -- Photos -----------------------------------------------------------------------------------------------
     win.open_app("photos")
     pump(app, lambda: not loading(win) and find(win.content, ui.PhotoPanel) is not None, 900)
