@@ -87,7 +87,8 @@ def _crash_log() -> None:
         if issubclass(exc_type, BrokenPipeError):      # the window closed while a helper was still printing
             return
         try:
-            p = Path.home() / "PhoneKeep" / "crash.log"
+            import os
+            p = Path(os.environ.get("PHONEKEEP_HOME") or Path.home() / "PhoneKeep") / "crash.log"
             p.parent.mkdir(parents=True, exist_ok=True)
             with open(p, "a", encoding="utf-8") as f:
                 import datetime as dt
@@ -203,6 +204,59 @@ def _pk_storage(args: list) -> None:
         sys.exit(1)
 
 
+def _pk_overview(args: list) -> None:
+    """Internal (V1-V3): print PKOVERVIEW <json> with what the phone says about itself: lockdown values,
+    disk usage, the battery's IORegistry entry and the installed apps with their sizes. Read-only: it asks
+    the phone questions and changes nothing on it. A section that can't be read is listed under "problems"."""
+    import asyncio
+    import json
+    udid = args[args.index("--udid") + 1] if "--udid" in args else None
+    try:
+        from pymobiledevice3.lockdown import create_using_usbmux
+    except ImportError as e:
+        print(f"PKAPI {e}", flush=True)
+        sys.exit(3)
+    keep_info = ("DeviceName", "ProductType", "ProductVersion", "SerialNumber", "DeviceColor",
+                 "DeviceEnclosureColor", "TotalDiskCapacity", "ModelNumber", "RegionInfo")
+    keep_io = ("CycleCount", "DesignCapacity", "NominalChargeCapacity", "AppleRawMaxCapacity", "MaximumCapacityPercent",
+               "Temperature", "CurrentCapacity", "IsCharging")
+
+    async def run():
+        out = {"problems": {}}
+        async with await create_using_usbmux(serial=udid) as lockdown:
+            allv = (await lockdown.get_value()) or {}
+            out["info"] = {k: allv.get(k) for k in keep_info if allv.get(k) is not None}
+            for key, domain in (("disk", "com.apple.disk_usage"), ("battery", "com.apple.mobile.battery")):
+                try:
+                    out[key] = (await lockdown.get_value(domain=domain)) or {}
+                except Exception as e:
+                    out["problems"][key] = f"{type(e).__name__}: {e}"
+            try:
+                from pymobiledevice3.services.diagnostics import DiagnosticsService
+                async with DiagnosticsService(lockdown) as diag:
+                    io = (await diag.ioregistry(ioclass="AppleSmartBattery")) or {}
+                bd = io.get("BatteryData") if isinstance(io.get("BatteryData"), dict) else {}
+                out["battery_io"] = {k: io[k] for k in keep_io if k in io}
+                out["battery_io"]["BatteryData"] = {k: bd[k] for k in keep_io if k in bd}
+            except Exception as e:
+                out["problems"]["battery_io"] = f"{type(e).__name__}: {e}"
+            if "--no-apps" not in args:
+                try:
+                    from pymobiledevice3.services.installation_proxy import InstallationProxyService
+                    async with InstallationProxyService(lockdown) as ip:
+                        apps = await ip.get_apps(application_type="User", calculate_sizes=True)
+                    out["apps"] = {b: {k: a.get(k) for k in ("CFBundleDisplayName", "CFBundleName", "StaticDiskUsage",
+                                                             "DynamicDiskUsage")} for b, a in (apps or {}).items()}
+                except Exception as e:
+                    out["problems"]["apps"] = f"{type(e).__name__}: {e}"
+        print("PKOVERVIEW " + json.dumps(out, default=str), flush=True)
+    try:
+        asyncio.run(run())
+    except Exception as e:
+        print(f"PKERR {type(e).__name__}: {e}", flush=True)
+        sys.exit(1)
+
+
 def _pk_change_password(args: list) -> None:
     """Internal: change the backup password. The old and new passwords arrive on stdin, one per
     line, never on the command line."""
@@ -230,6 +284,9 @@ def main() -> None:
         return
     if args and args[0] == "--pk-change-password":
         _pk_change_password(args[1:])
+        return
+    if args and args[0] == "--pk-overview":
+        _pk_overview(args[1:])
         return
     if args and args[0] == "--pk-storage":
         _pk_storage(args[1:])

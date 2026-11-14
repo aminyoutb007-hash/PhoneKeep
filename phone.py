@@ -29,6 +29,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
 import keychain
+import overview_ui
 import phonekeep as wv
 import snapshots as sn
 import sections as sx
@@ -302,6 +303,10 @@ class PhoneWindow(tk.Toplevel):
         self.current = None
         self.wall_img = None
         self.refreshing = False
+        self.overview = None            # V1-V3: deviceinfo.Overview of the connected phone
+        self.overview_problem = ""
+        self.photos_bytes = self.messages_bytes = None
+        self.info_runner = Runner(self)
 
         self._build()
         self.protocol("WM_DELETE_WINDOW", self.close)
@@ -583,6 +588,25 @@ class PhoneWindow(tk.Toplevel):
             self.live_error = describe_error(e)
             self._update_src_line()
         self.live_runner.submit(go, ok, err)
+        self._read_overview()
+
+    def _read_overview(self):
+        """V1-V3: ask the phone about itself (read-only) in the background, then refresh the home strip."""
+        def ok(ov):
+            self.overview = ov
+            self.overview_problem = "" if ov is not None else "The iPhone's details couldn't be read just now."
+            if self.current is None:
+                self.show_home()
+        self.info_runner.submit(lambda: wv.device_overview(self.udid), ok,
+                                lambda e: ok(None))
+
+    def _backup_sizes(self):
+        """V3: what Photos and Messages take, from the backup (an estimate: iCloud-only photos aren't in it)."""
+        r = self.data.reader
+        photos = sum((m[2] or 0) for rel, m in r.file_meta("CameraRollDomain", "Media/DCIM/").items())
+        msgs = sum((m[2] or 0) for m in r.file_meta("HomeDomain", "Library/SMS/").values())
+        msgs += sum((m[2] or 0) for m in r.file_meta("MediaDomain", "Library/SMS/Attachments/").values())
+        return photos, msgs
 
     def _open_backup(self, password: Optional[str] = None, ask: bool = False):
         """ask=True: the stored password didn't open the backup last time, so ask for one now (the stored
@@ -626,6 +650,9 @@ class PhoneWindow(tk.Toplevel):
             self._update_src_line()
             self.counts = {}
             self._count_next([k for k, *_r, where in APPS if where == "backup"])
+            self.backup_runner.submit(self._backup_sizes,
+                                      lambda pm: setattr(self, "photos_bytes", pm[0]) or setattr(self, "messages_bytes", pm[1]),
+                                      lambda e: None)
             if self.current is None:
                 self.show_home()
             elif self.current in CHAT_APPS + ("calls", "contacts", "notes", "calendar", "voicemail", "allfiles",
@@ -676,6 +703,12 @@ class PhoneWindow(tk.Toplevel):
                  anchor="w").pack(fill="x")
         tk.Label(self.content, text="Click an app to see what's in it, preview it and save what you want.",
                  bg=BG, fg=MUTED, font=font(13), anchor="w").pack(fill="x", pady=(2, 12))
+        if self.udid and self.live_wanted:          # V1-V3: about this iPhone, its battery and storage
+            last = ""
+            if self.backup_path is not None and (Path(self.backup_path) / "Manifest.db").exists():
+                last = f"Last backup {wv.backup_info(self.backup_path).get('date') or '?'}"
+            self.overview_strip = overview_ui.cards(self, self.content, self.overview, last, self.overview_problem)
+            self.overview_strip.pack(fill="x", pady=(0, 14))
         grid = tk.Frame(self.content, bg=BG)
         grid.pack(fill="both", expand=True)
         self.tile_count = {}
@@ -1720,7 +1753,7 @@ class PhoneWindow(tk.Toplevel):
         if self.refreshing and not messagebox.askyesno(
                 wv.APP_NAME, "A backup is still running. Close anyway? It will carry on next time.", parent=self):
             return
-        for r in (self.backup_runner, self.live_runner):
+        for r in (self.backup_runner, self.live_runner, self.info_runner):
             r.stop()
         for x in (self.data, self.live, self.photo_src):
             try:
