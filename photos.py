@@ -46,10 +46,43 @@ class PhotoItem:
     when: dt.datetime
     video: bool
     live_video: Optional[str] = None  # id of the .MOV that belongs to a Live Photo
+    # P1, from the phone's Photos library (library.py); left at these defaults when it can't be read
+    favorite: bool = False
+    hidden: bool = False
+    screenshot: bool = False
+    albums: tuple = ()
+    lat: Optional[float] = None
+    lon: Optional[float] = None
 
     @property
     def month(self) -> str:
         return self.when.strftime("%Y-%m")
+
+    @property
+    def live(self) -> bool:
+        return self.live_video is not None
+
+
+def _apply_library(items: list[PhotoItem], lib) -> list[PhotoItem]:
+    """Favourite / hidden / screenshot / albums / location and the date taken, from the Photos library.
+    Items in Recently Deleted are left out (the Photos app doesn't show them in the library either)."""
+    if lib is None:
+        return items
+    out = []
+    for i in items:
+        a = lib.get(i.id)
+        if a is None:
+            out.append(i)
+            continue
+        if a.trashed:
+            continue
+        i.favorite, i.hidden, i.screenshot = a.favorite, a.hidden, a.screenshot
+        i.albums, i.lat, i.lon = tuple(a.albums), a.lat, a.lon
+        if a.taken is not None:
+            i.when = a.taken
+        out.append(i)
+    out.sort(key=lambda i: i.when, reverse=True)
+    return out
 
 
 def _pair_live_photos(items: list[PhotoItem]) -> list[PhotoItem]:
@@ -94,6 +127,22 @@ class PhotoSource:
     def items(self) -> list[PhotoItem]:
         raise NotImplementedError
 
+    def library(self):
+        """The phone's Photos library (favourites, albums, hidden…), or None. Read once."""
+        if not hasattr(self, "_library"):
+            self._library = None
+            try:
+                db = self._library_copy()
+                if db is not None:
+                    import library
+                    self._library = library.read(db)
+            except Exception:
+                self._library = None
+        return self._library
+
+    def _library_copy(self) -> Optional[Path]:
+        return None
+
     def thumbnail(self, item: PhotoItem) -> Optional[Path]:
         raise NotImplementedError
 
@@ -122,7 +171,19 @@ class BackupPhotoSource(PhotoSource):
                 continue
             when = dt.datetime.fromtimestamp(mtime) if mtime else dt.datetime(1970, 1, 1)
             out.append(PhotoItem(rel[len("Media/"):], Path(rel).name, size or 0, when, ext in VID_EXT))
-        return _pair_live_photos(out)
+        return _apply_library(_pair_live_photos(out), self.library())
+
+    def _library_copy(self) -> Optional[Path]:
+        dest = self.cache / "library" / "Photos.sqlite"
+        for extra in ("-wal", "-shm"):                     # never pair a fresh copy with an old log
+            Path(str(dest) + extra).unlink(missing_ok=True)
+        rel = "Media/PhotoData/Photos.sqlite"
+        if rel not in self.meta or not self._extract(rel, dest):
+            return None
+        for extra in ("-wal", "-shm"):                     # the latest changes may still be in the write-ahead log
+            if rel + extra in self.meta:
+                self._extract(rel + extra, Path(str(dest) + extra))
+        return dest
 
     def _extract(self, rel: str, dest: Path) -> bool:
         m = self.meta.get(rel)
@@ -207,7 +268,18 @@ class DevicePhotoSource(PhotoSource):
         return _pair_live_photos(out)
 
     def items(self) -> list[PhotoItem]:
-        return self._run(self._items(), timeout=3600)
+        return _apply_library(self._run(self._items(), timeout=3600), self.library())
+
+    def _library_copy(self) -> Optional[Path]:
+        dest = self.cache / "library" / "Photos.sqlite"
+        for extra in ("-wal", "-shm"):                     # never pair a fresh copy with an old log
+            Path(str(dest) + extra).unlink(missing_ok=True)
+        with self._lock:
+            if not self._run(self._pull("PhotoData/Photos.sqlite", dest), timeout=600):
+                return None
+            for extra in ("-wal", "-shm"):
+                self._run(self._pull("PhotoData/Photos.sqlite" + extra, Path(str(dest) + extra)), timeout=600)
+        return dest
 
     async def _pull(self, src: str, dest: Path) -> bool:
         dest.parent.mkdir(parents=True, exist_ok=True)

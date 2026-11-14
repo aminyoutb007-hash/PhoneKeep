@@ -31,6 +31,7 @@ STEPS = [
     ("X2: backup redaction tool leaves nothing personal and still opens", "test_x2_redaction.py", False),
     ("B5: open any backup with no phone; All files preview and save", "test_b5_open_backup.py", True),
     ("B8: choose which iPhone when several are reachable", "test_b8_choose_iphone.py", True),
+    ("P1: photos: favourites, albums, hidden, HEIC to JPG with date and location", "test_p1_photos.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)

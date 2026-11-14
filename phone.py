@@ -1051,7 +1051,8 @@ class PhoneWindow(tk.Toplevel):
             self.live_runner.submit(lambda: src.copy(item.id, dest) and dest,
                                     lambda p: (self.banner(""), open_file(p)) if p else None,
                                     lambda e: self.banner(f"Couldn't open it: {describe_error(e)}", color="#fdecea"))
-        panel = ui.PhotoPanel(self.content, src, items, select_all=False, on_open=open_one)
+        panel = ui.PhotoPanel(self.content, src, items, select_all=False, on_open=open_one,
+                              unlock=lambda go: self.app.confirm_private(go, "show your hidden photos"))
         panel.pack(fill="both", expand=True)
 
         def save():
@@ -1059,19 +1060,24 @@ class PhoneWindow(tk.Toplevel):
             if not chosen:
                 messagebox.showinfo(wv.APP_NAME, "Click the photos you want to save first (or Select all).", parent=self)
                 return
+            compatible = ui.ask_photo_format(self, 1 if self.app.s.data.get("photos_jpg") else 0)
+            if compatible is None:
+                return
+            self.app.s["photos_jpg"] = compatible               # remembered for next time
             folder = self.out_dir("photos")
             if folder is None:
                 return
 
             def go():
+                import photoconv
                 done = []
-                for i in chosen:
-                    month = i.when.strftime("%Y-%m") if i.when.year > 1970 else "Unknown date"
-                    dest = folder / month / i.name
-                    if src.copy(i.id, dest):
-                        done.append(dest)
-                    if i.live_video:
-                        src.copy(i.live_video, folder / month / Path(i.live_video).name)
+                conv_tmp = Path(tempfile.mkdtemp(prefix="phonekeep-heic-"))
+                try:
+                    for i in chosen:
+                        month = i.when.strftime("%Y-%m") if i.when.year > 1970 else "Unknown date"
+                        done += photoconv.save_item(src, i, folder / month, compatible, conv_tmp)
+                finally:
+                    shutil.rmtree(conv_tmp, ignore_errors=True)
                 return done
             self.run_save(f"{len(chosen):,} photos & videos", go, folder, "photo/video",
                           self.live_runner if src.label == "the iPhone" else self.backup_runner)

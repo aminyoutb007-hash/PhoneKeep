@@ -88,6 +88,7 @@ class Settings:
         "auto_backup": "off",        # E1 step 5 / B2: "daily" | "weekly" | "off"
         "wifi_sync": False,          # E1 step 5: the owner turned on Wi-Fi backups
         "app_lock": None,            # E1 step 5 / S2: None = decide by hardware
+        "photos_jpg": False,         # P1: last "Save photos as" choice (False = original HEIC)
         "lock_idle_minutes": 10,     # S2: hide phone windows after this many idle minutes
         "start_at_login": False,     # E2: the helper starts at login (asked once in E1 step 5)
         "auto_backup_paused": False, # E2: Pause automatic backups
@@ -794,6 +795,19 @@ class App(_dnd_root()):
         self._asking_unlock = True
         threading.Thread(target=ask, daemon=True).start()
 
+    def confirm_private(self, then, reason: str = "show your hidden photos"):
+        """P1 Hidden: always asks, even when PhoneKeep is unlocked: Touch ID / the computer's password when the
+        app lock is on, otherwise a confirmation. Cancelling does nothing."""
+        if self.lock_on():
+            def ask():
+                ok = applock.authenticate(reason)
+                if ok:
+                    self.call(then)
+            threading.Thread(target=ask, daemon=True).start()
+        elif messagebox.askyesno("Show hidden photos?", "These are the photos you hid on the iPhone. Show them here?",
+                                 parent=self.focus_get() or self):
+            then()
+
     def unlock_blocking(self, reason: str = "show your chats and photos") -> bool:
         """From a worker thread (the export's chooser step): wait for the unlock. True if unlocked."""
         if self.is_unlocked():
@@ -1033,7 +1047,7 @@ class App(_dnd_root()):
 
         def show():
             self.steps["choose"].set("active", detail="Waiting for you: choose the photos to keep…")
-            p = ui.PhotoPicker(self, source, items)
+            p = ui.PhotoPicker(self, source, items, unlock=lambda go: self.confirm_private(go, "show your hidden photos"))
             self.wait_window(p)
             box["v"] = p.result
             ev.set()
