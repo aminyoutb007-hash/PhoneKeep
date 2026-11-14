@@ -75,6 +75,9 @@ try:
     appmod.SETTINGS_FILE.write_text(json.dumps({"backup_dir": str(W / "Backups"), "first_run_done": True}), encoding="utf-8")
     a = appmod.App()
     a.withdraw()
+    # the window's own search 300 ms after it opens is not silent ("Looking for your iPhone…"): on a fast runner it
+    # landed just after a phone was picked and covered its name until it finished. This test searches by itself.
+    a.after_cancel(a._timers.pop("first"))
 
     def detect():
         a.detecting = False
