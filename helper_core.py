@@ -83,6 +83,7 @@ class Helper:
         self.lock = threading.Lock()
         self._refresh_at = 0.0
         self.clock = None                             # tests set a fake clock
+        self._red: dict = {}                          # H1: udid -> (last backup, a card red?) for the icon's dot
 
     # -- status -----------------------------------------------------------------------------
     def phones(self) -> list[dict]:
@@ -216,15 +217,26 @@ class Helper:
             import checkup
             folder = self.backup_dir / udid
             report = checkup.check(folder)
+            self._red.pop(udid, None)                 # the dot is worked out again from this backup's record
             for title, text in (checkup.new_alerts(folder, report, name) if report is not None else []):
                 self.notify(title, text)
         except Exception as e:
             self.log(f"Check-up: {type(e).__name__}: {e}")
 
     def needs_attention(self) -> bool:
-        """The icon's dot: a check-up card is red for one of the phones, as of its last backup."""
+        """The icon's dot: a check-up card is red for one of the phones, as of its last backup. Each phone's
+        answer is kept until its next backup (from here or from the window), not read again on every refresh."""
         import checkup
-        return any(checkup.any_red(self.backup_dir / p["udid"]) for p in self.phones() if p.get("udid"))
+        red = False
+        for p in self.phones():
+            udid = p.get("udid")
+            if not udid:
+                continue
+            seen = self._red.get(udid)
+            if seen is None or seen[0] != p["last"]:
+                seen = self._red[udid] = (p["last"], checkup.any_red(self.backup_dir / udid))
+            red = red or seen[1]
+        return red
 
     # -- backup health (the scheduler and the phone card read this) ----------------------------------
     def write_health(self, udid: str, ok: bool, reason: str = ""):
