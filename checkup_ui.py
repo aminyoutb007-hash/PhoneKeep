@@ -138,15 +138,24 @@ def draw_health_chart(cv: tk.Canvas, pts: list, width: int = 640, height: int = 
         cv.create_line(left, y(g), width - right, y(g), fill=LINE)
         cv.create_text(left - 8, y(g), text=f"{g}%", anchor="e", fill=MUTED, font=font(10))
     cv.create_line(left, y(bh.REPLACE_BELOW), width - right, y(bh.REPLACE_BELOW), fill=MUTED, dash=(4, 3))
-    # named at the left, just above its line: clear of the latest point's label at the right
-    cv.create_text(left + 4, y(bh.REPLACE_BELOW) - 3, text="80%: replace", anchor="sw", fill=MUTED, font=font(10))
     xy = [(x(i, w), y(h)) for i, (w, h) in enumerate(pts)]
     if len(xy) > 1:
         cv.create_line(*[c for p in xy for c in p], fill=ui.GREEN, width=2, smooth=False)
     for (px, py) in xy:                               # 8 px points with a 2 px ring of the card colour
         cv.create_oval(px - 4, py - 4, px + 4, py + 4, fill=ui.GREEN, outline=CARD, width=2)
     lx, ly = xy[-1]
-    cv.create_text(lx + 8, ly - 10, text=f"about {pts[-1][1]}%", anchor="w", fill=INK, font=font(11, "bold"))
+    dots = [(px - 6, py - 6, px + 6, py + 6) for px, py in xy]
+    # the latest point's label: beside the point where the canvas has room and the line doesn't run
+    last = cv.create_text(0, 0, text=f"about {pts[-1][1]}%", fill=INK, font=font(11, "bold"), tags="label")
+    _place(cv, last, ((lx + 6, ly - 6, "sw"), (lx + 6, ly + 6, "nw"), (lx - 6, ly - 6, "se"), (lx - 6, ly + 6, "ne"),
+                      (lx, ly - 8, "s"), (lx, ly + 8, "n")), dots, xy, width, height, keep_if_none=True)
+    # the 80% line's name: left or right of the plot, above or below its line, wherever the health line, its
+    # points and the latest label leave room (the data can cross 80% anywhere); else the caption names it
+    y80 = y(bh.REPLACE_BELOW)
+    name = cv.create_text(0, 0, text="80%: replace", fill=MUTED, font=font(10), tags="label")
+    _place(cv, name, ((left + 4, y80 - 3, "sw"), (left + 4, y80 + 3, "nw"), (width - right - 4, y80 - 3, "se"),
+                      (width - right - 4, y80 + 3, "ne"), (width - right + 6, y80, "w")),
+           dots + [cv.bbox(last)], xy, width, height, keep_if_none=False)
     for i in sorted({0, len(pts) - 1}):
         cv.create_text(xy[i][0], height - bottom + 12, text=checkup.day_text(pts[i][0]), fill=MUTED, font=font(10),
                        anchor="w" if i == 0 and len(pts) > 1 else "e" if i else "center")
@@ -161,11 +170,53 @@ def draw_health_chart(cv: tk.Canvas, pts: list, width: int = 640, height: int = 
         t = cv.create_text(xy[near][0], xy[near][1] - 16, text=f"{checkup.day_text(w)} · about {h}%",
                            fill=INK, font=font(11), anchor="s", tags="tip")
         x0, y0, x1, y1 = cv.bbox(t)
+        if y0 - 3 < 0:                                # no room above a point at the top: below it
+            cv.coords(t, xy[near][0], xy[near][1] + 16)
+            cv.itemconfigure(t, anchor="n")
+        b = cv.bbox(t)                                # keep it and its box (6 px padding, outline) inside
+        cv.move(t, max(0, 9 - b[0]) - max(0, b[2] + 9 - width), 0)
+        x0, y0, x1, y1 = cv.bbox(t)
         cv.tag_lower(cv.create_rectangle(x0 - 6, y0 - 3, x1 + 6, y1 + 3, fill=CARD, outline=LINE, tags="tip"), t)
         tip["shown"] = near
     cv.bind("<Motion>", hover)
     cv.bind("<Leave>", lambda e: cv.delete("tip"))
     cv.hover = hover
+
+
+def _place(cv, item, spots, keep_clear, xy, width, height, keep_if_none: bool) -> bool:
+    """Put a canvas text at the first spot (x, y, anchor) where it's inside the canvas, off the line through xy and
+    clear of keep_clear. None free: the first spot that fits inside (keep_if_none), or the text is removed."""
+    fits = None
+    for nx, ny, anchor in spots:
+        cv.coords(item, nx, ny)
+        cv.itemconfigure(item, anchor=anchor)
+        b = cv.bbox(item)
+        if not (b[0] >= 0 and b[1] >= 0 and b[2] <= width and b[3] <= height):
+            continue
+        fits = fits or (nx, ny, anchor)
+        if not any(_overlap(b, k) for k in keep_clear) and not _crosses(b, xy):
+            return True
+    if keep_if_none and fits:
+        cv.coords(item, fits[0], fits[1])
+        cv.itemconfigure(item, anchor=fits[2])
+    else:
+        cv.delete(item)
+    return False
+
+
+def _overlap(a, b) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def _crosses(box, xy) -> bool:
+    """Does the polyline through xy pass through the box? (Checked every 2 px along each segment.)"""
+    for (x0, y0), (x1, y1) in zip(xy, xy[1:]):
+        n = max(2, int(((x1 - x0) ** 2 + (y1 - y0) ** 2) ** 0.5 / 2))
+        for k in range(n + 1):
+            px, py = x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n
+            if box[0] <= px <= box[2] and box[1] <= py <= box[3]:
+                return True
+    return False
 
 
 def battery_history_view(win, r: checkup.Report):
@@ -195,6 +246,8 @@ def battery_history_view(win, r: checkup.Report):
         cv.pack(anchor="w", padx=18, pady=(4, 0))
         draw_health_chart(cv, pts)
         win.battery_chart = cv
+        tk.Label(sec, text="The dashed line is 80%, where Apple usually recommends a new battery.", bg=CARD,
+                 fg=MUTED, font=font(11), anchor="w").pack(fill="x", padx=18)
     else:
         win.battery_chart = None
         tk.Label(sec, text="The chart fills in as PhoneKeep backs up: one point per backup.", bg=CARD, fg=MUTED,

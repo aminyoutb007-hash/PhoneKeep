@@ -166,6 +166,42 @@ try:
           and json.loads(saved.with_suffix(".json").read_text(encoding="utf-8"))["battery"]["cycle_count"] == 331,
           "Save details writes the history as CSV, and V2's JSON next to it")
 
+    # the chart's labels: inside the canvas, and never on the line or its points (review of #44)
+    def layout(healths, every_days=30):
+        c = tk.Canvas(root, width=640, height=210)
+        pts_ = [(T0 + dt.timedelta(days=i * every_days), h) for i, h in enumerate(healths)]
+        checkup_ui.draw_health_chart(c, pts_)
+        c.update_idletasks()
+        texts_ = [(c.itemcget(i, "text"), c.bbox(i)) for i in c.find_all() if c.type(i) == "text"]
+        outside = [t for t, b in texts_ if b[0] < 0 or b[1] < 0 or b[2] > 640 or b[3] > 210]
+        dots = [c.coords(i) for i in c.find_all() if c.type(i) == "oval"]
+        line_xy = [((d[0] + d[2]) / 2, (d[1] + d[3]) / 2) for d in dots]
+        labels_ = [(c.itemcget(i, "text"), c.bbox(i)) for i in c.find_withtag("label")]
+        on_line = [t for t, b in labels_ if checkup_ui._crosses(b, line_xy)
+                   or any(checkup_ui._overlap(b, d) for d in dots)]
+        between = len(labels_) == 2 and checkup_ui._overlap(labels_[0][1], labels_[1][1])
+        for px, py in line_xy:                        # each point's hover tooltip stays inside too
+            c.hover(type("E", (), {"x": int(px), "y": int(py)})())
+            b = c.bbox("tip")
+            if b and (b[0] < 0 or b[1] < 0 or b[2] > 640 or b[3] > 210):
+                outside.append("tooltip")
+        c.destroy()
+        return outside, on_line, between, [t for t, _b in labels_]
+
+    for what, healths in (("the latest point at the right edge (86%)", [92, 90, 88, 86]),
+                          ("crossing 80% at the left", [83, 79, 78, 77, 76]),
+                          ("crossing 80% at the right", [90, 88, 85, 82, 79]),
+                          ("hovering around 80% all along", [81, 79, 81, 79, 81, 79, 80]),
+                          ("a steep drop, two backups", [100, 60]),
+                          ("thirty backups", [100 - i // 2 for i in range(30)]),
+                          ("the latest point at the top", [97, 98, 99, 100])):
+        outside, on_line, between, shown = layout(healths)
+        check(not outside and not on_line and not between and shown and shown[0].startswith("about "),
+              f"chart labels with {what}: inside the canvas, off the line and its points, apart"
+              f" (outside {outside}, on the line {on_line}, overlapping {between}, labels {shown})")
+    check(any(t.startswith("The dashed line is 80%") for t in texts),
+          "the caption under the chart names the 80% line (also when there's no free place for its label)")
+
     cu.record(W / "Backups" / "00008030-ONE", di.Overview(total=1, free=1, battery=di.Battery(health=97)), T0)
     win3 = Win("00008030-ONE")
     checkup_ui.details(win3, "battery")
