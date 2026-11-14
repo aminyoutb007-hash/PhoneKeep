@@ -511,6 +511,7 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
         # at most 20 s: a Wi-Fi phone that dozes off once the backup is done mustn't hold up its end
         checkup.record(_snaps.phone_dir(backup_root, udid), device_overview(udid, apps=False, timeout=CHECKUP_TIMEOUT))
         read_crash_reports(udid, _snaps.phone_dir(backup_root, udid), timeout=CHECKUP_TIMEOUT)          # H4
+        read_security(udid, _snaps.phone_dir(backup_root, udid), timeout=CHECKUP_TIMEOUT)               # H5
     except Exception as e:     # never fails a backup that's already made
         log(f"The check-up couldn't be recorded: {type(e).__name__}: {e}")
     if progress:
@@ -655,6 +656,27 @@ def read_crash_reports(udid: Optional[str], phone_dir: Path, apps: Optional[dict
     summary = cr.summary(cr.read_folder(folder, apps), dt.datetime.now())
     checkup.record_stability(phone_dir, summary)
     return summary
+
+
+def read_security(udid: Optional[str], phone_dir: Path, timeout: float = 60) -> Optional[dict]:
+    """H5: run the security checks' reads (read-only) and record them in the phone's checkup.json.
+    Returns what was read, or None if the phone couldn't be asked within `timeout` seconds."""
+    import checkup
+    import security
+    try:
+        check_pmd3()
+        cmd = _launcher_cmd() + ["--pk-security"] + (["--udid", udid] if udid else [])
+        env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+        r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
+                           timeout=timeout, **_NOWIN)
+        line = next((l for l in r.stdout.splitlines() if l.startswith("PKSECURITY ")), None)
+        if line is None:
+            return None
+        raw = json.loads(line[len("PKSECURITY "):])
+    except Exception:
+        return None
+    checkup.record_security(phone_dir, security.summary(raw, dt.datetime.now()))
+    return raw
 
 
 RESET_PASSWORD_HELP = (
