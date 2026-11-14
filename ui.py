@@ -66,6 +66,7 @@ def setup_styles(root: tk.Misc) -> None:
 
 # where the data is and how it is protected, in one line (usability task 5, 13 Nov): the same everywhere
 PROTECTED = "🔒 Encrypted with your backup password · never sent online"
+PROTECTED_SHORT = "🔒 Encrypted · never sent online"     # the phone window's header, where space is short
 
 class RoundButton(tk.Canvas):
     """A pill-shaped button: kind = primary | secondary | ghost | light."""
@@ -1083,7 +1084,7 @@ class PhotoPanel(tk.Frame):
         st.configure("Months.Treeview", rowheight=26)
         self.mlist = ttk.Treeview(side, columns=("m", "n"), show="", selectmode="browse", height=18,
                                   style="Months.Treeview")
-        self.mlist.column("m", width=140)
+        self.mlist.column("m", width=180)
         self.mlist.column("n", width=64, anchor="e")
         self.mlist.tag_configure("year", font=font(12, "bold"), foreground=INK)
         self.mlist.tag_configure("month", foreground=INK)
@@ -1122,11 +1123,15 @@ class PhotoPanel(tk.Frame):
         as a line per year with its months under it, each with "selected/total" and a box to tick all of it
         (owner, 13 Nov). Rows are updated in place: re-inserting them re-selected the open group and emptied the
         grid (13 Nov: Select none, then Select this month)."""
-        def put(iid, parent, label, items, tag):
+        def put(iid, parent, label, items, tag, zero=False):
             n = sum(1 for i in items if i.id in self.selected)
             indent = label[:len(label) - len(label.lstrip())]
-            values = (f"{indent}{self._box(n, len(items))} {label.lstrip()}" if items else label,
-                      f"{n}/{len(items)}" if items else "")
+            if items:
+                values = (f"{indent}{self._box(n, len(items))} {label.lstrip()}", f"{n}/{len(items)}")
+            elif zero:                                   # an empty album: lined up with the others, "0"
+                values = (f"{indent}   {label.lstrip()}", "0")
+            else:
+                values = (label, "")
             if self.mlist.exists(iid):
                 self.mlist.item(iid, values=values)
             else:
@@ -1137,7 +1142,7 @@ class PhotoPanel(tk.Frame):
         if self.album_rows:
             put("head-albums", "", "Albums", [i for k, _t in self.album_rows for i in self.months[k]], "year")
             for k, title in self.album_rows:
-                put(k, "head-albums", "    " + title, self.months[k], "month")
+                put(k, "head-albums", "    " + title, self.months[k], "month", zero=True)
         if self.hidden_items:
             label = "🔒 Hidden" if not self.hidden_open else "Hidden"
             put("c:hidden", "", label, self.hidden_items if self.hidden_open else [], "year")
