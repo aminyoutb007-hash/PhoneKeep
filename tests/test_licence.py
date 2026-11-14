@@ -78,7 +78,8 @@ def check_built(built: Path):
 
 # 1. the licence
 lic = ROOT / "LICENSE"
-check(lic.is_file() and hashlib.sha256(lic.read_bytes()).hexdigest() == GPL3_SHA256,
+# git may check text files out with Windows line endings; the words are what must match
+check(lic.is_file() and hashlib.sha256(lic.read_bytes().replace(b"\r\n", b"\n")).hexdigest() == GPL3_SHA256,
       "LICENSE is the GNU GPL v3 text from gnu.org, unchanged")
 
 # 2. the notices

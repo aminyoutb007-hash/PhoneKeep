@@ -140,7 +140,12 @@ LICENSE-THIRD-PARTY.yml).
 | [lzfse](https://github.com/m1stadev/lzfse) (Windows and Linux; the Mac uses apple-compress) | MIT |
 | [winrt-runtime](https://github.com/pywinrt/pywinrt) | MIT |
 | [winrt-Windows.Foundation](https://github.com/pywinrt/pywinrt) | MIT |
+| [winrt-Windows.Foundation.Collections](https://github.com/pywinrt/pywinrt) | MIT |
 | [winrt-Windows.Security.Credentials.UI](https://github.com/pywinrt/pywinrt) | MIT |
+| [winrt-Windows.Storage.Streams](https://github.com/pywinrt/pywinrt) | MIT |
+| [pywin32](https://github.com/mhammond/pywin32) (used by keyring and Send2Trash) | PSF-2.0 |
+| [pywin32-ctypes](https://github.com/enthought/pywin32-ctypes) (used by keyring) | BSD-3-Clause |
+| [colorama](https://github.com/tartley/colorama) (used by click) | BSD-3-Clause |
 | MinGW-w64 runtime (in the Windows pillow-heif wheel) | GPL-3.0 with the GCC Runtime Library Exception; libwinpthread MIT and BSD |
 
 On the Mac, pyobjc-framework-Security and enum-compat are installed with the libraries above but not used at run time.
