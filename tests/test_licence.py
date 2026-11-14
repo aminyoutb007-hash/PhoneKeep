@@ -3,7 +3,7 @@
 Checks:
 - LICENSE is the GNU GPL version 3 text exactly as gnu.org publishes it;
 - THIRD_PARTY_NOTICES.md names every library the app depends on (requirements.txt and everything they pull in, as
-  installed here; IPython is left out of the build by the spec);
+  installed here; IPython and PyAV are left out of the build by the spec);
 - the PyInstaller recipe and the Windows installer ship both files, and the About box says the licence and the source;
 - the built app contains both files, unchanged: the app given with --built (build-mac.sh and GitHub's builds pass it),
   or else dist/PhoneKeep.app or dist/PhoneKeep when there is one.
@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 FILES = ("LICENSE", "THIRD_PARTY_NOTICES.md")
 GPL3_SHA256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"   # gnu.org/licenses/gpl-3.0.txt
-NOT_BUILT = {"ipython"}                     # the spec's excludes; what only it needs isn't built in either
+NOT_BUILT = {"ipython", "av"}               # the spec's excludes; what only they need isn't built in either
 failures = []
 
 

@@ -137,12 +137,23 @@ LICENSE-THIRD-PARTY.yml).
 |---|---|
 | [pystray](https://github.com/moses-palmer/pystray) | LGPL-3.0 |
 | [six](https://github.com/benjaminp/six) (used by pystray) | MIT |
+| [lzfse](https://github.com/m1stadev/lzfse) (Windows and Linux; the Mac uses apple-compress) | MIT |
 | [winrt-runtime](https://github.com/pywinrt/pywinrt) | MIT |
 | [winrt-Windows.Foundation](https://github.com/pywinrt/pywinrt) | MIT |
 | [winrt-Windows.Security.Credentials.UI](https://github.com/pywinrt/pywinrt) | MIT |
 | MinGW-w64 runtime (in the Windows pillow-heif wheel) | GPL-3.0 with the GCC Runtime Library Exception; libwinpthread MIT and BSD |
 
 On the Mac, pyobjc-framework-Security and enum-compat are installed with the libraries above but not used at run time.
+
+## Linux only (built from source; there is no Linux installer)
+
+| Library | Licence |
+|---|---|
+| [jeepney](https://gitlab.com/takluyver/jeepney) | MIT |
+| [SecretStorage](https://github.com/mitya57/secretstorage) | BSD-3-Clause |
+| [python-xlib](https://github.com/python-xlib/python-xlib) | LGPL-2.1-or-later |
+
+PyAV (av), which pymobiledevice3 asks for outside the Mac, is left out of the app by the PyInstaller recipe.
 
 ## Native libraries
 
