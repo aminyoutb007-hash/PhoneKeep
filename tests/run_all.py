@@ -33,6 +33,7 @@ STEPS = [
     ("B8: choose which iPhone when several are reachable", "test_b8_choose_iphone.py", True),
     ("V1-V3: device overview, battery health, storage usage", "test_v123_device.py", True),
     ("Q1: quick preview everywhere (Space)", "test_q1_previews.py", True),
+    ("D9: save everything with one date range and search", "test_d9_save_everything.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
