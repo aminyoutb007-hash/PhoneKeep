@@ -92,8 +92,8 @@ A short **Tips for this iPhone** list, only the ones that apply: turn on Optimis
 - No memory or "RAM" figures: iOS manages memory itself and a figure would invite the owner to act on something they can't change.
 
 **Done when**
-- [ ] With seeded crash reports, the card lists the right apps and counts, and a seeded unexpected restart shows as red.
-- [ ] After a check, the crash reports are still on the phone.
+- [x] With seeded crash reports, the card lists the right apps and counts, and a seeded unexpected restart shows as red. *(14 Nov, `tests/test_h4_stability.py`, seeded with every kind of report a real iPhone keeps: only app crashes and restarts count, a widget counts under its app. On the owner's iPhone, `tools/real_check.py` reads and counts them. Counting iOS restarting itself (SystemMemoryReset) as an unexpected restart is the owner's check: it shows on their phone this week.)*
+- [x] After a check, the crash reports are still on the phone. *(14 Nov: the test's fake phone records every call (only listing and reading, nothing removed, moved or flushed), and `tools/real_check.py` reads the owner's iPhone twice: all still there.)*
 
 ## H5. Security card
 

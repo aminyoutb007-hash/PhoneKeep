@@ -2,6 +2,7 @@
 card's details. The verdicts come from checkup.py; this only draws them."""
 from __future__ import annotations
 
+import datetime as dt
 import time
 import tkinter as tk
 from pathlib import Path
@@ -79,10 +80,31 @@ def view(win):
             fill="x", padx=14, pady=(6, 12), side="bottom")
         overview_ui._bind_all(f, lambda k=c.key: details(win, k))
         win.checkup_cards[c.key] = f
-    tk.Label(win.content, text="Storage and Battery are what the iPhone reports. The Stability and Security checks "
-                               "come in later versions of PhoneKeep. Nothing here changes anything on the iPhone.",
+    tk.Label(win.content, text="Storage and Battery are what the iPhone reports, Stability what its crash reports "
+                               "say. The Security checks come in a later version of PhoneKeep. Nothing here changes "
+                               "anything on the iPhone.",
              bg=BG, fg=MUTED, font=font(11), anchor="w", justify="left", wraplength=760).pack(fill="x", pady=(12, 0))
     win.checkup_ms = (time.perf_counter() - t0) * 1000
+    read_crashes(win)
+
+
+def read_crashes(win):
+    """H4: with the iPhone connected, read its crash reports once per window (read-only), then show the card again."""
+    pd = phone_dir(win)
+    if pd is None or getattr(win, "live", None) is None or getattr(win, "crashes_read", False):
+        return
+    win.crashes_read = True
+    import phonekeep as wv
+    ov = getattr(win, "overview", None)
+    apps = {a.bundle: a.name for a in (ov.apps or [])} if ov is not None and ov.apps else None
+
+    def done(summary):
+        win.crash_summary = summary
+        if summary is not None and win.current == "checkup":
+            view(win)
+        elif summary is not None and win.current == "checkup:stability":
+            details(win, "stability")
+    win.live_runner.submit(lambda: wv.read_crash_reports(win.udid, pd, apps), done, lambda e: None)
 
 
 def details(win, key: str):
@@ -114,6 +136,64 @@ def details(win, key: str):
         storage_suggestions(win, r)
     elif key == "battery":
         battery_history_view(win, r)
+    elif key == "stability":
+        stability_view(win, r)
+
+
+def stability_view(win, r: checkup.Report):
+    """H4: crashes by app and day over the last 7 days, the advice, and Save reports."""
+    import crashes as cr
+    pd = phone_dir(win)
+    st = checkup.load(pd).get("stability") if pd else None
+    sec = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+    sec.pack(fill="x", pady=(12, 0))
+    days = checkup.THRESHOLDS["crash_days"]
+    rows = cr.by_day(st, days)
+    win.stability_rows = rows
+    if not st:
+        tk.Label(sec, text="Connect the iPhone to read its crash reports. PhoneKeep only reads them: they stay on the "
+                 "phone.", bg=CARD, fg=MUTED, font=font(12), anchor="w", justify="left", wraplength=700).pack(
+            fill="x", padx=18, pady=14)
+        return
+    read = dt.datetime.fromisoformat(st["read"])
+    tk.Label(sec, text=f"The last {days} days, by day", bg=CARD, fg=INK, font=font(15, "bold"), anchor="w").pack(
+        fill="x", padx=18, pady=(14, 0))
+    tk.Label(sec, text=f"From the iPhone's crash reports, read {checkup.day_text(read)} at {read:%H:%M}. They stay on "
+             "the phone; a copy is kept on this computer.", bg=CARD, fg=MUTED, font=font(11), anchor="w",
+             justify="left", wraplength=700).pack(fill="x", padx=18)
+    if not rows:
+        tk.Label(sec, text=f"No app crashes and no unexpected restarts in the last {days} days.", bg=CARD, fg=INK,
+                 font=font(12), anchor="w").pack(fill="x", padx=18, pady=(8, 0))
+    for app, per_day in rows:
+        total = sum(n for _d, n in per_day)
+        head = (f"Unexpected restarts: {total}" if app == "" else
+                f"{app}: {total} crash{'es' if total != 1 else ''}")
+        tk.Label(sec, text=head, bg=CARD, fg=INK, font=font(13, "bold"), anchor="w").pack(fill="x", padx=18,
+                                                                                         pady=(10, 0))
+        tk.Label(sec, text="   ".join(f"{d.day} {d:%b}: {n}" for d, n in per_day), bg=CARD, fg=MUTED, font=font(11),
+                 anchor="w", justify="left", wraplength=700).pack(fill="x", padx=18)
+        tk.Label(sec, text=cr.RESTART_ADVICE if app == "" else cr.ADVICE, bg=CARD, fg=INK, font=font(11),
+                 anchor="w", justify="left", wraplength=700).pack(fill="x", padx=18)
+
+    def save():
+        since = read - dt.timedelta(days=cr.KEEP_DAYS)
+        events = [e for e in st.get("events", []) if dt.datetime.fromisoformat(e["when"]) >= since]
+        if not events:
+            from tkinter import messagebox
+            messagebox.showinfo("PhoneKeep", "There are no crash reports to save.", parent=win)
+            return
+        folder = win.out_dir("checkup") if hasattr(win, "out_dir") else None
+        if folder is None:
+            return
+        dest = Path(folder) / f"iPhone crash reports {read:%Y-%m-%d}.zip"
+        cr.save_zip(Path(pd) / cr.FOLDER, events, dest)
+        win.crash_zip = dest
+        if hasattr(win, "saved"):
+            win.saved([dest], Path(folder), "file")
+    RoundButton(sec, "Save reports…", save, "secondary", 150, 34, 12).pack(anchor="w", padx=18, pady=(12, 0))
+    tk.Label(sec, text=f"A zip of the crash and restart reports of the last {cr.KEEP_DAYS} days, for anyone helping "
+             "you (Apple Support, the app's maker).", bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left",
+             wraplength=700).pack(fill="x", padx=18, pady=(4, 14))
 
 
 # -- H3: battery health over time, a plain note, tips for this iPhone ---------------------------------------------

@@ -184,25 +184,27 @@ def health_drop(f: Facts) -> int:
 
 def stability_card(f: Facts) -> Card:
     t = THRESHOLDS
+    import crashes as cr
     if f.crashes is None and f.unexpected_restarts is None:
-        return Card("stability", UNKNOWN, "Not checked yet: PhoneKeep doesn't read the iPhone's crash reports yet.")
+        return Card("stability", UNKNOWN, "Not checked yet: connect the iPhone so PhoneKeep can read its crash reports.")
     found, level, slow = [], GREEN, ""
     if f.unexpected_restarts:
         n = f.unexpected_restarts
-        found.append("The iPhone restarted unexpectedly " + ("once" if n == 1 else f"{n} times") + " this week.")
+        found.append("The iPhone restarted unexpectedly " + ("once" if n == 1 else f"{n} times") + " this week. "
+                     + cr.RESTART_ADVICE)
         level, slow = RED, "your iPhone restarted unexpectedly this week"
     # most crashes first, so the first app over the line sets the card when no restart already made it red
     for app, n in sorted((f.crashes or {}).items(), key=lambda kv: (-kv[1], kv[0])):
         if n < t["crash_amber"]:
             break
-        found.append(f"{app} crashed {n} times this week.")
+        found.append(f"{app} crashed {n} times this week. {cr.ADVICE}")
         if level == GREEN:
             level, slow = (RED if n >= t["crash_red"] else AMBER), f"{app} crashed {n} times this week"
     if level == GREEN:
         why = ("No app crashes in the last 7 days." if not any((f.crashes or {}).values())
                else f"No app crashed {t['crash_amber']} or more times in the last 7 days.")
         return Card("stability", GREEN, f"Green: {why}", [why])
-    return Card("stability", level, f"{level.capitalize()}: {found[0]}", found, slow)
+    return Card("stability", level, f"{level.capitalize()}: {found[0].split('. ')[0]}.", found, slow)
 
 
 def security_card(f: Facts) -> Card:
@@ -295,15 +297,24 @@ def facts(phone_dir: Optional[Path], ov=None, now: Optional[dt.datetime] = None)
     entry in the record. None when there's nothing at all yet."""
     d = load(phone_dir) if phone_dir is not None else {"history": []}
     hist = [(w, e.get("health")) for e in d["history"] if (w := _when(e)) is not None]
+    import crashes as cr
+    crash, restarts = cr.counts(d.get("stability"), THRESHOLDS["crash_days"])   # H4: as of the last read
     if ov is not None and entry_from(ov, now or dt.datetime.now()) is not None:
         return Facts(when=now or dt.datetime.now(), live=True, total=ov.total, free=ov.free,
-                     health=ov.battery.health, health_history=hist)
+                     health=ov.battery.health, health_history=hist, crashes=crash, unexpected_restarts=restarts)
     last = next((e for e in reversed(d["history"]) if _when(e) is not None), None)
     if last is None:
         return None
     w = _when(last)
     return Facts(when=w, live=False, total=last.get("total"), free=last.get("free"), health=last.get("health"),
-                 health_history=[(hw, h) for hw, h in hist if hw <= w])
+                 health_history=[(hw, h) for hw, h in hist if hw <= w], crashes=crash, unexpected_restarts=restarts)
+
+
+def record_stability(phone_dir: Path, stability: dict) -> None:
+    """H4: what the phone's crash reports said at the last read (crashes.summary)."""
+    d = load(phone_dir)
+    d["stability"] = stability
+    _save(phone_dir, d)
 
 
 def check(phone_dir: Optional[Path], ov=None, now: Optional[dt.datetime] = None) -> Optional[Report]:
