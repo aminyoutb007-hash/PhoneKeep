@@ -15,6 +15,7 @@ d = next((d for d in wv.list_devices() if d.get("ConnectionType") == "USB"), Non
 if d is None:
     sys.exit("Plug the iPhone in with a cable and unlock it, then run this again.")
 src = ph.DevicePhotoSource(d["UniqueDeviceID"], Path(tempfile.mkdtemp(prefix="pk-check-")))
+print("reading the Photos library from the iPhone (about a minute)…", flush=True)
 try:
     db = src._library_copy()
 finally:
@@ -22,7 +23,7 @@ finally:
 con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
 cols = [r[1] for r in con.execute('PRAGMA table_info("ZGENERICALBUM")')]
 rows = [dict(zip(cols, r)) for r in con.execute("SELECT * FROM ZGENERICALBUM WHERE ZKIND = 2 AND ZTITLE IS NOT NULL")]
-pks = {r["Z_PK"]: r for r in con.execute("SELECT Z_PK, ZKIND, ZTITLE FROM ZGENERICALBUM")}
+pks = {r[0]: r for r in con.execute("SELECT Z_PK, ZKIND, ZTITLE FROM ZGENERICALBUM")}
 skip = {"Z_PK", "Z_OPT", "ZTITLE", "ZUUID", "ZCLOUDGUID", "ZCREATIONDATE", "ZSTARTDATE", "ZENDDATE", "ZKEYASSET",
         "ZSECONDARYKEYASSET", "ZTERTIARYKEYASSET", "ZCUSTOMKEYASSET", "ZCACHEDCOUNT", "ZCACHEDPHOTOSCOUNT",
         "ZCACHEDVIDEOSCOUNT", "ZLASTMODIFIEDDATE", "ZCLOUDCREATIONDATE", "ZCLOUDLASTINTERESTINGCHANGEDATE"}
