@@ -934,8 +934,17 @@ class BackupReader:
         if self._enc is not None:
             try:
                 return self._enc.extract_file_as_bytes(rel, domain_like=domain)
-            except Exception:
-                return None
+            except Exception as e:
+                self.last_error = f"{type(e).__name__}: {e}"
+            # fall back to decrypting it the way Save does, into the private preview folder, and remove it at once
+            import quicklook
+            tmp = quicklook.private_dir() / f"read-{file_id[:16]}"
+            try:
+                if self.extract(domain, rel, file_id, tmp):
+                    return tmp.read_bytes()
+            finally:
+                tmp.unlink(missing_ok=True)
+            return None
         if self._snapshot:
             import snapshots as _snaps
             src = _snaps.resolve(self.path, file_id)

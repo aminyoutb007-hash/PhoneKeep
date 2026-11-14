@@ -1420,6 +1420,7 @@ class PhoneWindow(tk.Toplevel):
             for i in siblings:
                 _k, domain, rel, size, _mtime = meta[i]
                 items.append(quicklook.Item(Path(rel).name, read=lambda d=domain, r=rel: self.data.read(d, r),
+                                            why=lambda: getattr(self.data.reader, "last_error", None),
                                             to_file=lambda dest, d=domain, r=rel: self.data.copy(d, r, dest), size=size))
             self.allfiles_viewer = quicklook.Viewer(self, items, siblings.index(sel[0]),
                                                     on_close=lambda: tree.focus_set())

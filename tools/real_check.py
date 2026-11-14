@@ -140,7 +140,8 @@ try:
         t = time.time()
         win.open_app(key)
         done = pump(app, lambda: not loading(win), 600)
-        errs = [e for e in red(win) if "nothing" not in e.lower() and "in this backup" not in e]   # "no data" is fine
+        errs = [e for e in red(win) if "nothing" not in e.lower() and "in this backup" not in e
+                and not e.startswith("No ")]          # "no data of this kind" is an answer, not an error
         check(done and not errs, f"{label} opens ({time.time() - t:.0f} s)" + (f": {errs[0][:120]}" if errs else ""))
 
     # -- Photos -----------------------------------------------------------------------------------------------
@@ -216,9 +217,12 @@ try:
             pdf = (domain, rel)
         if pdf:
             v = viewer_shows(app, [quicklook.Item(Path(pdf[1]).name, read=lambda: win.data.read(*pdf),
-                                                  to_file=lambda d: win.data.copy(pdf[0], pdf[1], d))], 0)
+                                                  to_file=lambda d: win.data.copy(pdf[0], pdf[1], d),
+                                                  why=lambda: getattr(win.data.reader, "last_error", None))], 0)
             want = "pdf" if sys.platform == "darwin" else "play"
-            check(v.shown_kind == want, f"Space on a PDF from the backup shows its pages ({v.shown_kind})")
+            why = " ".join(l.cget("text") for l in labels(v.body)) if v.shown_kind == "error" else ""
+            check(v.shown_kind == want, f"Space on a PDF from the backup shows its pages ({v.shown_kind})"
+                  + (f": {why[:200]}" if why else ""))
             v.close()
         else:
             note("no PDF in the backup to preview")

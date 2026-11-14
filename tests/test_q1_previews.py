@@ -61,6 +61,19 @@ class FakeEnc:
 r._enc = FakeEnc()
 check(r.read_bytes("HomeDomain", rel, fid) == b"decrypted:" + rel.encode(),
       "an encrypted backup's file is decrypted into memory (never to disk)")
+
+
+class FakeEncBroken:
+    def extract_file_as_bytes(self, rel, domain_like=None):
+        raise MemoryError("too big to decrypt in memory")
+
+    def extract_file(self, relative_path, domain_like=None, output_filename=None):
+        Path(output_filename).write_bytes(b"from-disk:" + relative_path.encode())
+
+
+r._enc = FakeEncBroken()
+check(r.read_bytes("HomeDomain", rel, fid) == b"from-disk:" + rel.encode() and not list(ql.private_dir().glob("read-*"))
+      and "MemoryError" in r.last_error, "if decrypting in memory fails, it's decrypted to the private folder, read and removed")
 r._enc = None
 r.close()
 
