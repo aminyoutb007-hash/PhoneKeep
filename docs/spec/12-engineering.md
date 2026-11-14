@@ -18,7 +18,7 @@
 | `packaging/` | PyInstaller spec (also builds the `phonekeep-cli` helper), Windows installer script, icon maker, `next-release.txt` |
 | `tests/` | All automated tests and the fake-backup builders; `run_all.py` runs everything |
 | `tools/redact_backup.py` | *(X2, to create)* Makes an anonymised copy of a real backup for the regression library |
-| `.github/workflows/tests.yml` | Runs `tests/run_all.py` on Mac and Windows for every push and pull request |
+| `.github/workflows/tests.yml` | Runs `tests/run_all.py` on Linux and Windows for every push and pull request; on a Mac by hand and on release tags |
 | `.github/workflows/build-installers.yml` | Builds Mac (Apple Silicon, Intel) and Windows installers; test builds from every pull request |
 
 Talks to the iPhone through **pymobiledevice3** (open source); decrypts backups with **iphone_backup_decrypt**; images with **Pillow** / **pillow-heif**; spreadsheets with **openpyxl**.
@@ -33,7 +33,7 @@ Talks to the iPhone through **pymobiledevice3** (open source); decrypts backups 
 
 ## Tests
 
-- Test scripts live in `tests/` and run on every push and pull request in GitHub Actions through `tests/run_all.py`, on Linux (with a virtual display) to keep the Actions bill small; Mac and Windows runs are started by hand from the Actions tab when a change is platform-specific, and always on a release tag. A failing test blocks the pull request.
+- Test scripts live in `tests/` and run on every push and pull request in GitHub Actions through `tests/run_all.py`, on Linux (with a virtual display) and on Windows (since 14 Nov: two tests had been failing there unseen); Mac runs are started by hand from the Actions tab when a change is platform-specific, and always on a release tag. A failing test on any of them blocks the pull request.
 - In the repository today: full fake backup of every kind of data; WhatsApp + WhatsApp Business backup; rich photo backup (months, Live Photos, videos, thumbnails); security tests (script injection, path escapes, spreadsheet formulas); phone-window actions with a simulated iPhone (`test_phone_window.py`).
 - Every feature adds tests for its **Done when** points that can be automated.
 - Keep a library of **anonymised real backups** from several iOS versions for regression tests; never commit real personal data. They are made with the redaction tool (X2, below) and live in a separate private repository, never in this public one.

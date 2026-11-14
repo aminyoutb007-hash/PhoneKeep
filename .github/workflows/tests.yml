@@ -1,8 +1,9 @@
 # Runs every test in tests/ for each push and pull request. A failing test blocks the pull request
 # (see docs/spec/12-engineering.md, "Tests").
 #
-# Cost (agreed 12 Nov): every push and pull request runs the suite on Linux (the cheapest runner, with a
-# virtual display for the window tests). Mac and Windows runs are on demand (Actions tab) and on release tags.
+# Cost (agreed 12 Nov, Windows added 14 Nov): every push and pull request runs the suite on Linux (the cheapest
+# runner, with a virtual display for the window tests) and on Windows (the installers' second platform: two tests
+# failed only there for days unseen). Mac runs are on demand (Actions tab) and on release tags.
 name: Tests
 
 on:
@@ -73,7 +74,7 @@ jobs:
 
   windows:
     name: Tests (Windows)
-    if: startsWith(github.ref, 'refs/tags/') || inputs.windows == true
+    if: github.event_name != 'workflow_dispatch' || inputs.windows == true
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

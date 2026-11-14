@@ -162,9 +162,10 @@ try:
     check(any("80% Limit" in x for x in win2.battery_tips), "the connected phone's model decides the tips")
     (W / "out").mkdir()
     saved = checkup_ui.save_battery_details(win2, cu.load(pd)["history"], live, W / "out" / "battery.csv")
-    check(saved.exists() and saved.read_text(encoding="utf-8").count("\n") == 4
+    check(saved.exists() and saved.read_bytes().count(b"\r\n") == 4 and b"\r\r" not in saved.read_bytes()
           and json.loads(saved.with_suffix(".json").read_text(encoding="utf-8"))["battery"]["cycle_count"] == 331,
-          "Save details writes the history as CSV, and V2's JSON next to it")
+          "Save details writes the history as CSV (one line ending per row, no blank rows in Excel on Windows), "
+          "and V2's JSON next to it")
 
     # the chart's labels: inside the canvas, and never on the line or its points (review of #44)
     def layout(healths, every_days=30):
