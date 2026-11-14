@@ -241,7 +241,42 @@ except tk.TclError as ex:
     print(f"(window checks skipped: no display: {ex})")
 
 src = (HERE.parent / "app.py").read_text(encoding="utf-8")
-check(src.count("quicklook.cleanup()") == 2, "PhoneKeep clears the private preview folder at start and when it closes")
+check(src.count("quicklook.cleanup_stale()") == 1 and src.count("quicklook.cleanup()") == 1,
+      "PhoneKeep clears what finished PhoneKeeps left at start, and its own folder when it closes")
+
+# -- one folder per process: the helper or an export running beside the window keeps its files (review of #37) ---
+check(ql.private_dir() == ql._root_path() / str(os.getpid()), "each PhoneKeep process has its own private folder")
+live = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])      # e.g. the menu bar helper
+dead = subprocess.Popen([sys.executable, "-c", "pass"])                              # e.g. a PhoneKeep that crashed
+dead.wait()
+try:
+    for pid in (live.pid, dead.pid):
+        d = ql._root_path() / str(pid)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "Manifest.db").write_bytes(b"x")
+    mine = ql.private_tmp("phonekeep_") / "Manifest.db"
+    mine.write_bytes(b"x")
+    (ql._root_path() / "read-old-layout").write_bytes(b"x")                          # left by a PhoneKeep before 5.1
+    (ql._root_path() / "phonekeep_old-layout").mkdir(exist_ok=True)
+    ql.cleanup_stale()                                                               # what PhoneKeep does at start
+    check((ql._root_path() / str(live.pid) / "Manifest.db").exists(), "at start, a running process's folder is left alone")
+    check(not (ql._root_path() / str(dead.pid)).exists(), "a process that's no longer running has its folder deleted")
+    check(mine.exists(), "and this process's own folder is kept")
+    check(not (ql._root_path() / "read-old-layout").exists() and not (ql._root_path() / "phonekeep_old-layout").exists(),
+          "files from before per-process folders are deleted")
+    ql.cleanup()                                                                     # what PhoneKeep does when it closes
+    check(not ql._dir_path().exists() and (ql._root_path() / str(live.pid)).exists(),
+          "closing deletes only this process's folder, not the running helper's")
+finally:
+    live.kill()
+    live.wait()
+    shutil.rmtree(ql._root_path() / str(live.pid), ignore_errors=True)
+child = subprocess.run([sys.executable, "-c", "import quicklook as q; d = q.private_tmp('phonekeep_'); "
+                        "(d / 'Manifest.db').write_bytes(b'x'); print(q._dir_path())"],
+                       capture_output=True, text=True, cwd=HERE.parent)
+gone = child.stdout.strip()
+check(child.returncode == 0 and gone and not Path(gone).exists(),
+      "a command-line export's folder is deleted when it ends normally")
 psrc = (HERE.parent / "phone.py").read_text(encoding="utf-8")
 check(psrc.count("preview=self._preview_from(getter)") == 4 and "on_preview=preview" in psrc and "quicklook.bind_space(files" in psrc
       and "phonekeep-view-" not in psrc and "phonekeep-play-" not in psrc,
