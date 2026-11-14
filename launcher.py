@@ -87,7 +87,8 @@ def _crash_log() -> None:
         if issubclass(exc_type, BrokenPipeError):      # the window closed while a helper was still printing
             return
         try:
-            p = Path.home() / "PhoneKeep" / "crash.log"
+            import os
+            p = Path(os.environ.get("PHONEKEEP_HOME") or Path.home() / "PhoneKeep") / "crash.log"
             p.parent.mkdir(parents=True, exist_ok=True)
             with open(p, "a", encoding="utf-8") as f:
                 import datetime as dt
