@@ -2,7 +2,8 @@
 
 Photos.sqlite (on the phone at PhotoData/Photos.sqlite, in a backup under CameraRollDomain Media/PhotoData/) records,
 for every item in DCIM: favourite, hidden, in the Recently Deleted bin, photo or video, Live Photo / screenshot,
-the date taken and the location; and the user's albums with their items.
+the date taken and the location; and the user's albums with their items. For Photo clean-up (C1) also: screen
+recordings, a video's length, bursts, edits, and the app that saved an image (WhatsApp, Telegram…).
 
 Its layout changes between iOS versions (ZGENERICASSET became ZASSET in iOS 14; the album link table is called
 Z_<n>ASSETS with numbered columns), so the tables and columns are looked up, not assumed. Anything missing simply
@@ -20,6 +21,7 @@ from typing import Optional
 APPLE_EPOCH = dt.datetime(2001, 1, 1)
 SUBTYPE_LIVE = 2
 SUBTYPE_SCREENSHOT = 10
+SUBTYPE_SCREEN_RECORDING = 103
 USER_ALBUM = 2                    # ZGENERICALBUM.ZKIND for albums the user made
 
 
@@ -37,12 +39,18 @@ class Attrs:
     albums: list = field(default_factory=list)       # album keys ("album:<pk>")
     original: Optional[str] = None                   # the name it was taken with ("IMG_1234.HEIC")
     local: Optional[bool] = None                     # is the full photo on the phone? False: only in iCloud
+    screen_recording: bool = False
+    duration: Optional[float] = None                 # a video's length in seconds
+    burst: Optional[str] = None                      # photos of one burst share this
+    edited: bool = False                             # edited in Photos: the edit is kept apart from the original
+    saved_by: Optional[str] = None                   # the app that saved it to the library ("net.whatsapp.WhatsApp")
 
 
 @dataclass
 class Library:
     assets: dict                                      # "DCIM/100APPLE/IMG_0001.HEIC" -> Attrs
     albums: list                                      # [(key, title, count)], in the phone's order
+    knows_app: bool = False                           # the library records which app saved each image
 
     def get(self, item_id: str) -> Optional[Attrs]:
         return self.assets.get(item_id)
@@ -76,19 +84,25 @@ def read(db: Path) -> Optional[Library]:
             return None
         c = _cols(con, at)
         want = {"FAV": "ZFAVORITE", "HID": "ZHIDDEN", "TRASH": "ZTRASHEDSTATE", "KIND": "ZKIND",
-                "SUB": "ZKINDSUBTYPE", "DATE": "ZDATECREATED", "LAT": "ZLATITUDE", "LON": "ZLONGITUDE"}
+                "SUB": "ZKINDSUBTYPE", "DATE": "ZDATECREATED", "LAT": "ZLATITUDE", "LON": "ZLONGITUDE",
+                "DUR": "ZDURATION", "BURST": "ZAVALANCHEUUID", "ADJ": "ZHASADJUSTMENTS",
+                "BY": "ZIMPORTEDBYBUNDLEIDENTIFIER"}
         sel = ", ".join(f"{v} AS {k}" if v in c else f"NULL AS {k}" for k, v in want.items())
         assets, by_pk = {}, {}
         for row in con.execute(f"SELECT Z_PK, ZDIRECTORY, ZFILENAME, {sel} FROM {at}"):
-            pk, d, f, fav, hid, trash, kind, sub, date, lat, lon = row
+            pk, d, f, fav, hid, trash, kind, sub, date, lat, lon, dur, burst, adj, by = row
             if not d or not f:
                 continue
             ok_loc = lat is not None and lon is not None and not (lat == -180 and lon == -180) and (lat or lon)
             a = Attrs(favorite=bool(fav), hidden=bool(hid), trashed=bool(trash), video=kind == 1,
                       live=sub == SUBTYPE_LIVE, screenshot=sub == SUBTYPE_SCREENSHOT, taken=_date(date),
-                      lat=float(lat) if ok_loc else None, lon=float(lon) if ok_loc else None)
+                      lat=float(lat) if ok_loc else None, lon=float(lon) if ok_loc else None,
+                      screen_recording=sub == SUBTYPE_SCREEN_RECORDING,
+                      duration=float(dur) if dur else None, burst=str(burst) if burst else None,
+                      edited=bool(adj), saved_by=str(by) if by else None)
             assets[f"{d.strip('/')}/{f}"] = a
             by_pk[pk] = a
+        knows_app = "ZIMPORTEDBYBUNDLEIDENTIFIER" in c
         if "ZINTERNALRESOURCE" in tables:
             rc = _cols(con, "ZINTERNALRESOURCE")
             if {"ZASSET", "ZLOCALAVAILABILITY", "ZRESOURCETYPE", "ZVERSION"} <= rc:
@@ -104,6 +118,12 @@ def read(db: Path) -> Optional[Library]:
                                              "WHERE ZORIGINALFILENAME IS NOT NULL"):
                     if apk in by_pk:
                         by_pk[apk].original = str(name)
+            if {"ZASSET", "ZIMPORTEDBYBUNDLEIDENTIFIER"} <= xc:      # where iOS 14-16 keep it
+                knows_app = True
+                for apk, by in con.execute("SELECT ZASSET, ZIMPORTEDBYBUNDLEIDENTIFIER FROM ZADDITIONALASSETATTRIBUTES "
+                                           "WHERE ZIMPORTEDBYBUNDLEIDENTIFIER IS NOT NULL"):
+                    if apk in by_pk and not by_pk[apk].saved_by:
+                        by_pk[apk].saved_by = str(by)
 
         albums = []
         if "ZGENERICALBUM" in tables:
@@ -122,7 +142,7 @@ def read(db: Path) -> Optional[Library]:
                             a.albums.append(f"album:{album_pk}")
                             counts[album_pk] = counts.get(album_pk, 0) + 1
                 albums = [(f"album:{pk}", title, counts.get(pk, 0)) for pk, title in rows]
-        return Library(assets, albums)
+        return Library(assets, albums, knows_app)
     except sqlite3.Error:
         return None
     finally:

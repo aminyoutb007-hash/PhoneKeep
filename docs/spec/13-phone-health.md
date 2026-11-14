@@ -61,7 +61,7 @@ A **storage forecast** sits under the bar when there are at least 4 snapshots: "
 - The forecast uses used-space figures from past snapshots (B3) and is hidden when the trend is flat or falling.
 
 **Done when**
-- [x] Suggestions are listed largest first, each with a size and either a working button or exact steps. *(14 Nov, `tests/test_h2_storage.py`, and `tools/real_check.py` on a real iPhone. The two suggestions that open C1 come with C1.)*
+- [x] Suggestions are listed largest first, each with a size and either a working button or exact steps. *(14 Nov, `tests/test_h2_storage.py`, and `tools/real_check.py` on a real iPhone. The two suggestions that open C1 came with C1: `tests/test_c1_cleanup.py`.)*
 - [ ] On a real iPhone, following the WhatsApp and Messages steps frees roughly the space shown (within 20%). *(Owner's check, still to do. It needs a phone with 500 MB or more of WhatsApp media or Messages attachments; below that the suggestions don't appear.)*
 - [x] The forecast appears with 4+ snapshots of rising use, and not otherwise. *(14 Nov, `tests/test_h2_storage.py`: 3 backups, flat, falling and years away show none. It uses the used space each backup records since H1.)*
 
@@ -149,9 +149,9 @@ A summary follows: "Saved 1,212 items to your archive. Freed 8.4 GB."
 - Every item is in the archive, verified, before it can be offered for removal.
 
 **Done when**
-- [ ] On the rich photo fixture extended with seeded duplicates, near-duplicates, blurred, dark, screenshot and chat-saved images, each card finds what was seeded and nothing else (no favourites, no album photos).
-- [ ] 10,000 photos are analysed in under 5 minutes on an Apple Silicon Mac; a second visit opens in under 2 seconds.
-- [ ] Every item offered for removal is present in the archive with a matching checksum.
+- [x] On the rich photo fixture extended with seeded duplicates, near-duplicates, blurred, dark, screenshot and chat-saved images, each card finds what was seeded and nothing else (no favourites, no album photos). *(14 Nov, `tests/test_c1_cleanup.py`. Also seeded: favourite, album, hidden and iCloud-only traps on every card, a burst, a screen recording, a large video, a Live Photo with an edit. Blur is judged on the small version iOS keeps of each photo, so only blur that shows at that size is found. On the owner's iPhone, `tools/real_check.py` confirms nothing offered is a favourite, in an album, hidden or only in iCloud.)*
+- [x] 10,000 photos are analysed in under 5 minutes on an Apple Silicon Mac; a second visit opens in under 2 seconds. *(14 Nov, on an M4 Pro: `tests/test_c1_cleanup.py` analyses 10,000 photos from a stand-in source in seconds. On the owner's iPhone over the cable, `tools/real_check.py` measures the photos on the phone at a rate that puts 10,000 at about 2 minutes, and the second visit opens from the cache in well under a second. Photos only in iCloud aren't read.)*
+- [x] Every item offered for removal is present in the archive with a matching checksum. *(14 Nov, `tests/test_c1_cleanup.py`: every saved file is re-read and compared with the iPhone's copy; only those are listed in the removal steps; a file changed since no longer counts. `tools/real_check.py` saves 3 items from the owner's iPhone and checks each. Until C2, "offered for removal" means the steps on the phone shown after saving.)*
 
 ## C2. Remove cleaned-up photos from the iPhone
 

@@ -1188,6 +1188,13 @@ class PhoneWindow(tk.Toplevel):
         RoundButton(panel.foot, "Save selected", save, "primary", 170, 38, 12).pack(side="right")
         tk.Label(panel.foot, text="Space: preview", bg=BG, fg=MUTED,
                  font=font(11)).pack(side="right", padx=12)
+        import cleanup_ui                                   # C1
+        RoundButton(panel.foot, "Clean up", lambda: cleanup_ui.view(self, src, items), "secondary", 120, 38,
+                    12).pack(side="left")
+        card = getattr(self, "open_cleanup", None)          # asked for by the Storage card's suggestions (H2)
+        if card is not None:
+            self.open_cleanup = None
+            self.after_idle(lambda: cleanup_ui.view(self, src, items, card or None))
 
     # tables -----------------------------------------------------------------------
     def table_view(self, key, headers: list, rows: list, widths: Optional[list] = None, actions=(),

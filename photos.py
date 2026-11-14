@@ -55,6 +55,12 @@ class PhotoItem:
     lon: Optional[float] = None
     live_lib: bool = False
     cloud_only: bool = False          # the full photo is only in iCloud: shown greyed, can't be saved from here
+    # C1, from the library too
+    screen_recording: bool = False
+    duration: Optional[float] = None
+    burst: Optional[str] = None
+    edited: bool = False
+    saved_by: Optional[str] = None
 
     @property
     def month(self) -> str:
@@ -98,6 +104,8 @@ def _apply_library(items: list[PhotoItem], lib, has_file=None) -> list[PhotoItem
         i.favorite, i.hidden, i.screenshot = a.favorite, a.hidden, a.screenshot
         i.live_lib = a.live                     # a Live Photo per the library (its video may be kept elsewhere)
         i.albums, i.lat, i.lon = tuple(a.albums), a.lat, a.lon
+        i.screen_recording, i.duration, i.burst = a.screen_recording, a.duration, a.burst
+        i.edited, i.saved_by = a.edited, a.saved_by
         if a.taken is not None:
             i.when = a.taken
         out.append(i)
@@ -173,8 +181,21 @@ class PhotoSource:
         """The photo itself in memory, for the Space preview (Q1); None when it can't be read."""
         return None
 
+    def part_size(self, item_id: str) -> int:
+        """The size of one file (a Live Photo's video, an edit) as listed; 0 when not known."""
+        return 0
+
+    def edits(self, item: PhotoItem) -> list[str]:
+        """C1: the files of an edit made in Photos (FullSizeRender.jpg / .mov), which iOS keeps apart from the
+        original under PhotoData/Mutations/<the photo's path without its extension>/Adjustments/."""
+        return []
+
     def close(self) -> None:
         pass
+
+
+def edits_folder(item: PhotoItem) -> str:
+    return f"PhotoData/Mutations/{os.path.splitext(item.id)[0]}/Adjustments"
 
 
 class BackupPhotoSource(PhotoSource):
@@ -230,6 +251,14 @@ class BackupPhotoSource(PhotoSource):
             return None
         with self._lock:
             return self.reader.read_bytes("CameraRollDomain", "Media/" + item_id, m[0])
+
+    def part_size(self, item_id: str) -> int:
+        m = self.meta.get("Media/" + item_id)
+        return (m[2] or 0) if m else 0
+
+    def edits(self, item: PhotoItem) -> list[str]:
+        prefix = "Media/" + edits_folder(item) + "/FullSizeRender"
+        return sorted(r[len("Media/"):] for r in self.meta if r.startswith(prefix))
 
     def thumbnail(self, item: PhotoItem) -> Optional[Path]:
         tp = self._thumb_path(item)
@@ -375,6 +404,31 @@ class DevicePhotoSource(PhotoSource):
     def thumbnail(self, item: PhotoItem) -> Optional[Path]:
         with self._lock:
             return self._run(self._thumbnail(item), timeout=120)
+
+    def part_size(self, item_id: str) -> int:
+        return self._sizes.get(item_id, 0)
+
+    def edits(self, item: PhotoItem) -> list[str]:
+        if not item.edited:                       # only the library says which photos were edited: one look each
+            return []
+        folder = edits_folder(item)
+
+        async def look():
+            try:
+                names = await _aw(self.afc.listdir(folder))
+            except Exception:
+                return []
+            out = []
+            for n in names:
+                if n.startswith("FullSizeRender"):
+                    try:
+                        self._sizes[f"{folder}/{n}"] = int((await _aw(self.afc.stat(f"{folder}/{n}"))).get("st_size", 0))
+                    except Exception:
+                        pass
+                    out.append(f"{folder}/{n}")
+            return sorted(out)
+        with self._lock:
+            return self._run(look(), timeout=60)
 
     def copy(self, item_id: str, dest: Path) -> bool:
         size = self._sizes.get(item_id)
