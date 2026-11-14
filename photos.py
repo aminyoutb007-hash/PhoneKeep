@@ -372,8 +372,19 @@ class DevicePhotoSource(PhotoSource):
         with self._lock:
             try:
                 return self._run(_aw(self.afc.get_file_contents(item_id)), timeout=300)
-            except Exception:
-                return None
+            except Exception as e:
+                self.last_error = f"{type(e).__name__}: {e}"
+            # fall back to copying it (the way Save does), then reading the copy and removing it at once
+            import quicklook
+            tmp = quicklook.private_dir() / ("read-" + hashlib.sha1(item_id.encode(), usedforsecurity=False).hexdigest()[:16])
+            try:
+                if self._run(self._pull(item_id, tmp)) and tmp.exists():
+                    return tmp.read_bytes()
+            except Exception as e:
+                self.last_error = f"{type(e).__name__}: {e}"
+            finally:
+                tmp.unlink(missing_ok=True)
+            return None
 
     def close(self) -> None:
         try:

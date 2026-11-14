@@ -83,6 +83,28 @@ bps = ph.BackupPhotoSource(Reader(), HERE / "work" / "q1-cache")
 check(bps.read("DCIM/100APPLE/IMG_0001.JPG") == b"JPEGDATA" and bps.read("DCIM/none.JPG") is None,
       "a photo in a backup is read into memory")
 
+# -- a photo straight from the iPhone: if reading it whole fails, it's copied (like Save) and read from the copy --
+import asyncio, threading
+
+
+class FakeAfc:
+    async def get_file_contents(self, path):
+        raise ConnectionError("read refused")
+
+    async def pull(self, src, dest, progress_bar=False):
+        Path(dest).write_bytes(b"PHOTO:" + src.encode())
+
+
+dps = ph.DevicePhotoSource.__new__(ph.DevicePhotoSource)
+ph.PhotoSource.__init__(dps, HERE / "work" / "q1-dev")
+dps.loop = asyncio.new_event_loop()
+threading.Thread(target=dps.loop.run_forever, daemon=True).start()
+dps.afc, dps._sizes = FakeAfc(), {}
+got = dps.read("PhotoData/CPLAssets/group1/AAAA.HEIC")
+check(got == b"PHOTO:PhotoData/CPLAssets/group1/AAAA.HEIC" and not list(ql.private_dir().glob("read-*")),
+      "a photo on the iPhone that can't be read whole is copied, read and the copy removed at once")
+dps.loop.call_soon_threadsafe(dps.loop.stop)
+
 # -- the viewer ---------------------------------------------------------------------------------------------------
 ql.cleanup()
 played, written = [], []

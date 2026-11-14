@@ -66,6 +66,7 @@ class Item:
     to_file: Optional[Callable[[Path], bool]] = None          # for video, audio and anything else
     size: Optional[int] = None
     kind: str = ""
+    why: Optional[Callable[[], Optional[str]]] = None         # why it couldn't be read, for the message
 
     def __post_init__(self):
         self.kind = self.kind or kind_of(self.name)
@@ -289,7 +290,10 @@ class Viewer(tk.Toplevel):
             if in_memory:
                 data = it.read()
                 if data is None:
-                    raise FileNotFoundError("This item isn't in the backup.")
+                    why = getattr(it, "why", None)
+                    why = why() if callable(why) else why
+                    raise FileNotFoundError("PhoneKeep couldn't read it from the iPhone or the backup."
+                                            + (f"\n({why})" if why else ""))
                 if it.kind == "image" and Image is not None:
                     return "image", image_of(data, box)
                 if it.kind == "text":

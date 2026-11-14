@@ -1146,6 +1146,7 @@ class PhoneWindow(tk.Toplevel):
             quicklook.Viewer(self, [quicklook.Item(i.name + (" (only in iCloud: preview)" if i.cloud_only else ""),
                                                    read=(lambda i=i: thumb(i)) if i.cloud_only else (lambda i=i: src.read(i.id)),
                                                    to_file=lambda d, i=i: src.copy(i.id, d), size=i.size,
+                                                   why=lambda: getattr(src, "last_error", None),
                                                    kind="video" if i.video else "")
                                     for i in shown], idx)
         panel = ui.PhotoPanel(self.content, src, items, select_all=False, on_open=open_one, on_preview=preview,
