@@ -17,6 +17,7 @@ from the phone over the cable), so this module knows nothing about where things 
 """
 from __future__ import annotations
 
+import atexit
 import io
 import os
 import plistlib
@@ -73,7 +74,9 @@ class Item:
 
 
 # -- the private folder for things that must be played from a file ------------------------------------------------
-def _dir_path() -> Path:
+# One folder per user, and inside it one per PhoneKeep process (named by its pid): the window, the menu bar
+# helper and a command-line export can run at once, and none may delete what another is still using.
+def _root_path() -> Path:
     try:
         who = os.getlogin()
     except Exception:
@@ -81,14 +84,25 @@ def _dir_path() -> Path:
     return Path(tempfile.gettempdir()) / f"phonekeep-previews-{who}"
 
 
-def private_dir() -> Path:
-    """A folder only this user can read, inside the computer's temporary folder."""
-    d = _dir_path()
+def _dir_path() -> Path:
+    return _root_path() / str(os.getpid())
+
+
+def _private_mkdir(d: Path) -> None:
     d.mkdir(mode=0o700, exist_ok=True)
     try:
         os.chmod(d, 0o700)
     except OSError:
         pass
+
+
+def private_dir() -> Path:
+    """This process's folder, only this user can read it, inside the computer's temporary folder."""
+    _private_mkdir(_root_path())
+    d = _dir_path()
+    if not d.exists():
+        atexit.register(cleanup)         # a command-line export or the helper: gone when it ends normally
+    _private_mkdir(d)
     return d
 
 
@@ -99,8 +113,26 @@ def private_tmp(prefix: str) -> Path:
 
 
 def cleanup() -> None:
-    """Delete everything previews left behind (called when PhoneKeep closes and when it starts)."""
+    """Delete what this process left in the private folder (called when PhoneKeep closes)."""
     shutil.rmtree(_dir_path(), ignore_errors=True)
+
+
+def cleanup_stale() -> None:
+    """Delete what PhoneKeep processes that are no longer running left behind (called when PhoneKeep starts).
+    The folders of running ones, such as the menu bar helper or an export, are left alone."""
+    from phonekeep import _pid_alive
+    root = _root_path()
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        return
+    for e in entries:
+        if e.is_dir() and e.name.isdigit() and (int(e.name) == os.getpid() or _pid_alive(int(e.name))):
+            continue
+        if e.is_dir():                       # a finished process's folder, or one from before per-process folders
+            shutil.rmtree(e, ignore_errors=True)
+        else:
+            e.unlink(missing_ok=True)
 
 
 def play(path: Path) -> None:

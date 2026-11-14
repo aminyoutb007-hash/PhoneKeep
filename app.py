@@ -236,7 +236,7 @@ class App(_dnd_root()):
     def __init__(self):
         super().__init__()
         import quicklook
-        quicklook.cleanup()          # Q1: anything a crashed run left in the private preview folder
+        quicklook.cleanup_stale()    # Q1: what PhoneKeeps no longer running left in the private folder
         ui.use_light_appearance(self)
         self.title(wv.APP_NAME)
         self._build_menu()
