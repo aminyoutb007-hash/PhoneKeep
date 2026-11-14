@@ -187,8 +187,23 @@ class Ctx:
         self.photo_source = None               # photos.PhotoSource; None = the backup's camera roll
         self.photo_selection: Optional[set] = None  # photo ids to copy (None = all)
         self.dates = None                      # (from, to) dates for chat messages (None = all)
+        self.search = ""                       # D9: keep only what mentions this (all kinds with text)
+        self.all_dates = False                 # D9: the date range applies to every kind, not just chats
         self._files: dict[str, dict[str, str]] = {}
         self.tmp = Path(reader._tmp.name)
+
+    @property
+    def filter(self):
+        """D9: the date range and search for this export (exportfilter.Filter)."""
+        import exportfilter
+        return exportfilter.Filter(tuple(self.dates) if self.dates else None, self.search)
+
+    def item_filter(self):
+        """The filter for kinds other than chats: only when 'Save everything' set one (D9); the chat
+        chooser's dates alone never filter calls, notes and the rest."""
+        import exportfilter
+        f = self.filter
+        return f if (self.all_dates or f.search) else exportfilter.Filter(None, f.search)
 
     def files(self, domain: str) -> dict[str, str]:
         if domain not in self._files:
@@ -219,6 +234,11 @@ class Ctx:
         con = sqlite3.connect(str(local))
         con.row_factory = sqlite3.Row
         return con
+
+    def read(self, domain: str, rel: str) -> Optional[bytes]:
+        """One backup file's content in memory (Q1 previews)."""
+        fid = self.files(domain).get(rel)
+        return self.reader.read_bytes(domain, rel, fid) if fid else None
 
     def copy(self, domain: str, rel: str, dest: Path, keep_time: bool = True) -> bool:
         """Copy one backup file to dest (skips if already there)."""
@@ -310,6 +330,12 @@ def load_contacts(ctx: Ctx) -> list[dict]:
 def sec_contacts(ctx: Ctx, people: list[dict]) -> dict:
     if not people:
         raise PhoneKeepError("No contacts in this backup.")
+    f = ctx.item_filter()
+    if f.search:
+        people = [p for p in people if f.keep(None, p["name"], p["org"], p["note"], *(v for _l, v in p["phones"]),
+                                               *(v for _l, v in p["emails"]), dated=False)]
+        if not people:
+            raise PhoneKeepError(f"No contacts {f.describe()}.")
     d = ctx.out / "Contacts"
     d.mkdir(parents=True, exist_ok=True)
 
@@ -508,12 +534,13 @@ def sec_messages(ctx: Ctx) -> dict:
     if only is not None:
         chats = [c for c in chats if c["id"] in only]
         ctx.log(f"Exporting the {len(chats)} conversation{'s' if len(chats) != 1 else ''} you selected.")
-    if ctx.dates and any(ctx.dates):
-        chats = wv.filter_by_dates(chats, ctx.dates)
-        ctx.log(f"Keeping messages {wv.describe_dates(ctx.dates)}: "
+    flt = ctx.filter
+    if flt.on:
+        chats = flt.chats(chats)
+        ctx.log(f"Keeping messages {flt.describe()}: "
                 f"{sum(len(c['messages']) for c in chats):,} messages in {len(chats)} conversations.")
         if not chats:
-            raise PhoneKeepError(f"No messages {wv.describe_dates(ctx.dates)} in the conversations you chose.")
+            raise PhoneKeepError(f"No messages {flt.describe()} in the conversations you chose.")
     out = ctx.out / "Messages"
     mdir = out / "media"
     n_media = 0
@@ -568,7 +595,8 @@ def sec_whatsapp(ctx: Ctx) -> dict:
     r = wv.export_whatsapp(ctx.reader, ctx.out / "WhatsApp", ctx.include_media, False, ctx.log,
                            None, ctx.binfo, ctx.name_for, hub=True, strict=True,
                            only_chats=ctx.chat_filter.get("whatsapp"), formats=ctx.formats,
-                           loaded=ctx.cache.get("whatsapp"), dates=ctx.dates, pdf_combined=ctx.pdf_combined)
+                           loaded=ctx.cache.get("whatsapp"), dates=ctx.dates, pdf_combined=ctx.pdf_combined,
+                           search=ctx.search)
     r["link"] = "WhatsApp/" + r.pop("main")
     return r
 
@@ -577,7 +605,8 @@ def sec_whatsapp_business(ctx: Ctx) -> dict:
     r = wv.export_whatsapp(ctx.reader, ctx.out / "WhatsApp Business", ctx.include_media, True, ctx.log,
                            None, ctx.binfo, ctx.name_for, hub=True, strict=True,
                            only_chats=ctx.chat_filter.get("whatsappbusiness"), formats=ctx.formats,
-                           loaded=ctx.cache.get("whatsappbusiness"), dates=ctx.dates, pdf_combined=ctx.pdf_combined)
+                           loaded=ctx.cache.get("whatsappbusiness"), dates=ctx.dates, pdf_combined=ctx.pdf_combined,
+                           search=ctx.search)
     r["link"] = "WhatsApp Business/" + r.pop("main")
     return r
 
@@ -607,6 +636,13 @@ def sec_photos(ctx: Ctx) -> dict:
         import photos as ph
         source = ph.BackupPhotoSource(ctx.reader, ctx.tmp / "photos")
     available = ctx.cache.get("photos") or source.items()
+    f = ctx.item_filter()
+    if f.search:
+        raise PhoneKeepError("Photos and videos have no text to search, so they're left out of a search.")
+    if f.dates:
+        available = [p for p in available if f.in_dates(p.when)]
+        if not available:
+            raise PhoneKeepError(f"No photos or videos {f.describe()}.")
     chosen = available
     if ctx.photo_selection is not None:
         chosen = [p for p in available if p.id in ctx.photo_selection]
@@ -731,6 +767,11 @@ def load_calls(ctx: Ctx) -> list[list]:
 
 def sec_calls(ctx: Ctx) -> dict:
     rows = load_calls(ctx)
+    f = ctx.item_filter()
+    if f.on:
+        rows = [r for r in rows if f.keep(r[0], r[2], r[3])]
+        if not rows:
+            raise PhoneKeepError(f"No calls {f.describe()}.")
     d = ctx.out / "Calls"
     hdr = CALL_HEADERS
     write_csv(d / "calls.csv", hdr, rows)
@@ -832,6 +873,11 @@ def load_notes(ctx: Ctx) -> list[dict]:
 
 def sec_notes(ctx: Ctx) -> dict:
     notes = load_notes(ctx)
+    f = ctx.item_filter()
+    if f.on:
+        notes = [n for n in notes if f.keep(n["modified"], n["title"], n["text"], n["folder"])]
+        if not notes:
+            raise PhoneKeepError(f"No notes {f.describe()}.")
     d = ctx.out / "Notes"
     txt_dir = d / "text"
     used = set()
@@ -886,6 +932,11 @@ def load_calendar(ctx: Ctx) -> list[dict]:
 
 def sec_calendar(ctx: Ctx) -> dict:
     ev = load_calendar(ctx)
+    f = ctx.item_filter()
+    if f.on:
+        ev = [e for e in ev if f.keep(e["start"], e["title"], e["loc"], e["desc"], e["cal"])]
+        if not ev:
+            raise PhoneKeepError(f"No calendar events {f.describe()}.")
     d = ctx.out / "Calendar"
     d.mkdir(parents=True, exist_ok=True)
 
@@ -947,7 +998,10 @@ def load_voicemail(ctx: Ctx) -> list[dict]:
 def sec_voicemail(ctx: Ctx) -> dict:
     d = ctx.out / "Voicemail"
     rows = []
+    f = ctx.item_filter()
     for v in load_voicemail(ctx):
+        if f.on and not f.keep(v["when"], v.get("name"), v.get("number")):
+            continue
         audio = ""
         if v["rel"]:
             name = Path(v["rel"]).name
@@ -1002,8 +1056,11 @@ def load_voicememos(ctx: Ctx) -> list[dict]:
 def sec_voicememos(ctx: Ctx) -> dict:
     d = ctx.out / "Voice Memos"
     items = []
+    f = ctx.item_filter()
     for m in load_voicememos(ctx):
         dom, rel, title, when, length = m["domain"], m["rel"], m["title"], m["when"], m["length"]
+        if f.on and not f.keep(when, title):
+            continue
         dest = wv.safe_join(d, Path(rel).name)
         if dest is None or not ctx.copy(dom, rel, dest):
             continue
@@ -1058,6 +1115,12 @@ def load_safari(ctx: Ctx) -> tuple[list, list]:
 def sec_safari(ctx: Ctx) -> dict:
     d = ctx.out / "Safari"
     bm, hist = load_safari(ctx)
+    f = ctx.item_filter()
+    if f.on:
+        bm = [b for b in bm if f.keep(None, *b, dated=False)]          # bookmarks have no date
+        hist = [h for h in hist if f.keep(h[0], h[1], h[2])]
+        if not bm and not hist:
+            raise PhoneKeepError(f"No Safari history or bookmarks {f.describe()}.")
 
     def link(u):
         return f'<a href="{_e(u)}" target="_blank" rel="noopener noreferrer">{_e(u[:140])}</a>'
@@ -1094,6 +1157,11 @@ def load_apps(ctx: Ctx) -> list[str]:
 
 def sec_apps(ctx: Ctx) -> dict:
     apps = load_apps(ctx)
+    f = ctx.item_filter()
+    if f.search:
+        apps = [a for a in apps if f.keep(None, a, dated=False)]
+        if not apps:
+            raise PhoneKeepError(f"No apps {f.describe()}.")
     d = ctx.out / "Apps"
     d.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -1110,6 +1178,11 @@ def sec_apps(ctx: Ctx) -> dict:
 
 def sec_rawfiles(ctx: Ctx) -> dict:
     rows = ctx.reader.db.execute("SELECT domain, relativePath, fileID FROM Files WHERE flags=1").fetchall()
+    f = ctx.item_filter()
+    if f.on:
+        rows = [r for r in rows if f.mentions(r[0] + "/" + r[1]) and (not f.dates or f.in_dates(ctx.reader.file_mtime(r[2])))]
+        if not rows:
+            raise PhoneKeepError(f"No files {f.describe()}.")
     d = ctx.out / "All files"
     ctx.log(f"Exporting every file in the backup ({len(rows):,} files) — this can take a while...")
     n = 0
@@ -1239,8 +1312,10 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
                chooser: Optional[Callable] = None, chat_names: Optional[list[str]] = None,
                formats: Optional[set] = None, photo_source: Optional[str] = None,
                udid: Optional[str] = None, photo_chooser: Optional[Callable] = None,
-               dates=None, pdf_combined: bool = False) -> Path:
+               dates=None, pdf_combined: bool = False, search: str = "", all_dates: bool = False) -> Path:
     """Build the archive.
+    search, all_dates (D9, Save everything): keep only what mentions `search`, and apply `dates` to every
+        kind of data, not just chat messages (see exportfilter.py for the rule).
     dates: (from, to) - keep only chat messages in this period (either end may be None).
         A chooser may also return it under the key "_dates".
     chooser(lists, preview): lists = {section: (label, [chat summary])} for WhatsApp, WhatsApp
@@ -1261,6 +1336,10 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
         ctx.formats = set(formats or {"web"})
         ctx.pdf_combined = pdf_combined
         ctx.dates = dates if dates and any(dates) else None
+        ctx.search = (search or "").strip()
+        ctx.all_dates = all_dates
+        if ctx.filter.on and (all_dates or ctx.search):
+            log(f"Saving only what's {ctx.filter.describe()}.")
         people = []
         try:
             people = load_contacts(ctx)
@@ -1352,7 +1431,8 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
             results.append((key, label, icon, r))
         if ctx.photo_source is not None:
             ctx.photo_source.close()
-    write_hub(out, binfo, results, reader_info(Path(backup_path)))
+    used = ctx.item_filter().describe() if (all_dates or ctx.search) else ""
+    write_hub(out, binfo, results, reader_info(Path(backup_path)), used)
     if progress:
         progress(100.0)
     log(f"\nAll done. Open: {out / 'index.html'}")
@@ -1370,7 +1450,8 @@ def reader_info(path: Path) -> dict:
                                   "Serial Number", "IMEI", "Last Backup Date") if p.get(k)}
 
 
-def write_hub(out: Path, binfo: dict, results: list, info: dict) -> None:
+def write_hub(out: Path, binfo: dict, results: list, info: dict, filters: str = "") -> None:
+    """The contents page. filters (D9): what 'Save everything' kept, stated at the top."""
     (out / "assets").mkdir(parents=True, exist_ok=True)
     (out / "assets" / "style.css").write_text(wv.CSS, encoding="utf-8")
     (out / "assets" / "vault.css").write_text(PAGE_CSS, encoding="utf-8")
@@ -1399,7 +1480,8 @@ def write_hub(out: Path, binfo: dict, results: list, info: dict) -> None:
     kv = "".join(f"<dt>{_e(k)}</dt><dd>{_e(v.strftime('%Y-%m-%d %H:%M') if isinstance(v, dt.datetime) else v)}</dd>"
                  for k, v in info.items())
     body = (f'<dl class="kv">{kv}<dt>Backup</dt><dd>{"encrypted" if binfo.get("encrypted") else "not encrypted"}'
-            f'</dd><dt>Archive built</dt><dd>{dt.datetime.now():%Y-%m-%d %H:%M}</dd></dl>'
+            f'</dd><dt>Archive built</dt><dd>{dt.datetime.now():%Y-%m-%d %H:%M}</dd>'
+            + (f'<dt>Only</dt><dd>{_e(filters)}</dd>' if filters else '') + '</dl>'
             f'<div class="grid">{"".join(cards)}</div>'
             + ('' if binfo.get("encrypted") else
                '<p class="meta" style="margin-top:16px">Tip: turn on backup encryption in the app to also '

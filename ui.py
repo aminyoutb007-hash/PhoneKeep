@@ -1017,13 +1017,15 @@ class PhotoPanel(tk.Frame):
     COLLECTIONS = (("c:fav", "★ Favourites"), ("c:videos", "▶ Videos"), ("c:shots", "▢ Screenshots"),
                    ("c:live", "◎ Live Photos"))
 
-    def __init__(self, parent, source, items: list, select_all: bool = True, on_open=None, unlock=None):
+    def __init__(self, parent, source, items: list, select_all: bool = True, on_open=None, unlock=None, on_preview=None):
         super().__init__(parent, bg=BG)
         _attach_app_menu(self)
         from photos import human_size
         self.human_size = human_size
         self.on_open = on_open
         self.unlock = unlock            # P1: called with a function to run once Hidden may be shown
+        self.on_preview = on_preview    # Q1: Space previews the last clicked photo; arrows go through the month
+        self.cursor = None
         self.source = source
         self.hidden_items = [i for i in items if getattr(i, "hidden", False)]
         self.hidden_open = False        # Hidden stays closed until the owner confirms (or Touch ID)
@@ -1093,6 +1095,7 @@ class PhotoPanel(tk.Frame):
         grid_frame = card(body)
         grid_frame.pack(side="left", fill="both", expand=True, padx=(10, 0))
         self.canvas = tk.Canvas(grid_frame, bg=CARD, highlightthickness=0)
+        self.canvas.bind("<space>", lambda e: (self.preview_current(), "break")[1])
         gsb = ttk.Scrollbar(grid_frame, orient="vertical", command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=gsb.set)
         self.canvas.pack(side="left", fill="both", expand=True)
@@ -1265,7 +1268,8 @@ class PhotoPanel(tk.Frame):
     def _tile(self, item):
         t = getattr(self, "tile", self.TILE)
         c = tk.Canvas(self.gridf, width=t, height=t, bg="#e9edef", highlightthickness=0, cursor="hand2")
-        c.bind("<ButtonRelease-1>", lambda e, i=item: self._toggle(i))
+        c.bind("<ButtonRelease-1>", lambda e, i=item: (self._point_at(i, e.widget), self._toggle(i)))
+        c.bind("<space>", lambda e: (self.preview_current(), "break")[1])
         if self.on_open:
             c.bind("<Double-Button-1>", lambda e, i=item: self.on_open(i))
         self.tiles[item.id] = c
@@ -1333,6 +1337,23 @@ class PhotoPanel(tk.Frame):
         btn = getattr(self, "_more_btn", None)
         if btn is not None:
             btn.grid(row=r + 1, column=0, columnspan=cols, pady=12)
+
+    def _point_at(self, item, widget=None):
+        self.cursor = item
+        try:
+            (widget or self).focus_set()
+        except tk.TclError:
+            pass
+
+    def preview_current(self):
+        """Q1: Space shows the photo last clicked, large; the arrows move through what's on screen."""
+        if self.on_preview is None:
+            return
+        shown = self.months.get(self._month(), [])
+        if not shown:
+            return
+        idx = next((n for n, i in enumerate(shown) if self.cursor is not None and i.id == self.cursor.id), 0)
+        self.on_preview(shown, idx)
 
     def _toggle(self, item):
         self.selected.symmetric_difference_update({item.id})

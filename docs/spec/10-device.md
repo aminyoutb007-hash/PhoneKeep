@@ -5,7 +5,7 @@
 **What the user sees and does:** under the phone picture in the phone window: model name ("iPhone 17 Pro Max"), colour, iOS version, capacity and free space (a bar), serial number (click to copy), battery health (V2), last backup and the lock badge.
 
 **Done when**
-- [ ] Every value matches the iPhone's Settings → General → About.
+- [ ] Every value matches the iPhone's Settings → General → About. *(14 Nov, owner's iPhone 14 Pro Max: model, iOS, capacity and serial match. Colour: the phone reports a code (DeviceEnclosureColor); codes are named once checked on a real phone, starting with this one.)*
 
 ## V2. Battery health
 
@@ -14,7 +14,7 @@
 Battery history over time and tips: H3 in [13-phone-health.md](13-phone-health.md#h3-battery-card-and-battery-history).
 
 **Done when**
-- [ ] Health % matches Settings → Battery on the phone (within 1%).
+- [x] Health % matches Settings → Battery on the phone (within 1%). *(14 Nov, owner's iPhone: matches.)*
 
 ## V3. Storage usage
 
@@ -27,7 +27,7 @@ Battery history over time and tips: H3 in [13-phone-health.md](13-phone-health.m
 Clean-up suggestions and the storage forecast: H2 in [13-phone-health.md](13-phone-health.md#h2-storage-card-and-clean-up-suggestions).
 
 **Done when**
-- [ ] Total, used and free are within 1% of Settings → General → iPhone Storage.
+- [x] Total, used and free are within 1% of Settings → General → iPhone Storage. *(14 Nov, owner's iPhone: match.)*
 - [ ] Each category is shown with "about" and the 20 largest apps match the phone's list in order.
 
 ## V4. Move to a new iPhone

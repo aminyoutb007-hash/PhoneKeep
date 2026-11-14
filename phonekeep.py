@@ -601,6 +601,21 @@ def battery_state(udid: Optional[str] = None) -> Optional[dict]:
     return None
 
 
+def device_overview(udid: Optional[str] = None, apps: bool = True):
+    """V1-V3: a deviceinfo.Overview of the connected phone (read-only), or None if it couldn't be asked."""
+    import deviceinfo
+    try:
+        check_pmd3()
+        cmd = _launcher_cmd() + ["--pk-overview"] + (["--udid", udid] if udid else []) + ([] if apps else ["--no-apps"])
+        env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+        r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
+                           timeout=180, **_NOWIN)
+        raw = deviceinfo.parse_output(r.stdout)
+        return deviceinfo.from_raw(raw) if raw is not None else None
+    except Exception:
+        return None
+
+
 RESET_PASSWORD_HELP = (
     "If you don't know the backup password, your iPhone can remove it without losing anything:\n\n"
     "1. On the iPhone open Settings → General → Transfer or Reset iPhone → Reset.\n"
@@ -912,6 +927,24 @@ class BackupReader:
         return [r[0] for r in self.db.execute(
             "SELECT DISTINCT domain FROM Files WHERE domain LIKE ?", (like,))]
 
+    def read_bytes(self, domain: str, rel: str, file_id: str) -> Optional[bytes]:
+        """One backup file's content in memory (Q1 previews): nothing decrypted touches the disk."""
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", file_id or ""):
+            return None
+        if self._enc is not None:
+            try:
+                return self._enc.extract_file_as_bytes(rel, domain_like=domain)
+            except Exception:
+                return None
+        if self._snapshot:
+            import snapshots as _snaps
+            src = _snaps.resolve(self.path, file_id)
+            return src.read_bytes() if src is not None and src.exists() else None
+        for src in (self.path / file_id[:2] / file_id, self.path / file_id):
+            if src.exists():
+                return src.read_bytes()
+        return None
+
     def extract(self, domain: str, rel: str, file_id: str, dest: Path) -> bool:
         if ".." in Path(dest).parts or not re.fullmatch(r"[0-9a-fA-F]{40}", file_id or ""):
             return False  # refuse anything that could step outside the target folder
@@ -1212,7 +1245,7 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
                     binfo: Optional[dict] = None, name_for=None, hub: bool = False,
                     strict: bool = False, only_chats: Optional[set] = None,
                     formats: Optional[set] = None, loaded: Optional[dict] = None,
-                    dates=None, pdf_combined: bool = False) -> dict:
+                    dates=None, pdf_combined: bool = False, search: str = "") -> dict:
     """Build the WhatsApp (or WhatsApp Business) archive in `out` from an open backup.
     loaded: the result of load_whatsapp(), when the chats were already read (e.g. for the picker).
     dates: (from, to) to keep only messages in that period."""
@@ -1225,12 +1258,14 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
         log(f"Exporting the {len(chats)} chat{'s' if len(chats) != 1 else ''} you selected.")
         if not chats:
             raise PhoneKeepError("No chats selected for this app.")
-    if dates and any(dates):
-        chats = filter_by_dates(chats, dates)
-        log(f"Keeping messages {describe_dates(dates)}: {sum(len(c['messages']) for c in chats):,} "
+    import exportfilter
+    flt = exportfilter.Filter(tuple(dates) if dates else None, search)
+    if flt.on:
+        chats = flt.chats(chats)
+        log(f"Keeping messages {flt.describe()}: {sum(len(c['messages']) for c in chats):,} "
             f"messages in {len(chats)} chat{'s' if len(chats) != 1 else ''}.")
         if not chats:
-            raise PhoneKeepError(f"No messages {describe_dates(dates)} in the chats you chose.")
+            raise PhoneKeepError(f"No messages {flt.describe()} in the chats you chose.")
 
     media_dir = out / "media"
     copied = missing = skipped = 0
