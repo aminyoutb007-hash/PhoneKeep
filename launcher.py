@@ -158,6 +158,75 @@ def _pk_wifi(args: list) -> None:
         sys.exit(1)
 
 
+def _pk_crashes(args: list) -> None:
+    """Internal (H4): copy the phone's crash reports of the last N days into a folder on this computer, read-only:
+    the reports stay on the phone (nothing is removed, moved or flushed). Prints PKCRASH <path> for each report
+    copied this time, then PKDONE <reports on the phone in the period>.
+        --pk-crashes <folder> [--udid UDID] [--days 30]"""
+    import asyncio
+    import datetime as dt
+    import inspect
+    import re
+    from pathlib import Path
+    dest = Path(args[0])
+    udid = args[args.index("--udid") + 1] if "--udid" in args else None
+    days = int(args[args.index("--days") + 1]) if "--days" in args else 30
+    since = dt.datetime.now() - dt.timedelta(days=days)
+    try:
+        from pymobiledevice3.lockdown import create_using_usbmux
+        from pymobiledevice3.services.afc import AfcService
+    except ImportError as e:
+        print(f"PKAPI {e}", flush=True)
+        sys.exit(3)
+
+    async def aw(x):
+        return await x if inspect.isawaitable(x) else x
+
+    def stamp(name: str):
+        m = re.search(r"(\d{4}-\d{2}-\d{2})-(\d{6})", name)       # "Instagram-2026-11-12-101010.ips"
+        try:
+            return dt.datetime.strptime(m.group(1) + m.group(2), "%Y-%m-%d%H%M%S") if m else None
+        except ValueError:
+            return None
+
+    async def run():
+        async with await create_using_usbmux(serial=udid) as lockdown:
+            afc = AfcService(lockdown, service_name="com.apple.crashreportcopymobile")
+            await aw(afc.__aenter__())
+            try:
+                found = 0
+                async for root, _dirs, files in afc.walk("/"):
+                    for f in files:
+                        if not f.endswith((".ips", ".crash", ".panic")):
+                            continue
+                        rel = "/".join(x for x in (root.strip("/") + "/" + f).split("/") if x)
+                        when = stamp(f)
+                        if when is None:
+                            st = await aw(afc.stat(rel))
+                            when = st.get("st_mtime")
+                            when = when.replace(tzinfo=None) if isinstance(when, dt.datetime) else None
+                        if when is None or when < since:
+                            continue
+                        found += 1
+                        out = dest / rel
+                        if out.exists() and out.stat().st_size > 0:
+                            continue
+                        data = await aw(afc.get_file_contents(rel))
+                        out.parent.mkdir(parents=True, exist_ok=True)
+                        tmp = out.with_name(out.name + ".part")
+                        tmp.write_bytes(data)
+                        tmp.replace(out)
+                        print(f"PKCRASH {rel}", flush=True)
+                print(f"PKDONE {found}", flush=True)
+            finally:
+                await aw(afc.__aexit__(None, None, None))
+    try:
+        asyncio.run(run())
+    except Exception as e:
+        print(f"PKERR {type(e).__name__}: {e}", flush=True)
+        sys.exit(1)
+
+
 def _pk_battery(args: list) -> None:
     """Internal: print PKBATTERY charging=<0|1> level=<0-100> from the phone's battery domain."""
     import asyncio
@@ -301,6 +370,9 @@ def main() -> None:
         return
     if args and args[0] == "--pk-battery":
         _pk_battery(args[1:])
+        return
+    if len(args) >= 2 and args[0] == "--pk-crashes":
+        _pk_crashes(args[1:])
         return
     if len(args) >= 2 and args[0] == "--pk-wifi":
         _pk_wifi(args[1:])

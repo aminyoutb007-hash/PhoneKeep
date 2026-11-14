@@ -38,6 +38,7 @@ STEPS = [
     ("H1: the check-up: four cards, thresholds, why slow, one notification per red card", "test_h1_checkup.py", True),
     ("H2: storage suggestions, biggest first, with steps; the storage forecast", "test_h2_storage.py", True),
     ("H3: battery history chart, notes and tips for the model; Save details as CSV", "test_h3_battery.py", True),
+    ("H4: stability: crash reports read-only, apps and restarts counted, Save reports", "test_h4_stability.py", True),
     ("C1: photo clean-up: six cards, keepers, saving checked by checksum, 10,000 photos", "test_c1_cleanup.py", True),
     ("Build: the Mac build script puts build_label.py back with git", "test_build_label.py", False),
 ]

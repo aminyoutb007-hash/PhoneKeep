@@ -8,6 +8,8 @@ What it does, all read-only for the phone:
   * opens every app screen and looks for an error;
   * Photos: counts, scrolls to the end of the biggest collection, previews a photo and a video (Space);
   * saves 3 photos as JPG into a temporary folder and checks each keeps its date and location;
+  * Stability (H4): the crash reports of the last 30 days read twice into the temporary folder: all still on the
+    phone after the first read;
   * Photo clean-up (C1): the six cards from the phone's photos, twice (the second visit from the cache), nothing
     offered that's a favourite, in an album, hidden or only in iCloud; 3 of them saved and checked by checksum
     (its cache and record go to the temporary folder too, not next to the real backups);
@@ -131,6 +133,8 @@ dev = devs[0]
 print(f"Checking the iPhone on the cable (iOS {dev.get('ProductVersion')}). This takes a few minutes.\n", flush=True)
 app = App()
 win = phone.PhoneWindow(app, dev, dev["UniqueDeviceID"])
+win.crashes_read = True     # the check-up reads crash reports into the phone's real folder: the H4 step reads them
+                            # into the temporary folder instead
 try:
     # -- home screen ----------------------------------------------------------------------------------------
     backup_apps = [k for k, *_r, where in phone.APPS if where == "backup"]
@@ -174,6 +178,24 @@ try:
               "Battery details: today's figures from the phone, one point per recorded backup, tips for this model")
         note(f"{len(hist)} backups recorded so far; " + ("chart shown" if getattr(win, "battery_chart", None) else
                                                          "chart waits for a second backup"))
+
+    # -- H4: the phone's crash reports, read-only --------------------------------------------------------------
+    import crashes as cr
+    import subprocess as sp
+
+    def pk_crashes(folder):
+        out = sp.run(wv._launcher_cmd() + ["--pk-crashes", str(folder), "--days", "30", "--udid", win.udid],
+                     capture_output=True, text=True, timeout=300).stdout.splitlines()
+        done = next((int(l.split()[1]) for l in out if l.startswith("PKDONE")), None)
+        return done, sum(l.startswith("PKCRASH") for l in out)
+    cdir = WORK / "h4" / cr.FOLDER
+    n1, copied1 = pk_crashes(cdir)
+    n2, copied2 = pk_crashes(cdir)
+    check(n1 is not None and n2 is not None and n2 >= n1 and copied2 <= n2 - n1 and copied1 == n1,
+          "Stability: the crash reports are read, and after the check they're all still on the phone")
+    ev = cr.read_folder(cdir)
+    c7, r7 = cr.counts(cr.summary(ev, dt.datetime.now()), 7)
+    note(f"{n1} reports in 30 days; this week {sum(c7.values())} app crashes in {len(c7)} apps, {r7} unexpected restarts")
 
     # -- Photos -----------------------------------------------------------------------------------------------
     win.open_app("photos")

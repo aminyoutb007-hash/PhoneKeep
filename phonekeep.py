@@ -510,6 +510,7 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
         import checkup
         # at most 20 s: a Wi-Fi phone that dozes off once the backup is done mustn't hold up its end
         checkup.record(_snaps.phone_dir(backup_root, udid), device_overview(udid, apps=False, timeout=CHECKUP_TIMEOUT))
+        read_crash_reports(udid, _snaps.phone_dir(backup_root, udid), timeout=CHECKUP_TIMEOUT)          # H4
     except Exception as e:     # never fails a backup that's already made
         log(f"The check-up couldn't be recorded: {type(e).__name__}: {e}")
     if progress:
@@ -624,6 +625,36 @@ def device_overview(udid: Optional[str] = None, apps: bool = True, timeout: floa
         return deviceinfo.from_raw(raw) if raw is not None else None
     except Exception:
         return None
+
+
+def read_crash_reports(udid: Optional[str], phone_dir: Path, apps: Optional[dict] = None,
+                       timeout: float = 60) -> Optional[dict]:
+    """H4: copy the phone's crash reports of the last 30 days to phone_dir/crash-reports (read-only: they stay on
+    the phone) and record what they say in its checkup.json. apps: bundle id -> name, for the apps' names.
+    Returns the summary, or None if the phone couldn't be read within `timeout` seconds."""
+    import checkup
+    import crashes as cr
+    folder = Path(phone_dir) / cr.FOLDER
+    try:
+        check_pmd3()
+        cmd = _launcher_cmd() + ["--pk-crashes", str(folder), "--days", str(cr.KEEP_DAYS)] + (["--udid", udid] if udid else [])
+        env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+        r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
+                           timeout=timeout, **_NOWIN)
+        if "PKDONE" not in r.stdout:
+            return None
+    except Exception:
+        return None
+    if apps:                                  # names only (bundle id -> name), for reads with no app list
+        d = checkup.load(phone_dir)
+        d["apps"] = dict(apps)
+        checkup._save(phone_dir, d)
+    else:
+        apps = checkup.load(phone_dir).get("apps") or {}
+    cr.prune(folder)
+    summary = cr.summary(cr.read_folder(folder, apps), dt.datetime.now())
+    checkup.record_stability(phone_dir, summary)
+    return summary
 
 
 RESET_PASSWORD_HELP = (
