@@ -220,6 +220,11 @@ class Ctx:
         con.row_factory = sqlite3.Row
         return con
 
+    def read(self, domain: str, rel: str) -> Optional[bytes]:
+        """One backup file's content in memory (Q1 previews)."""
+        fid = self.files(domain).get(rel)
+        return self.reader.read_bytes(domain, rel, fid) if fid else None
+
     def copy(self, domain: str, rel: str, dest: Path, keep_time: bool = True) -> bool:
         """Copy one backup file to dest (skips if already there)."""
         if dest.exists() and dest.stat().st_size > 0:

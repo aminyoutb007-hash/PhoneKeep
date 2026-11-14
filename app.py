@@ -232,6 +232,8 @@ def _dnd_root():
 class App(_dnd_root()):
     def __init__(self):
         super().__init__()
+        import quicklook
+        quicklook.cleanup()          # Q1: anything a crashed run left in the private preview folder
         ui.use_light_appearance(self)
         self.title(wv.APP_NAME)
         self._build_menu()
@@ -470,6 +472,8 @@ class App(_dnd_root()):
                 self.after_cancel(job)
             except Exception:
                 pass
+        import quicklook
+        quicklook.cleanup()          # Q1: copies made to play a video or song go when PhoneKeep closes
         super().destroy()
 
     def _spin(self):

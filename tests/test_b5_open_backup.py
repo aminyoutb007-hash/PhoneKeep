@@ -148,9 +148,16 @@ check(db is not None and tree.item(db, "values")[0].endswith(("KB", "MB", "B")),
 tree.selection_set(db)
 opened = []
 phone.open_file = lambda p: opened.append(p)
-win.allfiles_preview()               # what Space and double-click call
-a.update()
-check(opened and Path(opened[0]).name == "sms.db" and Path(opened[0]).stat().st_size > 0, "preview: the file is copied to a private temp folder and opened")
+import quicklook
+played = []
+quicklook.play = lambda p: played.append(p)
+win.allfiles_preview()               # what Space, Return and double-click call (Q1: the preview opens)
+v = win.allfiles_viewer
+pump(lambda: v.shown_kind == "play", 20, "preview")
+dest = v.open_from_file(wait=True)
+check(dest is not None and dest.name.endswith("sms.db") and dest.stat().st_size > 0 and dest.parent == quicklook.private_dir(),
+      "preview: a file with no built-in preview is copied to the private folder and opened from there")
+v.close()
 
 # save keeps the folder structure (the folder dialog is answered with the default folder here)
 phone.ask_save_folder = lambda parent, title, start: str(start)

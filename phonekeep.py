@@ -927,6 +927,24 @@ class BackupReader:
         return [r[0] for r in self.db.execute(
             "SELECT DISTINCT domain FROM Files WHERE domain LIKE ?", (like,))]
 
+    def read_bytes(self, domain: str, rel: str, file_id: str) -> Optional[bytes]:
+        """One backup file's content in memory (Q1 previews): nothing decrypted touches the disk."""
+        if not re.fullmatch(r"[0-9a-fA-F]{40}", file_id or ""):
+            return None
+        if self._enc is not None:
+            try:
+                return self._enc.extract_file_as_bytes(rel, domain_like=domain)
+            except Exception:
+                return None
+        if self._snapshot:
+            import snapshots as _snaps
+            src = _snaps.resolve(self.path, file_id)
+            return src.read_bytes() if src is not None and src.exists() else None
+        for src in (self.path / file_id[:2] / file_id, self.path / file_id):
+            if src.exists():
+                return src.read_bytes()
+        return None
+
     def extract(self, domain: str, rel: str, file_id: str, dest: Path) -> bool:
         if ".." in Path(dest).parts or not re.fullmatch(r"[0-9a-fA-F]{40}", file_id or ""):
             return False  # refuse anything that could step outside the target folder
