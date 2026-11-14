@@ -194,6 +194,7 @@ class Helper:
             self.notify("iPhone backed up",
                         f"{name} · {mins} min · {size_text(max(0, after - before))} of changes")
             self.write_health(udid, ok=True)
+            self.check_up(udid, name)
         except Exception as e:
             import errors
             pr = errors.explain(e) if not isinstance(e, wv.PhoneKeepError) else None
@@ -207,6 +208,23 @@ class Helper:
         finally:
             self.busy, self.progress = False, None
             self.on_change()
+
+    # -- H1: the check-up after a backup ----------------------------------------------------------
+    def check_up(self, udid: str, name: str) -> None:
+        """One notification for each check-up card that has just turned red, and none again until it changes."""
+        try:
+            import checkup
+            folder = self.backup_dir / udid
+            report = checkup.check(folder)
+            for title, text in (checkup.new_alerts(folder, report, name) if report is not None else []):
+                self.notify(title, text)
+        except Exception as e:
+            self.log(f"Check-up: {type(e).__name__}: {e}")
+
+    def needs_attention(self) -> bool:
+        """The icon's dot: a check-up card is red for one of the phones, as of its last backup."""
+        import checkup
+        return any(checkup.any_red(self.backup_dir / p["udid"]) for p in self.phones() if p.get("udid"))
 
     # -- backup health (the scheduler and the phone card read this) ----------------------------------
     def write_health(self, udid: str, ok: bool, reason: str = ""):
@@ -363,9 +381,10 @@ def helper_running() -> bool:
 
 # -- the icon --------------------------------------------------------------------------------------------
 
-def icon_image(progress: Optional[float] = None, size: int = 64, template: bool = False):
-    """The menu bar / tray icon: the PhoneKeep lock, with a thin progress ring while a backup runs.
-    template=True draws it in black for the Mac menu bar (macOS tints template images itself)."""
+def icon_image(progress: Optional[float] = None, size: int = 64, template: bool = False, dot: bool = False):
+    """The menu bar / tray icon: the PhoneKeep lock, with a thin progress ring while a backup runs, and a small
+    dot when a check-up card is red (H1). template=True draws it in black for the Mac menu bar (macOS tints
+    template images itself)."""
     from PIL import Image, ImageDraw
     im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
@@ -377,4 +396,6 @@ def icon_image(progress: Optional[float] = None, size: int = 64, template: bool 
     if progress is not None:
         d.arc([2, 2, s - 3, s - 3], start=-90, end=-90 + 360 * max(0.0, min(100.0, progress)) / 100,
               fill=ink, width=max(2, s // 14))
+    if dot:
+        d.ellipse([s * 0.70, s * 0.04, s * 0.94, s * 0.28], fill=ink if template else (192, 57, 43, 255))
     return im

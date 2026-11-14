@@ -503,6 +503,11 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
         status("Saving this backup as a snapshot…")
     snap = _snaps.make_snapshot(backup_root, udid, log=log)
     _snaps.prune(backup_root, udid, keep=keep, until_disk_full=until_disk_full, log=log)
+    try:                       # H1: the check-up's record (storage, battery) for "As of last backup" and history
+        import checkup
+        checkup.record(_snaps.phone_dir(backup_root, udid), device_overview(udid, apps=False))
+    except Exception as e:     # never fails a backup that's already made
+        log(f"The check-up couldn't be recorded: {type(e).__name__}: {e}")
     if progress:
         progress(100.0)
     return snap.path

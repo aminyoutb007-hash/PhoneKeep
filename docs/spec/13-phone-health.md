@@ -33,10 +33,10 @@ The check-up runs by itself after every backup (it reads data the backup already
 - Works offline from the latest snapshot when the phone isn't connected, with "As of last backup, 3 Nov" on each card.
 
 **Done when**
-- [ ] With the test fixtures, each card shows green, amber and red at the thresholds above, with the matching one-line reason.
-- [ ] "Why is my phone slow?" names the red and amber causes in order of impact.
-- [ ] A red card produces exactly one helper notification, and none again until it changes.
-- [ ] Opening the check-up adds less than 1 second to the phone window.
+- [x] With the test fixtures, each card shows green, amber and red at the thresholds above, with the matching one-line reason. *(14 Nov, `tests/test_h1_checkup.py`: every boundary. On a real iPhone Storage and Battery come from the phone; Stability and Security say "Not checked yet" until H4 and H5 read their data.)*
+- [x] "Why is my phone slow?" names the red and amber causes in order of impact. *(14 Nov, `tests/test_h1_checkup.py`: reds before ambers, then Storage, Battery, Stability; Security is named separately.)*
+- [x] A red card produces exactly one helper notification, and none again until it changes. *(14 Nov, `tests/test_h1_checkup.py`: the helper backs up a stub iPhone six times; storage turning red notifies once, staying red doesn't, red again after it was fixed does.)*
+- [x] Opening the check-up adds less than 1 second to the phone window. *(14 Nov, `tools/real_check.py` on a real iPhone: 3 ms. The read after each backup takes about 0.3 s.)*
 
 ## H2. Storage card and clean-up suggestions
 
