@@ -111,6 +111,48 @@ try:
     check(len(_boxes) == 3 and all(b1[3] <= b2[1] + 1 for b1, b2 in zip(_boxes, _boxes[1:])),
           "the name, model and iOS lines never overlap")
 
+    # a phone on Wi-Fi that dozes: the first read finds nothing, a later one gets its picture, which is kept
+    import device as _devmod
+    reachable = {"on": False}
+
+    class _Live:
+        def __init__(self, udid, cache_dir=None):
+            if not reachable["on"]:
+                raise ConnectionError("phone not in the list right now")
+            self.udid = udid
+
+        def wallpaper(self, which="homescreen"):
+            f = W / f"wall-{self.udid}.png"
+            _Im.new("RGB", (300, 600), (120, 60, 160)).save(f)
+            return f
+
+        def close(self):
+            pass
+    _real_live, _real_bat = _devmod.LiveDevice, wv.battery_state
+    _devmod.LiveDevice = _Live
+    wv.battery_state = lambda udid=None: {"level": 55, "charging": False} if reachable["on"] else None
+    a._phone_extra = {}
+    a._read_phone_extra(B["UniqueDeviceID"])
+    check(not a._phone_extra[B["UniqueDeviceID"]].get("wall") and a._should_read_extra(B["UniqueDeviceID"]) is True,
+          "a Wi-Fi phone that couldn't be read is tried again (not given up on)")
+    a._phone_extra[B["UniqueDeviceID"]]["reading"] = time.time()
+    check(a._should_read_extra(B["UniqueDeviceID"]) is False, "but not more often than every 20 seconds")
+    reachable["on"] = True
+    a._phone_extra[B["UniqueDeviceID"]]["reading"] = 0
+    a._read_phone_extra(B["UniqueDeviceID"])
+    a.update()
+    kept = a._wallpaper_file(B["UniqueDeviceID"])
+    check(kept.exists() and a._phone_extra[B["UniqueDeviceID"]]["battery"]["level"] == 55
+          and not a._should_read_extra(B["UniqueDeviceID"]),
+          "once it answers, its picture and battery show, and the picture is kept on disk")
+    check(str(kept).startswith(str(wv.DEFAULT_HOME)), "kept in PhoneKeep's own folder")
+    reachable["on"] = False
+    a._phone_extra = {}
+    detect()
+    _pc = a.phone_rows[B["UniqueDeviceID"]]
+    check(_pc.wall is not None, "next time, the kept picture shows straight away, even while the phone dozes")
+    _devmod.LiveDevice, wv.battery_state = _real_live, _real_bat
+
     a.choose_phone(B["UniqueDeviceID"])
     a.update()
     check(a.udid == B["UniqueDeviceID"] and a.dev_name.cget("text") == "Test iPhone B" and a.open_btn.enabled

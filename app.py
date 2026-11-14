@@ -6,6 +6,8 @@ import datetime as dt
 import json
 import os
 import queue
+import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -895,7 +897,7 @@ class App(_dnd_root()):
 
     def _fill_phone_list(self):
         """B8: the reachable iPhones side by side as phones (wallpaper, name, model · iOS, cable / Wi-Fi, battery),
-        shown when there's a choice to make. Wallpapers and battery are read in the background, once per phone."""
+        shown when there's a choice to make. Wallpapers and battery are read in the background, again until they come back."""
         import models
         for w in self.phone_list.winfo_children():
             w.destroy()
@@ -918,27 +920,50 @@ class App(_dnd_root()):
             card.pack(side="left", padx=10)
             card.set(udid == self.udid)
             self.phone_rows[udid] = card
-            extra = self._phone_extra.get(udid)
-            if extra:
-                card.set_wallpaper(extra.get("wall"))
-                card.set_battery(extra.get("battery"))
-            elif not self.busy:
-                self._phone_extra[udid] = {}
+            extra = self._phone_extra.get(udid) or {}
+            card.set_wallpaper(extra.get("wall") or self._saved_wallpaper(udid))
+            card.set_battery(extra.get("battery"))
+            if self._should_read_extra(udid):
+                self._phone_extra.setdefault(udid, {})["reading"] = time.time()
                 threading.Thread(target=self._read_phone_extra, args=(udid,), daemon=True).start()
+
+    # A phone on Wi-Fi comes and goes from the computer's list as it dozes, so a read can find nothing.
+    # Read again (at most every 20 s) until both the picture and the battery came back, and keep the last
+    # picture on disk so the card shows it straight away next time.
+    EXTRA_RETRY = 20
+
+    def _should_read_extra(self, udid: str) -> bool:
+        extra = self._phone_extra.get(udid) or {}
+        if self.busy or (extra.get("wall") and extra.get("battery")):
+            return False
+        return time.time() - extra.get("reading", 0) >= self.EXTRA_RETRY
+
+    @staticmethod
+    def _wallpaper_file(udid: str) -> Path:
+        return wv.DEFAULT_HOME / "cache" / "phones" / re.sub(r"[^0-9A-Za-z-]", "", udid or "x") / "wallpaper.png"
+
+    def _saved_wallpaper(self, udid: str):
+        f = self._wallpaper_file(udid)
+        return f if f.exists() else None
 
     def _read_phone_extra(self, udid: str):
         """Wallpaper (lock screen, else home screen) and battery of one phone, for its card."""
-        extra = {}
+        extra = dict(self._phone_extra.get(udid) or {})
         try:
             import device as devmod
             live = devmod.LiveDevice(udid)
             try:
-                extra["wall"] = live.wallpaper("lockscreen") or live.wallpaper("homescreen")
+                wall = live.wallpaper("lockscreen") or live.wallpaper("homescreen")
             finally:
                 live.close()
+            if wall:
+                keep = self._wallpaper_file(udid)
+                keep.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(wall, keep)
+                extra["wall"] = keep
         except Exception:
             pass
-        extra["battery"] = wv.battery_state(udid)
+        extra["battery"] = wv.battery_state(udid) or extra.get("battery")
         self._phone_extra[udid] = extra
 
         def show():
