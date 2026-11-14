@@ -1245,7 +1245,7 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
                     binfo: Optional[dict] = None, name_for=None, hub: bool = False,
                     strict: bool = False, only_chats: Optional[set] = None,
                     formats: Optional[set] = None, loaded: Optional[dict] = None,
-                    dates=None, pdf_combined: bool = False) -> dict:
+                    dates=None, pdf_combined: bool = False, search: str = "") -> dict:
     """Build the WhatsApp (or WhatsApp Business) archive in `out` from an open backup.
     loaded: the result of load_whatsapp(), when the chats were already read (e.g. for the picker).
     dates: (from, to) to keep only messages in that period."""
@@ -1258,12 +1258,14 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
         log(f"Exporting the {len(chats)} chat{'s' if len(chats) != 1 else ''} you selected.")
         if not chats:
             raise PhoneKeepError("No chats selected for this app.")
-    if dates and any(dates):
-        chats = filter_by_dates(chats, dates)
-        log(f"Keeping messages {describe_dates(dates)}: {sum(len(c['messages']) for c in chats):,} "
+    import exportfilter
+    flt = exportfilter.Filter(tuple(dates) if dates else None, search)
+    if flt.on:
+        chats = flt.chats(chats)
+        log(f"Keeping messages {flt.describe()}: {sum(len(c['messages']) for c in chats):,} "
             f"messages in {len(chats)} chat{'s' if len(chats) != 1 else ''}.")
         if not chats:
-            raise PhoneKeepError(f"No messages {describe_dates(dates)} in the chats you chose.")
+            raise PhoneKeepError(f"No messages {flt.describe()} in the chats you chose.")
 
     media_dir = out / "media"
     copied = missing = skipped = 0

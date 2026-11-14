@@ -31,6 +31,7 @@ from typing import Callable, Optional
 import keychain
 import overview_ui
 import quicklook
+import saveall_ui
 import phonekeep as wv
 import snapshots as sn
 import sections as sx
@@ -704,8 +705,12 @@ class PhoneWindow(tk.Toplevel):
     def show_home(self):
         self.current = None
         self._clear()
-        tk.Label(self.content, text="Your iPhone", bg=BG, fg=INK, font=font(20, "bold"),
-                 anchor="w").pack(fill="x")
+        trow = tk.Frame(self.content, bg=BG)
+        trow.pack(fill="x")
+        # D9: one place to save everything, with one date range and one search
+        self.save_all_btn = RoundButton(trow, "⤓  Save everything…", self.save_everything, "secondary", 190, 34, 12)
+        self.save_all_btn.pack(side="right")
+        tk.Label(trow, text="Your iPhone", bg=BG, fg=INK, font=font(20, "bold"), anchor="w").pack(side="left")
         tk.Label(self.content, text="Click an app to see what's in it, preview it and save what you want.",
                  bg=BG, fg=MUTED, font=font(13), anchor="w").pack(fill="x", pady=(2, 12))
         if self.udid and self.live_wanted:          # V1-V3: about this iPhone, its battery and storage
@@ -906,6 +911,51 @@ class PhoneWindow(tk.Toplevel):
         self.banner(f"Saving {label}…")
         (runner or self.backup_runner).submit(fn, lambda paths: self.saved(paths, folder, what),
                                               lambda e: self.banner(f"Couldn't save: {describe_error(e)}", color="#fdecea"))
+
+    def save_everything(self, choice: Optional[dict] = None, folder: Optional[Path] = None):
+        """D9: the Save everything sheet, then one export of every ticked kind into one new folder.
+        choice / folder: given by the tests instead of the sheet and the folder dialog."""
+        if self.data is None:
+            messagebox.showinfo(wv.APP_NAME, "The backup is still opening. Try again in a moment.", parent=self)
+            return
+        if choice is None:
+            data = self.data
+            dlg = saveall_ui.SaveEverythingDialog(self, self.counts, lambda: saveall_ui.estimate_sizes(data.reader, data.path))
+            self.save_all_dialog = dlg
+            dlg.grab_set()
+            self.wait_window(dlg)
+            choice = dlg.result
+            if choice is None:
+                return
+        if folder is None:
+            base = ask_save_folder(self, "Save everything to…", self.out_root)
+            if not base:
+                return
+            folder = Path(base) / saveall_ui.folder_name(self.name)
+        folder.mkdir(parents=True, exist_ok=True)
+        data = self.data
+        eta = ui.Eta()
+        state = {"finished": False}
+
+        def progress(p):
+            text = eta.feed(p)
+            self.backup_runner.on_ui(lambda: None if state["finished"] else self.banner(f"Saving everything… {text}"))
+
+        def go():
+            return sx.export_all(data.path, folder, data.password, list(choice["sections"]), include_media=True,
+                                 log=lambda m: None, formats=set(choice["formats"]), dates=choice["dates"],
+                                 search=choice["search"], all_dates=True, progress=progress)
+
+        def ok(index):
+            state["finished"] = True
+            self.last_save_all = Path(index)
+            self.banner(f"✓ Saved to {folder}", ("Open", lambda: open_file(Path(index))))
+
+        def err(e):
+            state["finished"] = True
+            self.banner(f"Couldn't save everything: {describe_error(e)}", color="#fdecea")
+        self.banner("Saving everything…")
+        self.backup_runner.submit(go, ok, err)
 
     def export_section(self, key: str, formats: set, chooser=None, dates=None, pdf_combined: bool = False,
                        then=None, out: Optional[Path] = None, quiet: bool = False):

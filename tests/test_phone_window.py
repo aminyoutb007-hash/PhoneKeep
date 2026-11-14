@@ -378,6 +378,14 @@ if _pp is not None:
         check(_v.shown_kind == "image", f"Q1: → reaches a photo, drawn from the backup in memory ({_v.items[_v.index].name}: {_v.shown_kind})")
         _v.close()
 win.show_home()
+# D9: Save everything from the phone window into one new folder
+_d9 = W / "d9-from-window"
+shutil.rmtree(_d9, ignore_errors=True)
+win.save_everything({"sections": ["notes", "messages"], "dates": None, "search": "milk", "formats": {"web"}}, _d9)
+pump(root, lambda: getattr(win, "last_save_all", None) is not None or "Couldn't" in win.bar_text.cget("text"), 90, "save everything")
+check(getattr(win, "last_save_all", None) == _d9 / "index.html" and (_d9 / "Notes" / "index.html").exists()
+      and not (_d9 / "Messages").exists() and "✓ Saved to" in win.bar_text.cget("text"),
+      f"D9: Save everything saves what matches into one folder ({win.bar_text.cget('text')})")
 win.close()
 root.update()
 check(("close",) in win.live.calls, "closing the window disconnects the simulated iPhone")

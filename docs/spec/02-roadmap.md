@@ -34,11 +34,11 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | --- | --- | --- | --- | --- |
 | S2 | App lock (Touch ID / password) | Not available | Done | [04-security.md](04-security.md#s2-app-lock) |
 | P1 | Photos: albums, preview, HEIC to JPG | By month, live, originals | Partial | [07-photos-media.md](07-photos-media.md#p1-photos) |
-| D9 | Export everything with one date range and search | Everything preset; dates for chats only | Partial | [08-personal-data.md](08-personal-data.md#d9-export-everything) |
+| D9 | Export everything with one date range and search | Everything preset; dates for chats only | Partial (real-Mac check to do) | [08-personal-data.md](08-personal-data.md#d9-export-everything) |
 | V1 | Device overview | Name, iOS, connection | Partial (colour to do) | [10-device.md](10-device.md#v1-device-overview) |
 | V2 | Battery health | Not available | Done | [10-device.md](10-device.md#v2-battery-health) |
 | V3 | Storage usage | Not available | Partial (app order to check) | [10-device.md](10-device.md#v3-storage-usage) |
-| Q1 | Quick previews (Space key) everywhere | Partly (double-click opens) | In review | [11-previews.md](11-previews.md#q1-quick-preview-everywhere) |
+| Q1 | Quick previews (Space key) everywhere | Partly (double-click opens) | Partial (real-Mac check to do) | [11-previews.md](11-previews.md#q1-quick-preview-everywhere) |
 | B8 | Choose which iPhone when several are reachable (added 13 Nov, owner) | Cable wins, else the first on Wi-Fi, without saying so; one phone at a time | In review | [03-backup.md](03-backup.md#b8-choose-which-iphone-when-several-are-reachable) |
 | B6 | Restore a backup to an iPhone (moved from P2 into 5.1 on 13 Nov, owner) | Not available | To build | [03-backup.md](03-backup.md#b6-restore-a-backup-to-an-iphone) |
 | S4 | Signed and notarised installers (last: needs the certificates) | Ad-hoc signed; users must click Open Anyway. Workflow signs when the secrets exist | Partial | [04-security.md](04-security.md#s4-signed-and-notarised-installers) |
