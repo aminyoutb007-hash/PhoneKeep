@@ -101,6 +101,7 @@ class NoDevicePhotos:
 
 
 devmod.LiveDevice = SimulatedDevice
+wv.device_overview = lambda udid=None, apps=True: None     # V1-V3: no real phone lookup from a test
 ph.DevicePhotoSource = NoDevicePhotos
 
 
