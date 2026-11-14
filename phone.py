@@ -1179,7 +1179,7 @@ class PhoneWindow(tk.Toplevel):
             self.run_save(f"{len(chosen):,} photos & videos", go, folder, "photo/video",
                           self.live_runner if src.label == "the iPhone" else self.backup_runner)
         RoundButton(panel.foot, "Save selected", save, "primary", 170, 38, 12).pack(side="right")
-        tk.Label(panel.foot, text="Click, then Space to preview · double-click to open", bg=BG, fg=MUTED,
+        tk.Label(panel.foot, text="Space: preview", bg=BG, fg=MUTED,
                  font=font(11)).pack(side="right", padx=12)
 
     # tables -----------------------------------------------------------------------

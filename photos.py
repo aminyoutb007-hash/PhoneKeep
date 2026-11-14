@@ -83,7 +83,7 @@ def _apply_library(items: list[PhotoItem], lib, has_file=None) -> list[PhotoItem
             continue
         # not found where it should be: a DCIM file missing from the phone's folder, a file not in the backup,
         # or the library saying the original isn't on the phone ("Optimise iPhone Storage")
-        cloud = key.startswith("DCIM/") or a.local is False or (has_file is not None and not has_file(key))
+        cloud = key.startswith("DCIM/") or (has_file is not None and not has_file(key))
         name = getattr(a, "original", None) or Path(key).name       # "IMG_1234.HEIC", not the iCloud file name
         items.append(PhotoItem(key, name, 0, a.taken or dt.datetime(1970, 1, 1), a.video or ext in VID_EXT,
                                cloud_only=cloud))

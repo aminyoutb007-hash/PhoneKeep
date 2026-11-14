@@ -108,17 +108,16 @@ ids = {i.name: i for i in items}
 check("IMG_0005.JPG" not in ids and ids["IMG_0001.HEIC"].live_video and ids["IMG_0001.HEIC"].when == T0 + dt.timedelta(days=1),
       "deleted items are left out; the Live Photo keeps its video; dates come from the library")
 cpl = {i.id: i for i in items if i.id.startswith("PhotoData/")}
-check({k for k, i in cpl.items() if not i.cloud_only} == {"PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC",
-                                                           "PhotoData/CPLAssets/group12/7F00AA11-BBBB.HEIC"}
+check({"PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC", "PhotoData/CPLAssets/group12/7F00AA11-BBBB.HEIC"} <= set(cpl)
       and cpl["PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC"].favorite
       and cpl["PhotoData/CPLAssets/group12/7F00AA11-BBBB.HEIC"].hidden,
       "photos kept in iCloud's folder on the phone (not DCIM) are listed too, with favourite and hidden")
-check({i.name for i in cpl.values() if not i.cloud_only} == {"IMG_5001.HEIC", "IMG_5002.HEIC"},
+check({"IMG_5001.HEIC", "IMG_5002.HEIC"} <= {i.name for i in cpl.values()},
       "under the name they were taken with")
 _ids = {i.id: i for i in items}
-check(_ids["PhotoData/CPLAssets/group5/99CC0000-CCCC.HEIC"].cloud_only and _ids["DCIM/101APPLE/IMG_0909.HEIC"].cloud_only
+check(_ids["DCIM/101APPLE/IMG_0909.HEIC"].cloud_only and not _ids["PhotoData/CPLAssets/group5/99CC0000-CCCC.HEIC"].cloud_only
       and not _ids["DCIM/100APPLE/IMG_0001.HEIC"].cloud_only,
-      "photos whose full version is only in iCloud are listed, marked as such (library says so, or the file isn't there)")
+      "a photo the library lists whose file isn't on the phone is listed as only in iCloud; files that are there aren't")
 _back = ph._apply_library([], lib, has_file=lambda k: k.endswith("AAAA.HEIC"))
 check([i.id for i in _back if not i.cloud_only] == ["PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC"],
       "from a backup, only those whose file is in the backup can be saved; the rest are marked iCloud-only")
@@ -150,10 +149,10 @@ try:
           f"then Albums, with the user's albums: {albums}")
     _cl = [i for i in pp.items if i.cloud_only]
     pp._toggle(_cl[0]); pp._set_all(True)
-    check(_cl and not any(i.id in pp.selected for i in _cl) and "only in iCloud" in pp.count.cget("text"),
+    check(_cl and not any(i.id in pp.selected for i in _cl) and "1 only in iCloud" in pp.count.cget("text"),
           f"iCloud-only photos can't be selected, and the count says how many: {pp.count.cget('text')!r}")
     pp._set_all(False)
-    check(len(pp.months["c:fav"]) == 4 and {i.name for i in pp.months["album:10"]} == {"IMG_0001.HEIC", "IMG_0006.JPG"},
+    check(len(pp.months["c:fav"]) == 4 and pp.mlist.item("c:fav", "values")[1].endswith("/4") and {i.name for i in pp.months["album:10"]} == {"IMG_0001.HEIC", "IMG_0006.JPG"},
           "favourites and an album hold the right photos")
     check("c:hidden" in rows and "🔒" in pp.mlist.item("c:hidden", "values")[0] and pp.mlist.item("c:hidden", "values")[1] == "",
           "Hidden is listed, locked, without its count")

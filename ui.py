@@ -429,6 +429,15 @@ class BgWorker:
             pass
 
 
+def draw_cloud(c: tk.Canvas, x: int, y: int) -> None:
+    """A small drawn iCloud badge (a dark disc with a white cloud), centred on (x, y)."""
+    c.create_oval(x - 13, y - 11, x + 13, y + 11, fill="#3a3a3c", outline="")
+    c.create_oval(x - 9, y - 1, x - 1, y + 6, fill="white", outline="")
+    c.create_oval(x - 5, y - 6, x + 5, y + 4, fill="white", outline="")
+    c.create_oval(x + 1, y - 3, x + 9, y + 6, fill="white", outline="")
+    c.create_rectangle(x - 5, y + 1, x + 5, y + 6, fill="white", outline="")
+
+
 def load_photo(path, max_px: int, square: bool = False, faded: bool = False) -> Optional["ImageTk.PhotoImage"]:
     """faded: washed out towards white (a photo whose full version is only in iCloud)."""
     if not path or Image is None:
@@ -1127,11 +1136,13 @@ class PhotoPanel(tk.Frame):
         (owner, 13 Nov). Rows are updated in place: re-inserting them re-selected the open group and emptied the
         grid (13 Nov: Select none, then Select this month)."""
         def put(iid, parent, label, items, tag, zero=False):
-            items = [i for i in items if not getattr(i, "cloud_only", False)]   # counts are of what can be saved
-            n = sum(1 for i in items if i.id in self.selected)
+            n = sum(1 for i in items if i.id in self.selected)        # of all, like the Photos app counts them
+            can = sum(1 for i in items if not getattr(i, "cloud_only", False))   # what can be ticked and saved
             indent = label[:len(label) - len(label.lstrip())]
-            if items:
-                values = (f"{indent}{self._box(n, len(items))} {label.lstrip()}", f"{n}/{len(items)}")
+            if items and can:
+                values = (f"{indent}{self._box(n, can)} {label.lstrip()}", f"{n}/{len(items)}")
+            elif items:                                  # all only in iCloud: nothing to tick
+                values = (f"{indent}   {label.lstrip()}", f"{len(items)}")
             elif zero:                                   # an empty album: lined up with the others, "0"
                 values = (f"{indent}   {label.lstrip()}", "0")
             else:
@@ -1317,8 +1328,7 @@ class PhotoPanel(tk.Frame):
             c.create_rectangle(4, 4, 36, 20, fill="#000000", outline="")
             c.create_text(20, 12, text="LIVE", fill="white", font=font(8, "bold"))
         if cloud:                                     # washed out, with a cloud: the full photo is only in iCloud
-            c.create_oval(T - 30, 4, T - 4, 24, fill="#ffffff", outline="")
-            c.create_text(T - 17, 14, text="☁", fill=MUTED, font=font(12))
+            draw_cloud(c, T - 18, 16)
         # selected: a blue frame, nothing else (owner, 13 Nov: no tick circle)
         if item.id in self.selected:
             c.create_rectangle(2, 2, T - 2, T - 2, outline=SELECT_BLUE, width=5)
@@ -1400,7 +1410,7 @@ class PhotoPanel(tk.Frame):
         cloud = sum(1 for i in self.items if getattr(i, "cloud_only", False))
         self.count.configure(text=f"{n_p:,} photo{'s' if n_p != 1 else ''} and {nv:,} video{'s' if nv != 1 else ''} "
                                   f"selected of {len(self._selectable()):,} · about {self.human_size(size)}"
-                                  + (f" · ☁ {cloud:,} only in iCloud" if cloud else ""))
+                                  + (f" · {cloud:,} only in iCloud" if cloud else ""))
         if hasattr(self, "all_btn"):
             self.all_btn.configure_text("Select none" if len(self.selected) == len(self._selectable()) and self.items else "Select all")
 
