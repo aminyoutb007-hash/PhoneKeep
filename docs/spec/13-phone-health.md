@@ -61,9 +61,9 @@ A **storage forecast** sits under the bar when there are at least 4 snapshots: "
 - The forecast uses used-space figures from past snapshots (B3) and is hidden when the trend is flat or falling.
 
 **Done when**
-- [ ] Suggestions are listed largest first, each with a size and either a working button or exact steps.
-- [ ] On a real iPhone, following the WhatsApp and Messages steps frees roughly the space shown (within 20%).
-- [ ] The forecast appears with 4+ snapshots of rising use, and not otherwise.
+- [x] Suggestions are listed largest first, each with a size and either a working button or exact steps. *(14 Nov, `tests/test_h2_storage.py`, and `tools/real_check.py` on a real iPhone. The two suggestions that open C1 come with C1.)*
+- [ ] On a real iPhone, following the WhatsApp and Messages steps frees roughly the space shown (within 20%). *(Owner's check, still to do. It needs a phone with 500 MB or more of WhatsApp media or Messages attachments; below that the suggestions don't appear.)*
+- [x] The forecast appears with 4+ snapshots of rising use, and not otherwise. *(14 Nov, `tests/test_h2_storage.py`: 3 backups, flat, falling and years away show none. It uses the used space each backup records since H1.)*
 
 ## H3. Battery card and battery history
 
