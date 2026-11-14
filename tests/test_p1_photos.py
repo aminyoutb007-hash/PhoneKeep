@@ -195,6 +195,26 @@ try:
     check(pp.hidden_open and pp._month() == "c:hidden" and {i.name for i in pp.months["c:hidden"]} == {"IMG_0004.HEIC", "IMG_5002.HEIC"},
           "once confirmed, Hidden shows its photos")
     pp.destroy()
+    # a long month: scrolling to the bottom loads the next photos by itself (owner, 14 Nov: scrolling stopped)
+    many = [ph.PhotoItem(f"DCIM/100APPLE/IMG_{n:05}.JPG", f"IMG_{n:05}.JPG", 10, dt.datetime(2025, 3, 1), False)
+            for n in range(600)]
+
+    class Src2:
+        label = "test"
+
+        def thumbnail(self, item):
+            return None
+    lp = ui.PhotoPanel(root, Src2(), many, select_all=False)
+    lp.pack(fill="both", expand=True)
+    lp.mlist.selection_set("2025-03")
+    for _ in range(30):
+        root.update()
+    first = lp.shown
+    for _ in range(40):
+        lp.canvas.yview_moveto(1.0)
+        root.update()
+    check(first < 600 and lp.shown == 600, f"scrolling to the bottom keeps loading photos ({first} → {lp.shown})")
+    lp.destroy()
     # the dialog for the save format
     d_res = {}
 

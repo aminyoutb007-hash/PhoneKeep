@@ -1109,7 +1109,13 @@ class PhotoPanel(tk.Frame):
         self.canvas = tk.Canvas(grid_frame, bg=CARD, highlightthickness=0)
         self.canvas.bind("<space>", lambda e: (self.preview_current(), "break")[1])
         gsb = ttk.Scrollbar(grid_frame, orient="vertical", command=self.canvas.yview)
-        self.canvas.configure(yscrollcommand=gsb.set)
+        def scrolled(first, last):
+            gsb.set(first, last)
+            # near the bottom: load the next photos by themselves, so scrolling never stops at a page's end
+            if float(last) >= 0.97 and self._more_btn is not None and not getattr(self, "_loading_more", False):
+                self._loading_more = True
+                self.after_idle(self._auto_more)
+        self.canvas.configure(yscrollcommand=scrolled)
         self.canvas.pack(side="left", fill="both", expand=True)
         gsb.pack(side="right", fill="y")
         self.gridf = tk.Frame(self.canvas, bg=CARD)
@@ -1284,6 +1290,13 @@ class PhotoPanel(tk.Frame):
             self._more_btn = RoundButton(self.gridf, f"Show {min(self.PAGE, len(items) - end)} more",
                                          self._more, "light", 200, 34, 12)
         self._relayout()
+
+    def _auto_more(self):
+        try:
+            if self._more_btn is not None:
+                self._more()
+        finally:
+            self._loading_more = False
 
     def _tile(self, item):
         t = getattr(self, "tile", self.TILE)
