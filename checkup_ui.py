@@ -427,7 +427,7 @@ def save_battery_details(win, history: list, ov, path: Optional[Path] = None) ->
         if not p:
             return None
         path = Path(p)
-    path.write_text(bh.csv_text(history), encoding="utf-8")
+    path.write_text(bh.csv_text(history), encoding="utf-8", newline="")   # csv ends rows with \r\n itself
     if ov is not None:
         import deviceinfo as di
         path.with_suffix(".json").write_text(di.details_json(ov), encoding="utf-8")
