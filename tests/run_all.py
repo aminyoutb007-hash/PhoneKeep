@@ -36,6 +36,7 @@ STEPS = [
     ("Q1: quick preview everywhere (Space)", "test_q1_previews.py", True),
     ("D9: save everything with one date range and search", "test_d9_save_everything.py", True),
     ("H1: the check-up: four cards, thresholds, why slow, one notification per red card", "test_h1_checkup.py", True),
+    ("H2: storage suggestions, biggest first, with steps; the storage forecast", "test_h2_storage.py", True),
     ("Build: the Mac build script puts build_label.py back with git", "test_build_label.py", False),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.

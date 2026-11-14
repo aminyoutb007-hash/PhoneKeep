@@ -152,6 +152,16 @@ try:
           f"the check-up shows four cards in under 1 second ({getattr(win, 'checkup_ms', 0):.0f} ms)")
     if r is not None:
         note(f"{r.as_of()}: " + ", ".join(f"{c.title} {c.level}" for c in r.cards) + f"; {r.summary()}")
+        # H2: the Storage details, with the suggestions worked out from the backup and the phone
+        import checkup_ui
+        checkup_ui.details(win, "storage")
+        pump(app, lambda: getattr(win, "storage_suggestions", None) is not None, 600)
+        sg = getattr(win, "storage_suggestions", None)
+        check(sg is not None and all(s.size >= 500 * 1000 ** 2 and s.steps.startswith("On the iPhone: ") for s in sg)
+              and [s.size for s in sg] == sorted((s.size for s in sg), reverse=True),
+              "Storage details: suggestions largest first, each 500 MB or more with steps on the phone")
+        note(f"{len(sg or [])} suggestions: " + ", ".join(s.key for s in sg or [])
+             + ("; a forecast is shown" if getattr(win, "storage_forecast", None) else "; no forecast (needs 4+ backups)"))
 
     # -- Photos -----------------------------------------------------------------------------------------------
     win.open_app("photos")

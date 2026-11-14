@@ -110,3 +110,80 @@ def details(win, key: str):
     if more and ov is not None:
         RoundButton(box, more[0], more[1], "secondary", 190, 34, 12).pack(anchor="w", padx=18, pady=(10, 0))
     tk.Frame(box, bg=CARD, height=14).pack()
+    if key == "storage":
+        storage_suggestions(win, r)
+
+
+# -- H2: what to clear, biggest saving first, and when the iPhone will be full ------------------------------------
+def storage_suggestions(win, r: checkup.Report):
+    import datetime as dt
+    import deviceinfo as di
+    import phonekeep as wv
+    import storage_advice as sa
+    f = r.facts
+    sec = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+    sec.pack(fill="x", pady=(12, 0))
+    if f.total:
+        overview_ui.storage_bar(sec, di.Overview(total=f.total, free=f.free), width=640, height=14).pack(
+            anchor="w", padx=18, pady=(16, 4))
+    pd = phone_dir(win)
+    win.storage_forecast = sa.forecast(checkup.load(pd)["history"]) if pd else None
+    if win.storage_forecast:
+        tk.Label(sec, text=win.storage_forecast, bg=CARD, fg=INK, font=font(12, "bold"), anchor="w").pack(
+            fill="x", padx=18)
+    tk.Label(sec, text="Suggestions, biggest saving first", bg=CARD, fg=INK, font=font(15, "bold"), anchor="w").pack(
+        fill="x", padx=18, pady=(14, 4))
+    holder = tk.Label(sec, text="Working out what takes the space…", bg=CARD, fg=MUTED, font=font(12), anchor="w")
+    holder.pack(fill="x", padx=18, pady=(0, 14))
+    win.storage_suggestions = None
+    data, live, ov = getattr(win, "data", None), getattr(win, "live", None), getattr(win, "overview", None)
+    day = ""
+    try:
+        when = wv.backup_info(win.backup_path).get("date") if getattr(win, "backup_path", None) else None
+        day = checkup.day_text(dt.datetime.strptime(when, "%Y-%m-%d %H:%M")) if when else ""
+    except (ValueError, OSError):
+        pass
+
+    def show(found):
+        if win.current != "checkup:storage":
+            return
+        sugg = sa.build(found.get("wa_chats"), found.get("wab_chats"), found.get("attachments"),
+                        ov.apps if ov is not None else None, found.get("music"), day)
+        win.storage_suggestions = sugg
+        holder.destroy()
+        if not sugg:
+            tk.Label(sec, text="Nothing big to clear: no kind of item PhoneKeep checks frees 500 MB or more.",
+                     bg=CARD, fg=MUTED, font=font(12), anchor="w").pack(fill="x", padx=18, pady=(0, 14))
+        for sg in sugg:
+            row = tk.Frame(sec, bg=CARD)
+            row.pack(fill="x", padx=18, pady=(4, 10))
+            tk.Label(row, text=sg.title, bg=CARD, fg=INK, font=font(13, "bold"), anchor="w").pack(fill="x")
+            tk.Label(row, text=sg.steps, bg=CARD, fg=INK, font=font(12), anchor="w", justify="left",
+                     wraplength=680).pack(fill="x")
+            if sg.items:
+                grid = tk.Frame(row, bg=CARD)
+                grid.pack(fill="x", pady=(2, 0))
+                half = (len(sg.items) + 1) // 2 if len(sg.items) > 6 else len(sg.items)
+                for i, (name, n) in enumerate(sg.items):
+                    tk.Label(grid, text=f"•  {name}  ·  {sa.about(n)}", bg=CARD, fg=MUTED, font=font(11),
+                             anchor="w").grid(row=i % half, column=i // half, sticky="w", padx=(0, 24))
+            if sg.note:
+                tk.Label(row, text=sg.note, bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left",
+                         wraplength=680).pack(fill="x", pady=(2, 0))
+        missing = [w for w, ok in (("chat sizes (open the latest backup)", data is not None),
+                                   ("app sizes and music (connect the iPhone)", ov is not None)) if not ok]
+        if missing:
+            tk.Label(sec, text="Not included yet: " + " and ".join(missing) + ".", bg=CARD, fg=MUTED, font=font(11),
+                     anchor="w").pack(fill="x", padx=18, pady=(0, 14))
+
+    def with_music(found):
+        if live is None:
+            show(found)
+            return
+        win.live_runner.submit(lambda: sum(t.size or 0 for t in live.music()),
+                               lambda n: show({**found, "music": n}), lambda e: show(found))
+
+    if data is None:
+        with_music({})
+    else:
+        win.backup_runner.submit(lambda: sa.from_backup(data.reader), with_music, lambda e: with_music({}))
