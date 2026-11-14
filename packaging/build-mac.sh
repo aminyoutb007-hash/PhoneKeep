@@ -35,12 +35,14 @@ if [ "$1" = "--release" ]; then
   RELEASE_TAG=$(git describe --exact-match --tags HEAD 2>/dev/null || true)
   case "$RELEASE_TAG" in v*) LABEL="" ;; *) echo "--release needs a release tag checked out (git checkout v5.0.1)" >&2; exit 1 ;; esac
 fi
+# the committed build_label.py (with its docstring) comes back with git, also when the build fails
+trap 'git checkout -- build_label.py' EXIT
 printf 'BUILD_LABEL = "%s"\n' "$LABEL" > build_label.py
 
 "$V" packaging/make_icons.py
 "$V" -m PyInstaller packaging/PhoneKeep.spec --noconfirm
 codesign --force --deep --sign - dist/PhoneKeep.app
-printf 'BUILD_LABEL = ""\n' > build_label.py          # keep the committed file empty
+git checkout -- build_label.py                         # the committed file, unchanged
 
 # the launch check opens the real window; PHONEKEEP_NO_HELPER keeps it from starting the menu bar helper
 PHONEKEEP_NO_HELPER=1 dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-launch-check | grep -q "PKLAUNCH ok"
