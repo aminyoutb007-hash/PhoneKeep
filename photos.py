@@ -54,6 +54,7 @@ class PhotoItem:
     lat: Optional[float] = None
     lon: Optional[float] = None
     live_lib: bool = False
+    cloud_only: bool = False          # the full photo is only in iCloud: shown greyed, can't be saved from here
 
     @property
     def month(self) -> str:
@@ -75,13 +76,17 @@ def _apply_library(items: list[PhotoItem], lib, has_file=None) -> list[PhotoItem
         return items
     seen = {i.id for i in items}
     for key, a in getattr(lib, "assets", {}).items():
-        if key in seen or a.trashed or key.startswith("DCIM/") or not key.startswith("PhotoData/"):
+        if key in seen or a.trashed or not key.startswith(("DCIM/", "PhotoData/")):
             continue
         ext = Path(key).suffix.lower()
-        if ext not in IMG_EXT | VID_EXT or (has_file is not None and not has_file(key)):
+        if ext not in IMG_EXT | VID_EXT:
             continue
+        # not found where it should be: a DCIM file missing from the phone's folder, a file not in the backup,
+        # or the library saying the original isn't on the phone ("Optimise iPhone Storage")
+        cloud = key.startswith("DCIM/") or a.local is False or (has_file is not None and not has_file(key))
         name = getattr(a, "original", None) or Path(key).name       # "IMG_1234.HEIC", not the iCloud file name
-        items.append(PhotoItem(key, name, 0, a.taken or dt.datetime(1970, 1, 1), a.video or ext in VID_EXT))
+        items.append(PhotoItem(key, name, 0, a.taken or dt.datetime(1970, 1, 1), a.video or ext in VID_EXT,
+                               cloud_only=cloud))
     out = []
     for i in items:
         a = lib.get(i.id)

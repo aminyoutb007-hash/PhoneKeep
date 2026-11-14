@@ -1140,7 +1140,11 @@ class PhoneWindow(tk.Toplevel):
                                     lambda p: (self.banner(""), open_file(p)) if p else None,
                                     lambda e: self.banner(f"Couldn't open it: {describe_error(e)}", color="#fdecea"))
         def preview(shown, idx):
-            quicklook.Viewer(self, [quicklook.Item(i.name, read=lambda i=i: src.read(i.id),
+            def thumb(i):
+                t = src.thumbnail(i)
+                return t.read_bytes() if t else None
+            quicklook.Viewer(self, [quicklook.Item(i.name + (" (only in iCloud: preview)" if i.cloud_only else ""),
+                                                   read=(lambda i=i: thumb(i)) if i.cloud_only else (lambda i=i: src.read(i.id)),
                                                    to_file=lambda d, i=i: src.copy(i.id, d), size=i.size,
                                                    kind="video" if i.video else "")
                                     for i in shown], idx)

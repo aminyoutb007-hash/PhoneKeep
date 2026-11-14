@@ -36,6 +36,7 @@ class Attrs:
     lon: Optional[float] = None
     albums: list = field(default_factory=list)       # album keys ("album:<pk>")
     original: Optional[str] = None                   # the name it was taken with ("IMG_1234.HEIC")
+    local: Optional[bool] = None                     # is the full photo on the phone? False: only in iCloud
 
 
 @dataclass
@@ -88,6 +89,14 @@ def read(db: Path) -> Optional[Library]:
                       lat=float(lat) if ok_loc else None, lon=float(lon) if ok_loc else None)
             assets[f"{d.strip('/')}/{f}"] = a
             by_pk[pk] = a
+        if "ZINTERNALRESOURCE" in tables:
+            rc = _cols(con, "ZINTERNALRESOURCE")
+            if {"ZASSET", "ZLOCALAVAILABILITY", "ZRESOURCETYPE", "ZVERSION"} <= rc:
+                # the original photo or video (version 0, type 0 = photo, 1 = video): available = 1 on the phone
+                for apk, avail in con.execute("SELECT ZASSET, MAX(COALESCE(ZLOCALAVAILABILITY, 0)) FROM ZINTERNALRESOURCE "
+                                              "WHERE ZVERSION = 0 AND ZRESOURCETYPE IN (0, 1) GROUP BY ZASSET"):
+                    if apk in by_pk:
+                        by_pk[apk].local = avail == 1
         if "ZADDITIONALASSETATTRIBUTES" in tables:
             xc = _cols(con, "ZADDITIONALASSETATTRIBUTES")
             if {"ZASSET", "ZORIGINALFILENAME"} <= xc:

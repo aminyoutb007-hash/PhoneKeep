@@ -429,7 +429,8 @@ class BgWorker:
             pass
 
 
-def load_photo(path, max_px: int, square: bool = False) -> Optional["ImageTk.PhotoImage"]:
+def load_photo(path, max_px: int, square: bool = False, faded: bool = False) -> Optional["ImageTk.PhotoImage"]:
+    """faded: washed out towards white (a photo whose full version is only in iCloud)."""
     if not path or Image is None:
         return None
     try:
@@ -439,6 +440,8 @@ def load_photo(path, max_px: int, square: bool = False) -> Optional["ImageTk.Pho
             im = ImageOps.fit(im.convert("RGB"), (max_px, max_px))
         else:
             im.thumbnail((max_px, max_px))
+        if faded:
+            im = Image.blend(im.convert("RGB"), Image.new("RGB", im.size, (255, 255, 255)), 0.55)
         return ImageTk.PhotoImage(im)
     except Exception:
         return None
@@ -1124,6 +1127,7 @@ class PhotoPanel(tk.Frame):
         (owner, 13 Nov). Rows are updated in place: re-inserting them re-selected the open group and emptied the
         grid (13 Nov: Select none, then Select this month)."""
         def put(iid, parent, label, items, tag, zero=False):
+            items = [i for i in items if not getattr(i, "cloud_only", False)]   # counts are of what can be saved
             n = sum(1 for i in items if i.id in self.selected)
             indent = label[:len(label) - len(label.lstrip())]
             if items:
@@ -1178,7 +1182,7 @@ class PhotoPanel(tk.Frame):
         x0 = 52 if self.mlist.parent(row) else 30          # the box sits at the start of the row
         if e.x > x0:
             return
-        items = self._group_items(row)
+        items = [i for i in self._group_items(row) if not getattr(i, "cloud_only", False)]
         if not items:
             return
         on = not all(i.id in self.selected for i in items)
@@ -1193,7 +1197,8 @@ class PhotoPanel(tk.Frame):
         self._set_all(len(self.selected) < len(self._selectable()))
 
     def _selectable(self) -> list:
-        return self.items + (self.hidden_items if self.hidden_open else [])
+        """What can be ticked and saved: not photos whose full version is only in iCloud."""
+        return [i for i in self.items + (self.hidden_items if self.hidden_open else []) if not i.cloud_only]
 
     def _open_hidden(self):
         """Hidden opens only after Touch ID / the computer's password (app lock on) or a confirmation."""
@@ -1294,9 +1299,10 @@ class PhotoPanel(tk.Frame):
             return
         c.delete("all")
         T = getattr(self, "tile", self.TILE)
+        cloud = getattr(item, "cloud_only", False)
         img = self.images.get((item.id, T))
         if img is None and self.paths.get(item.id):
-            img = load_photo(self.paths[item.id], T, square=True)
+            img = load_photo(self.paths[item.id], T, square=True, faded=cloud)
             if img is not None:
                 self.images[(item.id, T)] = img
         if img is not None:
@@ -1310,6 +1316,9 @@ class PhotoPanel(tk.Frame):
         if item.live_video:
             c.create_rectangle(4, 4, 36, 20, fill="#000000", outline="")
             c.create_text(20, 12, text="LIVE", fill="white", font=font(8, "bold"))
+        if cloud:                                     # washed out, with a cloud: the full photo is only in iCloud
+            c.create_oval(T - 30, 4, T - 4, 24, fill="#ffffff", outline="")
+            c.create_text(T - 17, 14, text="☁", fill=MUTED, font=font(12))
         # selected: a blue frame, nothing else (owner, 13 Nov: no tick circle)
         if item.id in self.selected:
             c.create_rectangle(2, 2, T - 2, T - 2, outline=SELECT_BLUE, width=5)
@@ -1360,6 +1369,8 @@ class PhotoPanel(tk.Frame):
         self.on_preview(shown, idx)
 
     def _toggle(self, item):
+        if getattr(item, "cloud_only", False):          # only in iCloud: nothing to save from the iPhone
+            return
         self.selected.symmetric_difference_update({item.id})
         self._draw_tile(item)
         self._fill_months()
@@ -1374,6 +1385,8 @@ class PhotoPanel(tk.Frame):
 
     def _set_month(self, on: bool):
         for i in self.months.get(self._month(), []):
+            if on and getattr(i, "cloud_only", False):
+                continue
             (self.selected.add if on else self.selected.discard)(i.id)
             self._draw_tile(i)
         self._fill_months()
@@ -1384,8 +1397,10 @@ class PhotoPanel(tk.Frame):
         size = sum(i.size for i in chosen)
         nv = sum(1 for i in chosen if i.video)
         n_p = len(chosen) - nv
+        cloud = sum(1 for i in self.items if getattr(i, "cloud_only", False))
         self.count.configure(text=f"{n_p:,} photo{'s' if n_p != 1 else ''} and {nv:,} video{'s' if nv != 1 else ''} "
-                                  f"selected of {len(self._selectable()):,} · about {self.human_size(size)}")
+                                  f"selected of {len(self._selectable()):,} · about {self.human_size(size)}"
+                                  + (f" · ☁ {cloud:,} only in iCloud" if cloud else ""))
         if hasattr(self, "all_btn"):
             self.all_btn.configure_text("Select none" if len(self.selected) == len(self._selectable()) and self.items else "Select all")
 

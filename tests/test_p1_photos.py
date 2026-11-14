@@ -54,6 +54,8 @@ ASSETS = [
     # iCloud Photos keeps photos from other devices in PhotoData/CPLAssets, not DCIM (found on the owner's phone)
     ("PhotoData/CPLAssets/group338", "2DA16694-AAAA.HEIC", 1, 0, 0, 0, 0, 0, 0),   # favourite, from iCloud
     ("PhotoData/CPLAssets/group12", "7F00AA11-BBBB.HEIC", 0, 1, 0, 0, 0, 0, 0),    # hidden, from iCloud
+    ("PhotoData/CPLAssets/group5", "99CC0000-CCCC.HEIC", 0, 0, 0, 0, 0, 0, 0),     # only in iCloud (Optimise)
+    ("DCIM/101APPLE", "IMG_0909.HEIC", 1, 0, 0, 0, 0, 0, 0),                        # DCIM path, file not on the phone
 ]
 
 
@@ -68,6 +70,10 @@ def make_db(path: Path, new_layout: bool):
                     (n, d, f, fav, hid, tr, kind, sub, apple(T0 + dt.timedelta(days=n)), lat, lon))
     con.execute("CREATE TABLE ZADDITIONALASSETATTRIBUTES (Z_PK INTEGER PRIMARY KEY, ZASSET INT, ZORIGINALFILENAME TEXT)")
     con.executemany("INSERT INTO ZADDITIONALASSETATTRIBUTES VALUES (?,?,?)", [(1, 7, "IMG_5001.HEIC"), (2, 8, "IMG_5002.HEIC")])
+    con.execute("CREATE TABLE ZINTERNALRESOURCE (Z_PK INTEGER PRIMARY KEY, ZASSET INT, ZLOCALAVAILABILITY INT, "
+                "ZRESOURCETYPE INT, ZVERSION INT)")
+    con.executemany("INSERT INTO ZINTERNALRESOURCE VALUES (?,?,?,?,?)",
+                    [(1, 7, 1, 0, 0), (2, 8, 1, 0, 0), (3, 9, -1, 0, 0), (4, 9, 1, 0, 2)])   # 9: only a small version here
     con.execute("CREATE TABLE ZGENERICALBUM (Z_PK INTEGER PRIMARY KEY, ZTITLE TEXT, ZKIND INT, ZTRASHEDSTATE INT)")
     con.executemany("INSERT INTO ZGENERICALBUM VALUES (?,?,?,?)",
                     [(10, "Holidays", 2, 0), (11, "Recents", 1505, 0), (12, "Old", 2, 1), (13, "Family", 2, 0)])
@@ -95,21 +101,27 @@ check(library.read(W / "nothing.sqlite") is None, "a missing or unreadable libra
 # -- applied to the photo list: deleted left out, collections ---------------------------------------------------
 lib = library.read(W / "Photos-new.sqlite")
 items = [ph.PhotoItem(f"DCIM/100APPLE/{f}", f, 1000, dt.datetime(2026, 1, 1), f.endswith(".MOV")) for d, f, *_ in ASSETS
-         if d.startswith("DCIM")]
+         if d == "DCIM/100APPLE"]
 items.append(ph.PhotoItem("DCIM/100APPLE/IMG_0001.MOV", "IMG_0001.MOV", 900, dt.datetime(2026, 1, 1), True))
 items = ph._apply_library(ph._pair_live_photos(items), lib)
 ids = {i.name: i for i in items}
 check("IMG_0005.JPG" not in ids and ids["IMG_0001.HEIC"].live_video and ids["IMG_0001.HEIC"].when == T0 + dt.timedelta(days=1),
       "deleted items are left out; the Live Photo keeps its video; dates come from the library")
 cpl = {i.id: i for i in items if i.id.startswith("PhotoData/")}
-check(set(cpl) == {"PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC", "PhotoData/CPLAssets/group12/7F00AA11-BBBB.HEIC"}
+check({k for k, i in cpl.items() if not i.cloud_only} == {"PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC",
+                                                           "PhotoData/CPLAssets/group12/7F00AA11-BBBB.HEIC"}
       and cpl["PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC"].favorite
       and cpl["PhotoData/CPLAssets/group12/7F00AA11-BBBB.HEIC"].hidden,
       "photos kept in iCloud's folder on the phone (not DCIM) are listed too, with favourite and hidden")
-check({i.name for i in cpl.values()} == {"IMG_5001.HEIC", "IMG_5002.HEIC"}, "under the name they were taken with")
+check({i.name for i in cpl.values() if not i.cloud_only} == {"IMG_5001.HEIC", "IMG_5002.HEIC"},
+      "under the name they were taken with")
+_ids = {i.id: i for i in items}
+check(_ids["PhotoData/CPLAssets/group5/99CC0000-CCCC.HEIC"].cloud_only and _ids["DCIM/101APPLE/IMG_0909.HEIC"].cloud_only
+      and not _ids["DCIM/100APPLE/IMG_0001.HEIC"].cloud_only,
+      "photos whose full version is only in iCloud are listed, marked as such (library says so, or the file isn't there)")
 _back = ph._apply_library([], lib, has_file=lambda k: k.endswith("AAAA.HEIC"))
-check([i.id for i in _back] == ["PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC"],
-      "from a backup, only those whose file is in the backup")
+check([i.id for i in _back if not i.cloud_only] == ["PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC"],
+      "from a backup, only those whose file is in the backup can be saved; the rest are marked iCloud-only")
 
 try:
     import tkinter as tk
@@ -136,7 +148,12 @@ try:
     albums = [label(r) for r in pp.mlist.get_children("head-albums")]
     check(albums == ["Holidays", "Family"] or albums == ["Holidays"],
           f"then Albums, with the user's albums: {albums}")
-    check(len(pp.months["c:fav"]) == 3 and {i.name for i in pp.months["album:10"]} == {"IMG_0001.HEIC", "IMG_0006.JPG"},
+    _cl = [i for i in pp.items if i.cloud_only]
+    pp._toggle(_cl[0]); pp._set_all(True)
+    check(_cl and not any(i.id in pp.selected for i in _cl) and "only in iCloud" in pp.count.cget("text"),
+          f"iCloud-only photos can't be selected, and the count says how many: {pp.count.cget('text')!r}")
+    pp._set_all(False)
+    check(len(pp.months["c:fav"]) == 4 and {i.name for i in pp.months["album:10"]} == {"IMG_0001.HEIC", "IMG_0006.JPG"},
           "favourites and an album hold the right photos")
     check("c:hidden" in rows and "🔒" in pp.mlist.item("c:hidden", "values")[0] and pp.mlist.item("c:hidden", "values")[1] == "",
           "Hidden is listed, locked, without its count")
