@@ -53,6 +53,16 @@ Click **Open iPhone** (or the phone itself) in the main window. A window opens w
 
 Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. Nothing is ever written to the phone.
 
+## New in 5.1
+
+- **Check-up**: Storage, Battery, Stability and Security on one screen, each green, amber or red with what to do, and *Why is my phone slow?*. PhoneKeep only reads the phone for it: crash reports stay on the phone.
+- **Photo clean-up** (Photos → *Clean up*): duplicates, similar shots, blurry or dark photos, old screenshots, large videos and chat images. Tick what to keep a copy of; every copy is checked before PhoneKeep says it's safe to remove them on the phone yourself.
+- **App lock** with Touch ID or your computer's password (Windows Hello on Windows).
+- **Photos** by Favourites, Albums, Videos, Screenshots, Live Photos and Hidden; save as HEIC or JPG with the date taken and location.
+- **Press Space** to preview a photo, video, PDF or file anywhere, also straight from the iPhone.
+- **Save everything** with one date range and one search; **device overview** with battery health and storage; **choose which iPhone** when several are reachable.
+- PhoneKeep is now free software under the GNU GPL v3 (see Licence below).
+
 ## New in 5.0
 
 - **Encrypted by default.** The first backup asks you to choose a backup password; it's saved in your Mac Keychain / Windows Credential Manager so you never type it again. **Write it down somewhere safe too** — if it's lost, the backup can't be opened by anything, and the only way forward is *Reset All Settings* on the iPhone and a new backup.

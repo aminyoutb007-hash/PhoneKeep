@@ -4,7 +4,7 @@ Every feature in one list. **Work P1 first, top to bottom, then P2. P3 only when
 
 Status: **Done** (works, keep it working) · **Partial** (some of it exists; finish the rest) · **To build** · **Out of scope** (see [12-engineering.md](12-engineering.md)).
 
-P1 ships as two releases so features can be tested in batches: **5.0** then **5.1**. Within each release, work top to bottom. The version number stays at the last release until the release pull request; test builds carry a label such as `5.0-dev+B3` (see [12-engineering.md](12-engineering.md#build-and-release)).
+P1 ships as two releases so features can be tested in batches: **5.0** then **5.1**; what moved out of 5.1 (14 Nov, owner) is in **5.2**. Within each release, work top to bottom. The version number stays at the last release until the release pull request; test builds carry a label such as `5.0-dev+B3` (see [12-engineering.md](12-engineering.md#build-and-release)).
 
 ## P1: must have
 
@@ -39,29 +39,34 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | V2 | Battery health | Not available | Done | [10-device.md](10-device.md#v2-battery-health) |
 | V3 | Storage usage | Not available | Partial (app order to check) | [10-device.md](10-device.md#v3-storage-usage) |
 | Q1 | Quick previews (Space key) everywhere | Partly (double-click opens) | Partial (Windows check deferred) | [11-previews.md](11-previews.md#q1-quick-preview-everywhere) |
-| B8 | Choose which iPhone when several are reachable (added 13 Nov, owner) | Cable wins, else the first on Wi-Fi, without saying so; one phone at a time | In review | [03-backup.md](03-backup.md#b8-choose-which-iphone-when-several-are-reachable) |
-| B6 | Restore a backup to an iPhone (moved from P2 into 5.1 on 13 Nov, owner) | Not available | To build | [03-backup.md](03-backup.md#b6-restore-a-backup-to-an-iphone) |
-| S4 | Signed and notarised installers (last: needs the certificates) | Ad-hoc signed; users must click Open Anyway. Workflow signs when the secrets exist | Partial | [04-security.md](04-security.md#s4-signed-and-notarised-installers) |
+| B8 | Choose which iPhone when several are reachable (added 13 Nov, owner) | Cable wins, else the first on Wi-Fi, without saying so; one phone at a time | Partial (real check: the helper backing up two ticked phones) | [03-backup.md](03-backup.md#b8-choose-which-iphone-when-several-are-reachable) |
 
-## P2: should have
-
-### Phone health and clean-up (first in P2, top to bottom; added 13 Nov)
+### Release 5.2 (moved out of 5.1 on 14 Nov, owner)
 
 | ID | Feature | Today | Status | Details |
 | --- | --- | --- | --- | --- |
-| H1 | Check-up screen: Storage, Battery, Stability, Security cards; "Why is my phone slow?" (needs V2, V3) | Not available | Partial (Stability and Security data come with H4, H5) | [13-phone-health.md](13-phone-health.md#h1-check-up-screen) |
+| B6 | Restore a backup to an iPhone (moved from P2 into 5.1 on 13 Nov, then to 5.2 on 14 Nov, owner) | Not available | To build | [03-backup.md](03-backup.md#b6-restore-a-backup-to-an-iphone) |
+| S4 | Signed and notarised installers (moved from 5.1 on 14 Nov, owner: needs the certificates) | Ad-hoc signed; users must click Open Anyway. Workflow signs when the secrets exist | Partial | [04-security.md](04-security.md#s4-signed-and-notarised-installers) |
+| C2 | Remove cleaned-up photos from the iPhone (moved to 5.2 on 14 Nov, owner; spike first; build only after agreement) | Not available | To build | [13-phone-health.md](13-phone-health.md#c2-remove-cleaned-up-photos-from-the-iphone) |
+| S5 | Spyware check (part of H5; out of 5.1 on 14 Nov, owner: revisit after 5.1, with the MVT licence decision) | Not available | To build | [04-security.md](04-security.md#s5-spyware-check) |
+
+## P2: should have
+
+### Phone health and clean-up (first in P2, top to bottom; added 13 Nov; H1-H5 and C1 ship in 5.1)
+
+| ID | Feature | Today | Status | Details |
+| --- | --- | --- | --- | --- |
+| H1 | Check-up screen: Storage, Battery, Stability, Security cards; "Why is my phone slow?" (needs V2, V3) | Not available | Done | [13-phone-health.md](13-phone-health.md#h1-check-up-screen) |
 | H2 | Storage card: clean-up suggestions and forecast | Not available | Partial (owner's freed-space check to do) | [13-phone-health.md](13-phone-health.md#h2-storage-card-and-clean-up-suggestions) |
 | H3 | Battery card: battery health history | Not available | Partial (owner's three-backups check to do) | [13-phone-health.md](13-phone-health.md#h3-battery-card-and-battery-history) |
 | C1 | Photo clean-up: find and save (duplicates, similar, poor quality, old screenshots, large videos, chat clutter) | Not available | Done (removing on the phone is C2) | [13-phone-health.md](13-phone-health.md#c1-photo-clean-up-find-and-save) |
 | H4 | Stability card: app crashes and unexpected restarts | Not available | Done | [13-phone-health.md](13-phone-health.md#h4-stability-card) |
-| H5 | Security card (includes S5) | Not available | Partial (S5 spyware check waits for the MVT licence decision; the no-passcode warning waits for one read on an unlocked iPhone) | [13-phone-health.md](13-phone-health.md#h5-security-card) |
-| C2 | Remove cleaned-up photos from the iPhone (spike first; build only after agreement) | Not available | To build | [13-phone-health.md](13-phone-health.md#c2-remove-cleaned-up-photos-from-the-iphone) |
+| H5 | Security card (includes S5) | Not available | Partial (S5 spyware check moved to 5.2; the no-passcode warning waits for one read on an unlocked iPhone) | [13-phone-health.md](13-phone-health.md#h5-security-card) |
 
 ### Everything else in P2
 
 | ID | Feature | Today | Status | Details |
 | --- | --- | --- | --- | --- |
-| S5 | Spyware check (moved from P1 pending the MVT licence check; now part of H5) | Not available | To build | [04-security.md](04-security.md#s5-spyware-check) |
 | S6 | Encrypted exports | Not available | To build | [04-security.md](04-security.md#s6-encrypted-exports) |
 | S7 | Activity log | Not available | To build | [04-security.md](04-security.md#s7-activity-log) |
 | S8 | Tamper check for backups | Not available | To build | [04-security.md](04-security.md#s8-tamper-check) |
