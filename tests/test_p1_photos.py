@@ -115,9 +115,37 @@ check({"PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC", "PhotoData/CPLAssets/g
 check({"IMG_5001.HEIC", "IMG_5002.HEIC"} <= {i.name for i in cpl.values()},
       "under the name they were taken with")
 _ids = {i.id: i for i in items}
-check(_ids["DCIM/101APPLE/IMG_0909.HEIC"].cloud_only and not _ids["PhotoData/CPLAssets/group5/99CC0000-CCCC.HEIC"].cloud_only
+check(_ids["DCIM/101APPLE/IMG_0909.HEIC"].cloud_only and _ids["PhotoData/CPLAssets/group5/99CC0000-CCCC.HEIC"].cloud_only
       and not _ids["DCIM/100APPLE/IMG_0001.HEIC"].cloud_only,
-      "a photo the library lists whose file isn't on the phone is listed as only in iCloud; files that are there aren't")
+      "only in iCloud: the library says the original isn't on the phone, or its file isn't there")
+
+# straight from the iPhone: a photo the library calls local is looked for; a missing file is iCloud-only
+import asyncio, threading
+
+
+class _Afc:
+    async def stat(self, p):
+        if p.endswith("BBBB.HEIC"):
+            raise FileNotFoundError(p)
+        return {"st_size": 1234}
+
+
+_d = ph.DevicePhotoSource.__new__(ph.DevicePhotoSource)
+ph.PhotoSource.__init__(_d, W / "dev-cache")
+_d.loop = asyncio.new_event_loop()
+threading.Thread(target=_d.loop.run_forever, daemon=True).start()
+_d.afc, _d._sizes, _d._library = _Afc(), {}, lib
+
+
+async def _no_dcim():
+    return []
+_d._items = _no_dcim
+_dev = {i.id: i for i in _d.items()}
+check(not _dev["PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC"].cloud_only
+      and _dev["PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC"].size == 1234
+      and _dev["PhotoData/CPLAssets/group12/7F00AA11-BBBB.HEIC"].cloud_only,
+      "on the iPhone, each photo the library calls local is looked for; one whose file is missing is iCloud-only")
+_d.loop.call_soon_threadsafe(_d.loop.stop)
 _back = ph._apply_library([], lib, has_file=lambda k: k.endswith("AAAA.HEIC"))
 check([i.id for i in _back if not i.cloud_only] == ["PhotoData/CPLAssets/group338/2DA16694-AAAA.HEIC"],
       "from a backup, only those whose file is in the backup can be saved; the rest are marked iCloud-only")
@@ -149,7 +177,7 @@ try:
           f"then Albums, with the user's albums: {albums}")
     _cl = [i for i in pp.items if i.cloud_only]
     pp._toggle(_cl[0]); pp._set_all(True)
-    check(_cl and not any(i.id in pp.selected for i in _cl) and "1 only in iCloud" in pp.count.cget("text"),
+    check(_cl and not any(i.id in pp.selected for i in _cl) and "2 only in iCloud" in pp.count.cget("text"),
           f"iCloud-only photos can't be selected, and the count says how many: {pp.count.cget('text')!r}")
     pp._set_all(False)
     check(len(pp.months["c:fav"]) == 4 and pp.mlist.item("c:fav", "values")[1].endswith("/4") and {i.name for i in pp.months["album:10"]} == {"IMG_0001.HEIC", "IMG_0006.JPG"},
