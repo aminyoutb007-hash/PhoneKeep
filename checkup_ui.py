@@ -227,17 +227,19 @@ def stability_view(win, r: checkup.Report):
              "the phone; a copy is kept on this computer.", bg=CARD, fg=MUTED, font=font(11), anchor="w",
              justify="left", wraplength=700).pack(fill="x", padx=18)
     if not rows:
-        tk.Label(sec, text=f"No app crashes and no unexpected restarts in the last {days} days.", bg=CARD, fg=INK,
+        tk.Label(sec, text=f"No app crashes and no restarts in the last {days} days.", bg=CARD, fg=INK,
                  font=font(12), anchor="w").pack(fill="x", padx=18, pady=(8, 0))
     for app, per_day in rows:
         total = sum(n for _d, n in per_day)
         head = (f"Unexpected restarts: {total}" if app == "" else
+                f"Restarted, possibly by itself: {total}" if app == cr.SELF_RESTART else
                 f"{app}: {total} crash{'es' if total != 1 else ''}")
         tk.Label(sec, text=head, bg=CARD, fg=INK, font=font(13, "bold"), anchor="w").pack(fill="x", padx=18,
                                                                                          pady=(10, 0))
         tk.Label(sec, text="   ".join(f"{d.day} {d:%b}: {n}" for d, n in per_day), bg=CARD, fg=MUTED, font=font(11),
                  anchor="w", justify="left", wraplength=700).pack(fill="x", padx=18)
-        tk.Label(sec, text=cr.RESTART_ADVICE if app == "" else cr.ADVICE, bg=CARD, fg=INK, font=font(11),
+        advice = cr.RESTART_ADVICE if app == "" else cr.SELF_RESTART_ADVICE if app == cr.SELF_RESTART else cr.ADVICE
+        tk.Label(sec, text=advice, bg=CARD, fg=INK, font=font(11),
                  anchor="w", justify="left", wraplength=700).pack(fill="x", padx=18)
 
     def save():

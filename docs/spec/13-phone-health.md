@@ -27,7 +27,7 @@ The check-up runs by itself after every backup (it reads data the backup already
 | --- | --- | --- |
 | Storage | 85% full or more | 95% full or more |
 | Battery | Health below 85%, or dropped 5 points in 3 months | Health below 80%, or the phone reports the battery needs service |
-| Stability | An app crashed 3+ times in 7 days | An app crashed 10+ times in 7 days, or the phone restarted unexpectedly |
+| Stability | An app crashed 3+ times in 7 days, or iOS restarted the phone by itself | An app crashed 10+ times in 7 days, or the phone restarted unexpectedly (a kernel panic) |
 | Security | iOS out of date; an app from outside the App Store | No passcode; an unknown configuration profile or device management; signs of a jailbreak; a spyware indicator matched |
 
 - Works offline from the latest snapshot when the phone isn't connected, with "As of last backup, 3 Nov" on each card.
@@ -84,15 +84,15 @@ A short **Tips for this iPhone** list, only the ones that apply: turn on Optimis
 
 ## H4. Stability card
 
-**What the user sees and does:** the Stability card lists apps that crashed in the last 7 days, most crashes first: "Instagram crashed 14 times this week. Update it in the App Store; if it keeps crashing, delete and reinstall it." It also notes unexpected restarts of the phone. When there's nothing to report: "No app crashes in the last 7 days".
+**What the user sees and does:** the Stability card lists apps that crashed in the last 7 days, most crashes first: "Instagram crashed 14 times this week. Update it in the App Store; if it keeps crashing, delete and reinstall it." It also notes restarts of the phone: an unexpected restart (a kernel panic) makes the card red; iOS restarting the phone by itself (SystemMemoryReset, often to free memory) makes it amber: "The iPhone restarted once this week, possibly by itself." When there's nothing to report: "No app crashes in the last 7 days".
 
 **Requirements**
-- Reads the phone's crash reports (read-only: PhoneKeep never deletes them from the phone), groups them by app and day, and shows app names, not bundle IDs.
+- Reads the phone's crash reports, read-only: PhoneKeep never removes, moves or flushes them on the phone (owner's decision, 14 Nov; no setting to turn it on). Groups them by app and day, and shows app names, not bundle IDs.
 - Raw reports stay on the computer; **Save reports** zips them for anyone helping the owner (Apple Support, the app's maker).
 - No memory or "RAM" figures: iOS manages memory itself and a figure would invite the owner to act on something they can't change.
 
 **Done when**
-- [x] With seeded crash reports, the card lists the right apps and counts, and a seeded unexpected restart shows as red. *(14 Nov, `tests/test_h4_stability.py`, seeded with every kind of report a real iPhone keeps: only app crashes and restarts count, a widget counts under its app. On the owner's iPhone, `tools/real_check.py` reads and counts them. Counting iOS restarting itself (SystemMemoryReset) as an unexpected restart is the owner's check: it shows on their phone this week.)*
+- [x] With seeded crash reports, the card lists the right apps and counts, and a seeded unexpected restart shows as red. *(14 Nov, `tests/test_h4_stability.py`, seeded with every kind of report a real iPhone keeps: only app crashes and restarts count, a widget counts under its app. On the owner's iPhone, `tools/real_check.py` reads and counts them. Owner, 14 Nov: iOS restarting itself (SystemMemoryReset) is amber, "possibly by itself", not red; seeded in the same test.)*
 - [x] After a check, the crash reports are still on the phone. *(14 Nov: the test's fake phone records every call (only listing and reading, nothing removed, moved or flushed), and `tools/real_check.py` reads the owner's iPhone twice: all still there.)*
 
 ## H5. Security card

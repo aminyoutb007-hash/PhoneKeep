@@ -7,8 +7,9 @@ header) and keeps a summary in the phone's checkup.json, so the card can be show
 What counts (checked against a real iPhone's reports, 14 Nov):
 - an app crash: bug_type 309 (109 before iOS 14) for something with a bundle id. A widget or extension that crashes is
   counted under its app ("Mi Home" for its home-screen widget), named as the phone's app list names it.
-- an unexpected restart: a kernel panic (bug_type 210 / 110, panic-full / panic-base files) or iOS restarting itself
-  (SystemMemoryReset).
+- an unexpected restart: a kernel panic (bug_type 210 / 110, panic-full / panic-base files). Red.
+- a restart, possibly by itself: iOS restarting itself (SystemMemoryReset), often to free memory. Amber, not red
+  (owner, 14 Nov): it isn't a fault the way a panic is.
 - not counted: CPU and disk-use notices (202 / 145), hangs (288), memory events (298), battery logs (120) and the
   phone's own feedback reports. They aren't crashes, and the spec leaves memory figures out on purpose.
 Kept free of Tk, like checkup.py.
@@ -25,18 +26,22 @@ from typing import Optional
 
 CRASH_TYPES = {"309", "109"}
 PANIC_TYPES = {"210", "110"}
-RESTART_NAMES = ("panic-full", "panic-base", "SystemMemoryReset")
+RESTART_NAMES = ("panic-full", "panic-base")
+SELF_RESTART_NAMES = ("SystemMemoryReset",)
+SELF_RESTART = "*"                   # by_day's key for restarts iOS did by itself ("" is unexpected restarts)
 KEEP_DAYS = 30                       # reports copied and kept; the card counts the last THRESHOLDS["crash_days"]
 FOLDER = "crash-reports"
 ADVICE = "Update it in the App Store; if it keeps crashing, delete and reinstall it."
 RESTART_ADVICE = ("If it keeps happening, update iOS (Settings → General → Software Update). If it still does, "
                   "contact Apple Support: Save reports gives them what they need.")
+SELF_RESTART_ADVICE = ("iOS sometimes restarts itself, for example to free memory: once in a while is nothing to worry "
+                       "about. If it happens often, update iOS (Settings → General → Software Update).")
 
 
 @dataclass
 class Event:
     when: dt.datetime
-    kind: str                        # "crash" or "restart"
+    kind: str                        # "crash", "restart" (unexpected) or "self_restart" (possibly by itself)
     app: str = ""                    # the app's name, for a crash
     bundle: str = ""
     file: str = ""                   # where the report is, under crash-reports/
@@ -94,6 +99,8 @@ def read_one(path: Path, apps: Optional[dict] = None) -> Optional[Event]:
     when = _when(header, name)
     if when is None:
         return None
+    if name.startswith(SELF_RESTART_NAMES):
+        return Event(when, "self_restart", file=name)
     if bug in PANIC_TYPES or name.startswith(RESTART_NAMES):
         return Event(when, "restart", file=name)
     if bug in CRASH_TYPES:
@@ -131,6 +138,22 @@ def summary(events: list, read_at: dt.datetime) -> dict:
                        for e in events if e.when >= since]}
 
 
+def kind(e: dict) -> str:
+    """An event's kind; records kept before 14 Nov called iOS restarting itself a "restart"."""
+    if e.get("kind") == "restart" and Path(e.get("file") or "").name.startswith(SELF_RESTART_NAMES):
+        return "self_restart"
+    return e.get("kind") or ""
+
+
+def self_restarts(stability: Optional[dict], days: int) -> Optional[int]:
+    """Restarts iOS did by itself over the `days` before the phone was read; None if never read."""
+    if not stability or "read" not in stability:
+        return None
+    since = dt.datetime.fromisoformat(stability["read"]) - dt.timedelta(days=days)
+    return sum(1 for e in stability.get("events", []) if kind(e) == "self_restart"
+               and dt.datetime.fromisoformat(e["when"]) >= since)
+
+
 def counts(stability: Optional[dict], days: int, now: Optional[dt.datetime] = None) -> tuple:
     """(crashes per app, unexpected restarts) over the `days` before the phone was read; (None, None) if never read."""
     if not stability or "read" not in stability:
@@ -148,15 +171,16 @@ def counts(stability: Optional[dict], days: int, now: Optional[dt.datetime] = No
             continue
         if w < since:
             continue
-        if e.get("kind") == "restart":
+        if kind(e) == "restart":
             restarts += 1
-        elif e.get("kind") == "crash" and e.get("app"):
+        elif kind(e) == "crash" and e.get("app"):
             crashes[e["app"]] = crashes.get(e["app"], 0) + 1
     return crashes, restarts
 
 
 def by_day(stability: Optional[dict], days: int) -> list:
-    """[(app, [(date, crashes)])] for the details screen, most crashes first; restarts as app ""."""
+    """[(app, [(date, crashes)])] for the details screen, most first; unexpected restarts as app "", restarts iOS
+    did by itself as SELF_RESTART."""
     if not stability or "read" not in stability:
         return []
     read = dt.datetime.fromisoformat(stability["read"])
@@ -165,7 +189,8 @@ def by_day(stability: Optional[dict], days: int) -> list:
     for e in stability.get("events", []):
         w = dt.datetime.fromisoformat(e["when"])
         if w >= since:
-            key = e.get("app") if e.get("kind") == "crash" else ""
+            k = kind(e)
+            key = e.get("app") if k == "crash" else SELF_RESTART if k == "self_restart" else ""
             per.setdefault(key, {}).setdefault(w.date(), 0)
             per[key][w.date()] += 1
     return sorted(((a, sorted(d.items())) for a, d in per.items()), key=lambda x: (-sum(n for _d, n in x[1]), x[0]))

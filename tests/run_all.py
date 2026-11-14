@@ -48,10 +48,12 @@ STEPS = [
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
 # A script that hangs fails after this long (and faulthandler prints where it was stuck).
 TIMEOUT = int(os.environ.get("PHONEKEEP_TEST_TIMEOUT", "420"))
-# On GitHub's macOS runner these hang inside Tk's own update() (no Python frame; 13 Nov, v5.0.0 tag run), while
-# they pass on a real Mac (owner's MacBook, 13 Nov). There a hang is reported as a runner problem, not a failure;
-# any real failure still fails the run.
-RUNNER_TK_HANG = {"test_s3_no_network.py", "test_b4_location.py", "test_b5_open_backup.py"}
+# On GitHub's macOS runner these hang inside Tk's own update() (no Python frame; 13 Nov, v5.0.0 tag run; the last five
+# in the 14 Nov run for #48, each at the 420 s timeout), while they pass on a real Mac (owner's MacBook, 13 and 14 Nov).
+# There a hang is reported as a runner problem, not a failure; any real failure still fails the run.
+RUNNER_TK_HANG = {"test_s3_no_network.py", "test_b4_location.py", "test_b5_open_backup.py",
+                  "test_s2_app_lock.py", "test_b1_cancel.py", "test_p1_photos.py", "test_v123_device.py",
+                  "test_d9_save_everything.py"}
 ON_GITHUB_MAC = sys.platform == "darwin" and os.environ.get("GITHUB_ACTIONS") == "true"
 # every test writes PhoneKeep's own files (activity log, settings, locks) to a test folder, never ~/PhoneKeep
 os.environ["PHONEKEEP_HOME"] = str(HERE / "work" / "home")
