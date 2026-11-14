@@ -52,6 +52,8 @@ for c in backup2 afc usbmux; do      # every phone command loads in the packaged
   dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli -m pymobiledevice3 $c --help 2>&1 | grep -q "Usage" \
     || { echo "pymobiledevice3 $c does not load in the packaged app" >&2; exit 1; }
 done
+"$V" tests/test_licence.py --built dist/PhoneKeep.app >/dev/null \
+  || { "$V" tests/test_licence.py --built dist/PhoneKeep.app | grep FAIL >&2; exit 1; }   # LICENSE + notices inside
 echo "Launch check: ok ($LABEL)"
 
 if pgrep -x PhoneKeep >/dev/null || pgrep -f "phonekeep-cli" >/dev/null; then

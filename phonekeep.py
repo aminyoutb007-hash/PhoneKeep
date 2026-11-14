@@ -43,6 +43,7 @@ from tables import csv_safe as _csv_safe
 
 APP_NAME = "PhoneKeep"
 VERSION = "5.0.1"
+LICENCE_LINE = "Free software under the GNU GPL v3 · Source: github.com/aminyoutb007-hash/PhoneKeep"
 
 try:
     from build_label import BUILD_LABEL   # "5.0-dev+B3" on a test build, "" on a release

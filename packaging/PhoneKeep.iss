@@ -27,6 +27,9 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "..\dist\PhoneKeep\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; the licence and the third-party notices next to PhoneKeep.exe, where people look for them
+Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\PhoneKeep"; Filename: "{app}\PhoneKeep.exe"
