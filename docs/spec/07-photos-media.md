@@ -11,9 +11,11 @@
 - Thumbnails appear immediately as placeholders, then fill in; the grid stays smooth with 50,000 items.
 - Never draw selection with see-through/stippled overlays (they render solid on macOS); use a frame and tick.
 
+**How it's built (5.1):** `library.py` reads the phone's Photos.sqlite (live over AFC, or from the backup), finding the tables and columns of each iOS version (ZASSET / ZGENERICASSET; the numbered album link table): favourite, hidden, Recently Deleted, photo/video, Live Photo, screenshot, date taken, location, user albums. The photo list (`ui.PhotoPanel`) shows **Favourites, Videos, Screenshots, Live Photos, Albums, 🔒 Hidden**, then the **Library** by year and month; each row can be ticked as a whole. Hidden photos are left out of everything else and **Hidden asks every time** (Touch ID / the computer's password when the app lock is on, otherwise a confirmation). Items in Recently Deleted aren't listed. `photoconv.py`: **Save** asks Original (HEIC) / Most compatible (JPG), remembered; the JPG keeps the EXIF (date taken, location, orientation, colour profile), fills date and location from the library when the photo lacks them, and its file date is the date taken; a Live Photo saves as the photo and its short video with the same name. Space-to-preview is Q1.
+
 **Done when**
-- [ ] Albums and favourites match the phone.
-- [ ] A saved JPG shows the original date and location in Finder/Explorer and Photos.
+- [x] Albums and favourites match the phone. *(14 Nov, owner's check on a real iPhone with iCloud Photos.)*
+- [x] A saved JPG shows the original date and location in Finder/Explorer and Photos. *(14 Nov, owner's check in Finder.)*
 - [ ] Usability test task 2 passes.
 
 ## P8. Video conversion

@@ -629,7 +629,7 @@ class PhoneWindow(tk.Toplevel):
                         ("Back up now", self.refresh))
             return
         info = wv.backup_info(self.backup_path)
-        self.lock_badge.configure(text=ui.PROTECTED if info["encrypted"] else "")
+        self.lock_badge.configure(text=ui.PROTECTED_SHORT if info["encrypted"] else "")
         typed = False
         if info["encrypted"] and password is None:
             # silently from the keychain (S1); only ask if it isn't there yet
@@ -1140,11 +1140,16 @@ class PhoneWindow(tk.Toplevel):
                                     lambda p: (self.banner(""), open_file(p)) if p else None,
                                     lambda e: self.banner(f"Couldn't open it: {describe_error(e)}", color="#fdecea"))
         def preview(shown, idx):
-            quicklook.Viewer(self, [quicklook.Item(i.name, read=lambda i=i: src.read(i.id),
+            def thumb(i):
+                t = src.thumbnail(i)
+                return t.read_bytes() if t else None
+            quicklook.Viewer(self, [quicklook.Item(i.name + (" (only in iCloud: preview)" if i.cloud_only else ""),
+                                                   read=(lambda i=i: thumb(i)) if i.cloud_only else (lambda i=i: src.read(i.id)),
                                                    to_file=lambda d, i=i: src.copy(i.id, d), size=i.size,
                                                    kind="video" if i.video else "")
                                     for i in shown], idx)
-        panel = ui.PhotoPanel(self.content, src, items, select_all=False, on_open=open_one, on_preview=preview)
+        panel = ui.PhotoPanel(self.content, src, items, select_all=False, on_open=open_one, on_preview=preview,
+                              unlock=lambda go: self.app.confirm_private(go, "show your hidden photos"))
         panel.pack(fill="both", expand=True)
 
         def save():
@@ -1152,24 +1157,29 @@ class PhoneWindow(tk.Toplevel):
             if not chosen:
                 messagebox.showinfo(wv.APP_NAME, "Click the photos you want to save first (or Select all).", parent=self)
                 return
+            compatible = ui.ask_photo_format(self, 1 if self.app.s.data.get("photos_jpg") else 0)
+            if compatible is None:
+                return
+            self.app.s["photos_jpg"] = compatible               # remembered for next time
             folder = self.out_dir("photos")
             if folder is None:
                 return
 
             def go():
+                import photoconv
                 done = []
-                for i in chosen:
-                    month = i.when.strftime("%Y-%m") if i.when.year > 1970 else "Unknown date"
-                    dest = folder / month / i.name
-                    if src.copy(i.id, dest):
-                        done.append(dest)
-                    if i.live_video:
-                        src.copy(i.live_video, folder / month / Path(i.live_video).name)
+                conv_tmp = Path(tempfile.mkdtemp(prefix="phonekeep-heic-"))
+                try:
+                    for i in chosen:
+                        month = i.when.strftime("%Y-%m") if i.when.year > 1970 else "Unknown date"
+                        done += photoconv.save_item(src, i, folder / month, compatible, conv_tmp)
+                finally:
+                    shutil.rmtree(conv_tmp, ignore_errors=True)
                 return done
             self.run_save(f"{len(chosen):,} photos & videos", go, folder, "photo/video",
                           self.live_runner if src.label == "the iPhone" else self.backup_runner)
         RoundButton(panel.foot, "Save selected", save, "primary", 170, 38, 12).pack(side="right")
-        tk.Label(panel.foot, text="Click, then Space to preview · double-click to open", bg=BG, fg=MUTED,
+        tk.Label(panel.foot, text="Space: preview", bg=BG, fg=MUTED,
                  font=font(11)).pack(side="right", padx=12)
 
     # tables -----------------------------------------------------------------------

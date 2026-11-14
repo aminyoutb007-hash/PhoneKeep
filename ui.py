@@ -66,6 +66,7 @@ def setup_styles(root: tk.Misc) -> None:
 
 # where the data is and how it is protected, in one line (usability task 5, 13 Nov): the same everywhere
 PROTECTED = "🔒 Encrypted with your backup password · never sent online"
+PROTECTED_SHORT = "🔒 Encrypted · never sent online"     # the phone window's header, where space is short
 
 class RoundButton(tk.Canvas):
     """A pill-shaped button: kind = primary | secondary | ghost | light."""
@@ -428,7 +429,17 @@ class BgWorker:
             pass
 
 
-def load_photo(path, max_px: int, square: bool = False) -> Optional["ImageTk.PhotoImage"]:
+def draw_cloud(c: tk.Canvas, x: int, y: int) -> None:
+    """A small drawn iCloud badge (a dark disc with a white cloud), centred on (x, y)."""
+    c.create_oval(x - 13, y - 11, x + 13, y + 11, fill="#3a3a3c", outline="")
+    c.create_oval(x - 9, y - 1, x - 1, y + 6, fill="white", outline="")
+    c.create_oval(x - 5, y - 6, x + 5, y + 4, fill="white", outline="")
+    c.create_oval(x + 1, y - 3, x + 9, y + 6, fill="white", outline="")
+    c.create_rectangle(x - 5, y + 1, x + 5, y + 6, fill="white", outline="")
+
+
+def load_photo(path, max_px: int, square: bool = False, faded: bool = False) -> Optional["ImageTk.PhotoImage"]:
+    """faded: washed out towards white (a photo whose full version is only in iCloud)."""
     if not path or Image is None:
         return None
     try:
@@ -438,6 +449,8 @@ def load_photo(path, max_px: int, square: bool = False) -> Optional["ImageTk.Pho
             im = ImageOps.fit(im.convert("RGB"), (max_px, max_px))
         else:
             im.thumbnail((max_px, max_px))
+        if faded:
+            im = Image.blend(im.convert("RGB"), Image.new("RGB", im.size, (255, 255, 255)), 0.55)
         return ImageTk.PhotoImage(im)
     except Exception:
         return None
@@ -1013,25 +1026,52 @@ class PhotoPanel(tk.Frame):
     TILE = 128
     PAGE = 240
 
-    def __init__(self, parent, source, items: list, select_all: bool = True, on_open=None, on_preview=None):
+    # P1: collections above the library, like the Photos app (key, label); filled from the phone's Photos library
+    COLLECTIONS = (("c:fav", "★ Favourites"), ("c:videos", "▶ Videos"), ("c:shots", "▢ Screenshots"),
+                   ("c:live", "◎ Live Photos"))
+
+    def __init__(self, parent, source, items: list, select_all: bool = True, on_open=None, unlock=None, on_preview=None):
         super().__init__(parent, bg=BG)
         _attach_app_menu(self)
         from photos import human_size
         self.human_size = human_size
         self.on_open = on_open
+        self.unlock = unlock            # P1: called with a function to run once Hidden may be shown
         self.on_preview = on_preview    # Q1: Space previews the last clicked photo; arrows go through the month
         self.cursor = None
-        self.source, self.items = source, items
-        self.selected = {i.id for i in items} if select_all else set()
+        self.source = source
+        self.hidden_items = [i for i in items if getattr(i, "hidden", False)]
+        self.hidden_open = False        # Hidden stays closed until the owner confirms (or Touch ID)
+        self.items = [i for i in items if not getattr(i, "hidden", False)]
+        self.selected = {i.id for i in self.items} if select_all else set()
         self.images: dict = {}          # (item id, tile size) -> image
         self.paths: dict = {}           # item id -> its thumbnail file
         self.tiles: dict = {}
         self.worker = BgWorker(self)
         self.bind("<Destroy>", lambda e: self.worker.stop() if e.widget is self else None)
-        self.months: dict[str, list] = {}
-        for i in items:
+        self.months: dict[str, list] = {}           # every group the grid can show: months, collections, albums
+        for i in self.items:
             self.months.setdefault(i.month, []).append(i)
         self.month_keys = sorted(self.months, reverse=True)
+        lib = None
+        try:
+            lib = source.library() if hasattr(source, "library") else None
+        except Exception:
+            lib = None
+        groups = {"c:fav": [i for i in self.items if getattr(i, "favorite", False)],
+                  "c:videos": [i for i in self.items if i.video],
+                  "c:shots": [i for i in self.items if getattr(i, "screenshot", False)],
+                  "c:live": [i for i in self.items if getattr(i, "live_video", None) or getattr(i, "live_lib", False)]}
+        self.collections = [(k, label) for k, label in self.COLLECTIONS if groups[k]]
+        for k, _l in self.collections:
+            self.months[k] = groups[k]
+        self.album_rows = []
+        for key, title, _n in (lib.albums if lib else []):
+            # every album the Photos app lists, empty ones too (they show 0)
+            self.months[key] = [i for i in self.items if key in getattr(i, "albums", ())]
+            self.album_rows.append((key, title))
+        if self.hidden_items:
+            self.months["c:hidden"] = self.hidden_items
         self.shown = 0
         self._more_btn = None
 
@@ -1041,14 +1081,14 @@ class PhotoPanel(tk.Frame):
         # its row of the list (owner, 13 Nov: four buttons were confusing)
         self.all_btn = RoundButton(bar, "Select none", self._flip_all, "secondary", 120, 32, 12)
         self.all_btn.pack(side="left")
-        tk.Label(bar, text="Tick a month or a year in the list to select all of it · click a photo to select it",
+        tk.Label(bar, text="Tick a row in the list to select all of it · click a photo to select it",
                  bg=BG, fg=MUTED, font=font(11)).pack(side="left", padx=12)
 
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True, padx=16)
         side = card(body)
         side.pack(side="left", fill="y")
-        tk.Label(side, text="Months", bg=CARD, fg=MUTED, font=font(11, "bold"), anchor="w").pack(fill="x", padx=10, pady=(8, 2))
+        tk.Label(side, text="Photos", bg=CARD, fg=MUTED, font=font(11, "bold"), anchor="w").pack(fill="x", padx=10, pady=(8, 2))
         st = ttk.Style(self)                 # PhoneKeep's own colours (macOS dark mode drew this list black)
         st.configure("Months.Treeview", background=CARD, fieldbackground=CARD, foreground=INK, rowheight=28,
                      font=font(12))
@@ -1056,7 +1096,7 @@ class PhotoPanel(tk.Frame):
         st.configure("Months.Treeview", rowheight=26)
         self.mlist = ttk.Treeview(side, columns=("m", "n"), show="", selectmode="browse", height=18,
                                   style="Months.Treeview")
-        self.mlist.column("m", width=140)
+        self.mlist.column("m", width=180)
         self.mlist.column("n", width=64, anchor="e")
         self.mlist.tag_configure("year", font=font(12, "bold"), foreground=INK)
         self.mlist.tag_configure("month", foreground=INK)
@@ -1084,36 +1124,62 @@ class PhotoPanel(tk.Frame):
         self.count = tk.Label(self.foot, bg=BG, fg=INK, font=font(13))
         self.count.pack(side="left")
 
+        self.mlist.tag_configure("year", font=font(12, "bold"), foreground=INK)
         self._fill_months()
         if self.month_keys:
             self.mlist.selection_set(self.month_keys[0])
         self._update_count()
 
     def _fill_months(self):
-        """A line per year, its months under it by name, each with "selected/total" (owner, 13 Nov: "September 20…"
-        was cut off). Rows are updated in place: deleting and re-inserting them re-selected the open month,
-        which emptied the photo grid (13 Nov: Select none, then Select this month)."""
+        """The list: collections (Favourites, Videos, Screenshots, Live Photos), Albums, Hidden, then the Library
+        as a line per year with its months under it, each with "selected/total" and a box to tick all of it
+        (owner, 13 Nov). Rows are updated in place: re-inserting them re-selected the open group and emptied the
+        grid (13 Nov: Select none, then Select this month)."""
+        def put(iid, parent, label, items, tag, zero=False):
+            n = sum(1 for i in items if i.id in self.selected)        # of all, like the Photos app counts them
+            can = sum(1 for i in items if not getattr(i, "cloud_only", False))   # what can be ticked and saved
+            indent = label[:len(label) - len(label.lstrip())]
+            if items and can:
+                values = (f"{indent}{self._box(n, can)} {label.lstrip()}", f"{n}/{len(items)}")
+            elif items:                                  # all only in iCloud: nothing to tick
+                values = (f"{indent}   {label.lstrip()}", f"{len(items)}")
+            elif zero:                                   # an empty album: lined up with the others, "0"
+                values = (f"{indent}   {label.lstrip()}", "0")
+            else:
+                values = (label, "")
+            if self.mlist.exists(iid):
+                self.mlist.item(iid, values=values)
+            else:
+                self.mlist.insert(parent, "end", iid=iid, values=values, tags=(tag,), open=True)
+
+        for k, label in self.collections:
+            put(k, "", label, self.months[k], "year")
+        if self.album_rows:
+            put("head-albums", "", "Albums", [i for k, _t in self.album_rows for i in self.months[k]], "year")
+            for k, title in self.album_rows:
+                put(k, "head-albums", "    " + title, self.months[k], "month", zero=True)
+        if self.hidden_items:
+            label = "🔒 Hidden" if not self.hidden_open else "Hidden"
+            put("c:hidden", "", label, self.hidden_items if self.hidden_open else [], "year")
+        if self.collections or self.album_rows or self.hidden_items:
+            put("head-library", "", "Library", [], "year")
         years: dict = {}
         for m in self.month_keys:
             years.setdefault("Unknown" if m == "1970-01" else m[:4], []).append(m)
         for y, months in years.items():
-            items = [i for m in months for i in self.months[m]]
-            n_sel = sum(1 for i in items if i.id in self.selected)
-            yid = f"year-{y}"
-            yv = (f"{self._box(n_sel, len(items))} " + (y if y != "Unknown" else "Unknown date"), f"{n_sel}/{len(items)}")
-            if self.mlist.exists(yid):
-                self.mlist.item(yid, values=yv)
-            else:
-                self.mlist.insert("", "end", iid=yid, values=yv, tags=("year",), open=True)
+            put(f"year-{y}", "", y if y != "Unknown" else "Unknown date",
+                [i for m in months for i in self.months[m]], "year")
             for m in months:
-                its = self.months[m]
-                k = sum(1 for i in its if i.id in self.selected)
-                label = f"    {self._box(k, len(its))} " + (dt.datetime.strptime(m, "%Y-%m").strftime("%B") if m != "1970-01" else "No date")
-                values = (label, f"{k}/{len(its)}")
-                if self.mlist.exists(m):
-                    self.mlist.item(m, values=values)
-                else:
-                    self.mlist.insert(yid, "end", iid=m, values=values, tags=("month",))
+                label = "    " + (dt.datetime.strptime(m, "%Y-%m").strftime("%B") if m != "1970-01" else "No date")
+                put(m, f"year-{y}", label, self.months[m], "month")
+
+    def _group_items(self, row: str) -> list:
+        """The photos a list row stands for (a year, the albums heading, a month, a collection or an album)."""
+        if row.startswith("year-") or row == "head-albums":
+            return [i for m in self.mlist.get_children(row) for i in self.months.get(m, [])]
+        if row == "c:hidden" and not self.hidden_open:
+            return []
+        return self.months.get(row, [])
 
     @staticmethod
     def _box(n: int, total: int) -> str:
@@ -1122,15 +1188,14 @@ class PhotoPanel(tk.Frame):
     def _row_click(self, e):
         """A click on a row's box (un)ticks that whole month or year; a click elsewhere just opens it."""
         row = self.mlist.identify_row(e.y)
-        if not row:
+        if not row or row == "head-library":
             return
-        x0 = 30 if row.startswith("year-") else 52          # the box sits at the start of the row
+        x0 = 52 if self.mlist.parent(row) else 30          # the box sits at the start of the row
         if e.x > x0:
             return
-        if row.startswith("year-"):
-            items = [i for m in self.mlist.get_children(row) for i in self.months[m]]
-        else:
-            items = self.months[row]
+        items = [i for i in self._group_items(row) if not getattr(i, "cloud_only", False)]
+        if not items:
+            return
         on = not all(i.id in self.selected for i in items)
         for i in items:
             (self.selected.add if on else self.selected.discard)(i.id)
@@ -1140,20 +1205,48 @@ class PhotoPanel(tk.Frame):
         self._update_count()
 
     def _flip_all(self):
-        self._set_all(len(self.selected) < len(self.items))
+        self._set_all(len(self.selected) < len(self._selectable()))
+
+    def _selectable(self) -> list:
+        """What can be ticked and saved: not photos whose full version is only in iCloud."""
+        return [i for i in self.items + (self.hidden_items if self.hidden_open else []) if not i.cloud_only]
+
+    def _open_hidden(self):
+        """Hidden opens only after Touch ID / the computer's password (app lock on) or a confirmation."""
+        def go():
+            self.hidden_open = True
+            self._fill_months()
+            self.mlist.selection_set("c:hidden")
+            self._open_month()
+        if self.unlock is not None:
+            self.unlock(go)
+        elif messagebox.askyesno("Show hidden photos?", "These are the photos you hid on the iPhone. Show them here?",
+                                 parent=self):
+            go()
 
     def _on_select(self):
         sel = self.mlist.selection()
-        if sel and sel[0].startswith("year-"):          # a year line opens its newest month
-            kids = self.mlist.get_children(sel[0])
+        if not sel:
+            return
+        row = sel[0]
+        if row == "c:hidden" and not self.hidden_open:
+            self._open_hidden()
+            return
+        if row.startswith("year-") or row.startswith("head-"):     # a heading opens its first group
+            kids = self.mlist.get_children(row)
             if kids:
                 self.mlist.selection_set(kids[0])
+            elif row == "head-library":
+                first = next((r for r in self.mlist.get_children("") if r.startswith("year-")), None)
+                if first:
+                    self.mlist.selection_set(first)
             return
         self._open_month()
-
     def _month(self) -> Optional[str]:
         s = self.mlist.selection()
-        return s[0] if s and not s[0].startswith("year-") else None
+        if not s or s[0].startswith(("year-", "head-")) or (s[0] == "c:hidden" and not self.hidden_open):
+            return None
+        return s[0] if s[0] in self.months else None
 
     def _open_month(self):
         self.worker.clear()
@@ -1217,9 +1310,10 @@ class PhotoPanel(tk.Frame):
             return
         c.delete("all")
         T = getattr(self, "tile", self.TILE)
+        cloud = getattr(item, "cloud_only", False)
         img = self.images.get((item.id, T))
         if img is None and self.paths.get(item.id):
-            img = load_photo(self.paths[item.id], T, square=True)
+            img = load_photo(self.paths[item.id], T, square=True, faded=cloud)
             if img is not None:
                 self.images[(item.id, T)] = img
         if img is not None:
@@ -1233,6 +1327,8 @@ class PhotoPanel(tk.Frame):
         if item.live_video:
             c.create_rectangle(4, 4, 36, 20, fill="#000000", outline="")
             c.create_text(20, 12, text="LIVE", fill="white", font=font(8, "bold"))
+        if cloud:                                     # washed out, with a cloud: the full photo is only in iCloud
+            draw_cloud(c, T - 18, 16)
         # selected: a blue frame, nothing else (owner, 13 Nov: no tick circle)
         if item.id in self.selected:
             c.create_rectangle(2, 2, T - 2, T - 2, outline=SELECT_BLUE, width=5)
@@ -1283,13 +1379,15 @@ class PhotoPanel(tk.Frame):
         self.on_preview(shown, idx)
 
     def _toggle(self, item):
+        if getattr(item, "cloud_only", False):          # only in iCloud: nothing to save from the iPhone
+            return
         self.selected.symmetric_difference_update({item.id})
         self._draw_tile(item)
         self._fill_months()
         self._update_count()
 
     def _set_all(self, on: bool):
-        self.selected = {i.id for i in self.items} if on else set()
+        self.selected = {i.id for i in self._selectable()} if on else set()
         for i in self.months.get(self._month(), []):
             self._draw_tile(i)
         self._fill_months()
@@ -1297,26 +1395,30 @@ class PhotoPanel(tk.Frame):
 
     def _set_month(self, on: bool):
         for i in self.months.get(self._month(), []):
+            if on and getattr(i, "cloud_only", False):
+                continue
             (self.selected.add if on else self.selected.discard)(i.id)
             self._draw_tile(i)
         self._fill_months()
         self._update_count()
 
     def _update_count(self):
-        chosen = [i for i in self.items if i.id in self.selected]
+        chosen = [i for i in self._selectable() if i.id in self.selected]
         size = sum(i.size for i in chosen)
         nv = sum(1 for i in chosen if i.video)
         n_p = len(chosen) - nv
+        cloud = sum(1 for i in self.items if getattr(i, "cloud_only", False))
         self.count.configure(text=f"{n_p:,} photo{'s' if n_p != 1 else ''} and {nv:,} video{'s' if nv != 1 else ''} "
-                                  f"selected of {len(self.items):,} · about {self.human_size(size)}")
+                                  f"selected of {len(self._selectable()):,} · about {self.human_size(size)}"
+                                  + (f" · {cloud:,} only in iCloud" if cloud else ""))
         if hasattr(self, "all_btn"):
-            self.all_btn.configure_text("Select none" if len(self.selected) == len(self.items) and self.items else "Select all")
+            self.all_btn.configure_text("Select none" if len(self.selected) == len(self._selectable()) and self.items else "Select all")
 
 
 class PhotoPicker(tk.Toplevel):
     """Browse photos month by month as thumbnails and pick which to copy."""
 
-    def __init__(self, parent, source, items: list):
+    def __init__(self, parent, source, items: list, unlock=None):
         super().__init__(parent, bg=BG)
         _attach_app_menu(self)
         self.title("Choose photos & videos")
@@ -1330,7 +1432,7 @@ class PhotoPicker(tk.Toplevel):
                  font=font(17, "bold")).pack(side="left", padx=18, pady=12)
         tk.Label(head, text=f"from {source.label} · click a photo to select or unselect it", bg=GREEN,
                  fg="#d7efe9", font=font(12)).pack(side="left", pady=12)
-        self.panel = PhotoPanel(self, source, items)
+        self.panel = PhotoPanel(self, source, items, unlock=unlock)
         self.panel.pack(fill="both", expand=True)
         RoundButton(self.panel.foot, "Continue", self._ok, "primary", 160, 40).pack(side="right")
         RoundButton(self.panel.foot, "Skip photos", self._skip, "secondary", 130, 40).pack(side="right", padx=10)
@@ -1502,6 +1604,59 @@ class TextDialog(tk.Toplevel):
     def _cancel(self):
         self.result = None
         self.destroy()
+
+
+class ChoiceDialog(tk.Toplevel):
+    """Pick one of a few options (radio buttons) with OK/Cancel. Result: the chosen index, or None."""
+
+    def __init__(self, parent, title: str, prompt: str, options: list, initial: int = 0, ok: str = "Save"):
+        super().__init__(parent, bg=CARD)
+        _attach_app_menu(self)
+        self.result = None
+        self.title(title)
+        self.resizable(False, False)
+        self.transient(parent)
+        body = tk.Frame(self, bg=CARD)
+        body.pack(fill="both", expand=True, padx=28, pady=22)
+        tk.Label(body, text=title, bg=CARD, fg=INK, font=font(17, "bold")).pack(pady=(2, 4))
+        tk.Label(body, text=prompt, bg=CARD, fg=MUTED, font=font(12), wraplength=420, justify="center").pack()
+        self.var = tk.IntVar(value=initial)
+        box = tk.Frame(body, bg=CARD)
+        box.pack(fill="x", pady=(14, 0))
+        for n, (label, detail) in enumerate(options):
+            ttk.Radiobutton(box, text=label, variable=self.var, value=n).pack(anchor="w", pady=(6, 0))
+            if detail:
+                tk.Label(box, text=detail, bg=CARD, fg=MUTED, font=font(11), wraplength=400, justify="left",
+                         anchor="w").pack(fill="x", padx=(24, 0))
+        btns = tk.Frame(body, bg=CARD)
+        btns.pack(fill="x", pady=(18, 0))
+        RoundButton(btns, ok, self._ok, "primary", 150, 40, bg=CARD).pack(side="right")
+        RoundButton(btns, "Cancel", self._cancel, "secondary", 100, 40, bg=CARD).pack(side="right", padx=8)
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self._cancel())
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.lift()
+        self.grab_set()
+
+    def _ok(self):
+        self.result = self.var.get()
+        self.destroy()
+
+    def _cancel(self):
+        self.result = None
+        self.destroy()
+
+
+PHOTO_FORMATS = [("Original (HEIC)", "Exactly as on the iPhone: smallest files, best quality."),
+                 ("Most compatible (JPG)", "Opens everywhere (older Windows, websites). Keeps the date taken "
+                                           "and the location.")]
+
+
+def ask_photo_format(parent, initial: int = 0):
+    """P1: "Original (HEIC) / Most compatible (JPG)". True = JPG, False = original, None = cancelled."""
+    d = ChoiceDialog(parent, "Save photos as", "Videos are always saved as they are.", PHOTO_FORMATS, initial)
+    parent.wait_window(d)
+    return None if d.result is None else d.result == 1
 
 
 class DetailsDialog(tk.Toplevel):
