@@ -290,6 +290,12 @@ def save_battery_details(win, history: list, ov, path: Optional[Path] = None) ->
 
 
 # -- H2: what to clear, biggest saving first, and when the iPhone will be full ------------------------------------
+def open_cleanup(win, card: str):
+    """Photos, then Photo clean-up on that card ("" for the cards screen) once the photos are listed."""
+    win.open_cleanup = card
+    win.open_app("photos")
+
+
 def storage_suggestions(win, r: checkup.Report):
     import datetime as dt
     import deviceinfo as di
@@ -322,8 +328,11 @@ def storage_suggestions(win, r: checkup.Report):
     def show(found):
         if win.current != "checkup:storage":
             return
+        import cleanup as cl
+        rec = cl.load(pd)
         sugg = sa.build(found.get("wa_chats"), found.get("wab_chats"), found.get("attachments"),
-                        ov.apps if ov is not None else None, found.get("music"), day)
+                        ov.apps if ov is not None else None, found.get("music"), day,
+                        cl.saved_videos(pd) if pd else None, rec.get("last"))
         win.storage_suggestions = sugg
         holder.destroy()
         if not sugg:
@@ -345,6 +354,9 @@ def storage_suggestions(win, r: checkup.Report):
             if sg.note:
                 tk.Label(row, text=sg.note, bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left",
                          wraplength=680).pack(fill="x", pady=(2, 0))
+            if sg.review is not None:                       # C1: Review opens Photo clean-up
+                RoundButton(row, "Review ›", lambda k=sg.review: open_cleanup(win, k), "secondary", 110, 32, 12).pack(
+                    anchor="w", pady=(6, 0))
         missing = [w for w, ok in (("chat sizes (open the latest backup)", data is not None),
                                    ("app sizes and music (connect the iPhone)", ov is not None)) if not ok]
         if missing:

@@ -8,6 +8,9 @@ What it does, all read-only for the phone:
   * opens every app screen and looks for an error;
   * Photos: counts, scrolls to the end of the biggest collection, previews a photo and a video (Space);
   * saves 3 photos as JPG into a temporary folder and checks each keeps its date and location;
+  * Photo clean-up (C1): the six cards from the phone's photos, twice (the second visit from the cache), nothing
+    offered that's a favourite, in an album, hidden or only in iCloud; 3 of them saved and checked by checksum
+    (its cache and record go to the temporary folder too, not next to the real backups);
   * All files: previews a PDF from the backup; Voice Memos / Music: copies one to play;
   * Save everything: notes and calls of the last 30 days, and checks the contents page.
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
@@ -236,6 +239,49 @@ try:
             check(good == len(with_gps), f"saved as JPG keeps the date and location ({good} of {len(with_gps)})")
         else:
             note("no photo with a location on the phone to save as JPG")
+
+        # -- C1: Photo clean-up --------------------------------------------------------------------------------
+        import checkup_ui as cku, cleanup as cl, cleanup_ui
+        real_dir = cku.phone_dir
+        cku.phone_dir = lambda w: WORK / "c1"                 # its cache and record: in the temporary folder
+        try:
+            t = time.time()
+            cleanup_ui.view(win, src, items)
+            pump(app, lambda: win.current == "cleanup", 3600)
+            first = time.time() - t
+            r = getattr(win, "cleanup_result", None)
+            looked = sum(1 for i in items if not i.hidden and not i.cloud_only)   # iCloud-only ones aren't read
+            per = first / max(1, looked)
+            check(r is not None and per * 10_000 < 300,
+                  f"Photo clean-up: {looked:,} photos on the phone looked at in {first:.0f} s (10,000 would take "
+                  f"about {per * 10_000 / 60:.1f} min; under 5 min needed)")
+            if r is not None:
+                note(", ".join(f"{c.title} {c.count}" for c in r.cards) + f"; left out {r.left_out}; iCloud Photos "
+                     + {True: "on", None: "not known"}.get(r.icloud, "off"))
+                lib = src.library()
+                xs = [i for i in items if not i.hidden and not i.cloud_only]
+                note(f"library: knows the saving app {bool(getattr(lib, 'knows_app', False))}, "
+                     f"{sum(bool(i.saved_by) for i in xs)} saved by an app, {sum(i.screen_recording for i in xs)} screen "
+                     f"recordings, {sum(bool(i.burst) for i in xs)} in bursts, {sum(i.edited for i in xs)} edited")
+                offered = [i for c in r.cards for i in c.candidates()]
+                check(not any(i.favorite or i.albums or i.hidden or i.cloud_only for i in offered),
+                      "nothing offered is a favourite, in an album, hidden or only in iCloud")
+                t = time.time()
+                cleanup_ui.view(win, src, items)
+                pump(app, lambda: win.current == "cleanup", 60)
+                second = time.time() - t
+                check(win.cleanup_result.measured == 0 and second < 2,
+                      f"a second visit opens in under 2 seconds ({second:.2f} s)")
+                pick = sorted({i.id: i for i in offered}.values(), key=lambda i: i.size or 0)[:3]
+                if pick:
+                    res = cl.save(src, pick, WORK / "c1-archive", WORK / "c1")
+                    rec = cl.load(WORK / "c1")
+                    check(len(res.verified) == len(pick) and all(cl.in_archive(rec["saved"][i.id]) for i in pick),
+                          f"saved {len(res.verified)} of {len(pick)}, each in the archive with a matching checksum")
+                else:
+                    note("nothing to offer, so nothing to save")
+        finally:
+            cku.phone_dir = real_dir
 
     # -- All files: a PDF from the backup ---------------------------------------------------------------------
     if win.data is not None:

@@ -6,8 +6,8 @@ Chat media and attachment sizes come from the apps' own databases in the backup,
 phone. All of them are estimates and say "about". The forecast under the bar comes from the used space the
 check-up records after each backup (checkup.json, H1).
 
-The two suggestions that open Photo clean-up (C1), "Videos already saved on this computer" and "Photo clean-up",
-come with C1.
+Two suggestions open Photo clean-up (C1) with Review: "Videos already saved on this computer" (videos Photo clean-up
+saved and checked that are still on the phone) and "Photo clean-up" (from its last look at the photos).
 """
 from __future__ import annotations
 
@@ -35,6 +35,9 @@ STEPS = {
              "keeps its documents and data; Delete App removes both."),
     "music": ("On the iPhone: Music → Library → Downloaded. Touch and hold an album or playlist, then Remove → "
               "Remove Download. The songs stay in your library to stream."),
+    "saved_videos": "Review them in Photo clean-up (Large videos): they're saved, so they can go from the iPhone.",
+    "cleanup": ("Review them in Photo clean-up: duplicates, similar shots, poor quality, old screenshots, large videos "
+                "and chat clutter."),
 }
 
 
@@ -46,6 +49,7 @@ class Suggestion:
     steps: str                        # what to do on the phone
     items: list = field(default_factory=list)   # [(name, bytes)] shown under it: chats or apps
     note: str = ""
+    review: Optional[str] = None      # opens Photo clean-up (C1) on this card ("" for its first screen)
 
 
 def about(n: Optional[float]) -> str:
@@ -60,9 +64,11 @@ def about(n: Optional[float]) -> str:
 
 
 def build(wa_chats: Optional[list] = None, wab_chats: Optional[list] = None, attachments: Optional[int] = None,
-          apps: Optional[list] = None, music: Optional[int] = None, backup_day: str = "") -> list:
+          apps: Optional[list] = None, music: Optional[int] = None, backup_day: str = "",
+          saved_videos: Optional[int] = None, cleanup: Optional[dict] = None) -> list:
     """The suggestions, biggest saving first. wa_chats / wab_chats: [(chat name, media bytes)];
-    apps: deviceinfo.AppSize list. None for anything not known."""
+    apps: deviceinfo.AppSize list; saved_videos: bytes of videos Photo clean-up saved and checked;
+    cleanup: its last look ({"when", "count", "space"}). None for anything not known."""
     out = []
     kept = f"They are in your backup of {backup_day}." if backup_day else "They are in your latest backup."
     for key, label, chats in (("whatsapp", "WhatsApp", wa_chats), ("whatsappbusiness", "WhatsApp Business", wab_chats)):
@@ -85,6 +91,20 @@ def build(wa_chats: Optional[list] = None, wab_chats: Optional[list] = None, att
                                   "Each size is the app plus its documents and data, as the iPhone reports it."))
     if music and music >= MIN_BYTES:
         out.append(Suggestion("music", f"Downloaded music: {about(music)}", music, STEPS["music"]))
+    if saved_videos and saved_videos >= MIN_BYTES:
+        out.append(Suggestion("saved_videos", f"Videos already saved on this computer: {about(saved_videos)}",
+                              saved_videos, STEPS["saved_videos"], review="videos",
+                              note="Saved by Photo clean-up, each one checked against the iPhone's copy."))
+    if cleanup and (cleanup.get("space") or 0) >= MIN_BYTES:
+        day = ""
+        try:
+            w = dt.datetime.fromisoformat(cleanup["when"])
+            day = f" on {w.day} {w:%b}"
+        except (KeyError, TypeError, ValueError):
+            pass
+        out.append(Suggestion("cleanup", f"Photo clean-up: {about(cleanup['space'])}", int(cleanup["space"]),
+                              STEPS["cleanup"], review="",
+                              note=f"From PhoneKeep's last look at the photos{day}. Review checks them again."))
     return sorted(out, key=lambda s: -s.size)
 
 
