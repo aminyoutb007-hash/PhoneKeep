@@ -2,6 +2,7 @@
 
 Done when:
 - with seeded crash reports, the card lists the right apps and counts, and a seeded unexpected restart shows as red;
+  iOS restarting itself (SystemMemoryReset) shows as amber, "possibly by itself" (owner, 14 Nov);
 - after a check, the crash reports are still on the phone.
 The seeded reports have the kinds a real iPhone keeps (14 Nov: crashes, panics and iOS restarting itself, plus CPU and
 disk-use notices, hangs, memory events, battery logs and feedback reports that aren't crashes). The phone is a fake
@@ -76,6 +77,8 @@ put(fname("SiriSearchFeedback", w), ips(313, w))
 put("Retired/" + fname("OldApp", NOW - dt.timedelta(days=60)), ips(309, NOW - dt.timedelta(days=60), bundleID="com.x"))
 w = NOW - dt.timedelta(days=1, hours=3)
 put("Assistant/" + fname("panic-full", w), ips(210, w))  # an unexpected restart (in a subfolder)
+w = NOW - dt.timedelta(days=2, hours=5)
+put(fname("SystemMemoryReset", w), ips(298, w))          # iOS restarting itself: amber, not red (owner, 14 Nov)
 put("notes.txt", "not a report")
 
 # -- the fake crash-report service: every call recorded ----------------------------------------------------------------
@@ -165,22 +168,37 @@ pl.create_using_usbmux, pa.AfcService = real
 events = cr.read_folder(folder, APPS)
 kinds = sorted((e.kind, e.app) for e in events)
 check(kinds.count(("crash", "Chat App")) == 12 and kinds.count(("crash", "Trail Maps")) == 3
-      and kinds.count(("crash", "Home Hub")) == 1 and kinds.count(("restart", "")) == 1 and len(kinds) == 17,
-      f"crashes by app (names, not bundle ids; a widget under its app) and the restart; nothing else: {len(kinds)}")
+      and kinds.count(("crash", "Home Hub")) == 1 and kinds.count(("restart", "")) == 1
+      and kinds.count(("self_restart", "")) == 1 and len(kinds) == 18,
+      f"crashes by app (names, not bundle ids; a widget under its app), the panic and iOS restarting itself; nothing "
+      f"else: {len(kinds)}")
 summary = cr.summary(events, NOW)
 crash7, restarts7 = cr.counts(summary, 7)
 check(crash7 == {"Chat App": 12, "Trail Maps": 2, "Home Hub": 1} and restarts7 == 1,
       f"the last 7 days: {crash7}, {restarts7} restart")
 check(cr.counts(None, 7) == (None, None), "never read: not checked")
+check(cr.self_restarts(summary, 7) == 1 and cr.self_restarts(None, 7) is None,
+      "iOS restarting itself is counted on its own, not as an unexpected restart")
+legacy = {**summary, "events": [{**e, "kind": "restart"} if e["file"].startswith("SystemMemoryReset") else e
+                                for e in summary["events"]]}
+check(cr.counts(legacy, 7)[1] == 1 and cr.self_restarts(legacy, 7) == 1,
+      "a record kept before this change (its SystemMemoryReset called a restart) is read the new way")
 
 cu.record_stability(phone_dir, summary)
-r = cu.check(phone_dir, None) or cu.evaluate(cu.Facts(when=NOW, crashes=crash7, unexpected_restarts=restarts7))
-f = cu.Facts(when=NOW, crashes=crash7, unexpected_restarts=restarts7)
+f = cu.Facts(when=NOW, crashes=crash7, unexpected_restarts=restarts7, self_restarts=1)
 c = cu.stability_card(f)
 check(c.level == "red" and c.reason == "Red: The iPhone restarted unexpectedly once this week.",
       f"a seeded unexpected restart shows as red: {c.reason}")
-check(c.details[1] == "Chat App crashed 12 times this week. " + cr.ADVICE and len(c.details) == 2,
-      f"the apps, most crashes first, each with the spec's advice: {c.details[1:]}")
+check(c.details[1] == "Chat App crashed 12 times this week. " + cr.ADVICE and len(c.details) == 3
+      and c.details[2] == "The iPhone restarted once this week, possibly by itself. " + cr.SELF_RESTART_ADVICE,
+      f"the apps, most crashes first, each with the spec's advice, then the restart iOS did itself: {c.details[1:]}")
+c5 = cu.stability_card(cu.Facts(when=NOW, crashes={}, unexpected_restarts=0, self_restarts=1))
+check(c5.level == "amber" and c5.reason == "Amber: The iPhone restarted once this week, possibly by itself.",
+      f"iOS restarting itself alone shows as amber, not red: {c5.reason}")
+c6 = cu.stability_card(cu.Facts(when=NOW, crashes={"Trail Maps": 3}, unexpected_restarts=0, self_restarts=2))
+check(c6.level == "amber" and c6.reason == "Amber: Trail Maps crashed 3 times this week." and
+      c6.details[-1].startswith("The iPhone restarted 2 times this week, possibly by itself."),
+      f"with an app's crashes: still amber, the app first: {c6.reason}")
 c2 = cu.stability_card(cu.Facts(when=NOW, crashes=crash7, unexpected_restarts=0))
 check(c2.level == "red" and c2.reason == "Red: Chat App crashed 12 times this week.", f"without the restart: {c2.reason}")
 c3 = cu.stability_card(cu.Facts(when=NOW, crashes={"Trail Maps": 3}, unexpected_restarts=0))
@@ -196,12 +214,13 @@ check(rep.card("stability").level == "red" and rep.card("stability").reason.ends
 
 days = cr.by_day(summary, 7)
 check(days[0][0] == "Chat App" and sum(n for _d, n in days[0][1]) == 12 and len(days[0][1]) >= 5
-      and ("", [((NOW - dt.timedelta(days=1, hours=3)).date(), 1)]) in days,
-      "grouped by app and day for the details, restarts too")
+      and ("", [((NOW - dt.timedelta(days=1, hours=3)).date(), 1)]) in days
+      and (cr.SELF_RESTART, [((NOW - dt.timedelta(days=2, hours=5)).date(), 1)]) in days,
+      "grouped by app and day for the details, both kinds of restart too")
 
 z = cr.save_zip(folder, summary["events"], W / "out" / "reports.zip")
 names = zipfile.ZipFile(z).namelist()
-check(len(names) == 17 and any(n.startswith("Assistant/panic-full") for n in names), f"Save reports zips them ({len(names)})")
+check(len(names) == 18 and any(n.startswith("Assistant/panic-full") for n in names), f"Save reports zips them ({len(names)})")
 
 old = folder / fname("Ancient", NOW - dt.timedelta(days=45))
 old.write_text("x")
@@ -275,7 +294,8 @@ try:
             walk(x)
     walk(win.content)
     check("Chat App: 12 crashes" in texts and "Unexpected restarts: 1" in texts and cr.ADVICE in texts
-          and cr.RESTART_ADVICE in texts, "the details list each app's crashes by day with what to do")
+          and cr.RESTART_ADVICE in texts and "Restarted, possibly by itself: 1" in texts
+          and cr.SELF_RESTART_ADVICE in texts, "the details list each app's crashes by day with what to do")
     btn = next(x for x in win.content.winfo_children()[-1].winfo_children() if isinstance(x, checkup_ui.RoundButton))
     btn.command()
     check(win.saved_paths and zipfile.is_zipfile(win.saved_paths[0]), "Save reports… saves the zip where the owner chooses")
