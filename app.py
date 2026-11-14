@@ -671,7 +671,9 @@ class App(_dnd_root()):
         wins = [self] + [w for w in self.winfo_children() if isinstance(w, tk.Toplevel)]
         for w in wins:
             try:
-                if w.state() == "iconic" or (w is self and w.state() == "withdrawn"):
+                # deiconify whatever Tk says the state is: on Tk 9 a window minimised to the Dock doesn't
+                # always report "iconic". Only dialogs PhoneKeep withdrew on purpose stay hidden.
+                if w is self or w.state() != "withdrawn":
                     w.deiconify()
                 x, y = w.winfo_x(), w.winfo_y()
                 sw, sh = w.winfo_screenwidth(), w.winfo_screenheight()
