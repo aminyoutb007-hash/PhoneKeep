@@ -153,7 +153,7 @@ try:
     if r is not None:
         note(f"{r.as_of()}: " + ", ".join(f"{c.title} {c.level}" for c in r.cards) + f"; {r.summary()}")
         # H2: the Storage details, with the suggestions worked out from the backup and the phone
-        import checkup_ui
+        import checkup, checkup_ui
         checkup_ui.details(win, "storage")
         pump(app, lambda: getattr(win, "storage_suggestions", None) is not None, 600)
         sg = getattr(win, "storage_suggestions", None)
@@ -162,6 +162,15 @@ try:
               "Storage details: suggestions largest first, each 500 MB or more with steps on the phone")
         note(f"{len(sg or [])} suggestions: " + ", ".join(s.key for s in sg or [])
              + ("; a forecast is shown" if getattr(win, "storage_forecast", None) else "; no forecast (needs 4+ backups)"))
+        # H3: the Battery details, with one point per recorded backup and tips for this model
+        checkup_ui.details(win, "battery")
+        app.update()
+        hist = [e for e in checkup.load(checkup_ui.phone_dir(win))["history"] if e.get("health") is not None]
+        check(getattr(win, "battery_today", "").startswith("Today: ") and len(getattr(win, "battery_points", [])) == len(hist)
+              and getattr(win, "battery_tips", None),
+              "Battery details: today's figures from the phone, one point per recorded backup, tips for this model")
+        note(f"{len(hist)} backups recorded so far; " + ("chart shown" if getattr(win, "battery_chart", None) else
+                                                         "chart waits for a second backup"))
 
     # -- Photos -----------------------------------------------------------------------------------------------
     win.open_app("photos")

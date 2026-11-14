@@ -265,7 +265,8 @@ def entry_from(ov, when: dt.datetime) -> Optional[dict]:
     if ov is None:
         return None
     b = ov.battery
-    e = {"when": when.isoformat(timespec="seconds"), "ios": ov.ios or None, "total": ov.total, "free": ov.free,
+    e = {"when": when.isoformat(timespec="seconds"), "ios": ov.ios or None,
+         "product_type": getattr(ov, "product_type", "") or None, "total": ov.total, "free": ov.free,
          "health": b.health, "cycles": b.cycles, "full_mah": b.full_mah, "design_mah": b.design_mah,
          "temperature": b.temperature}
     return e if any(e[k] is not None for k in ("total", "free", "health")) else None
