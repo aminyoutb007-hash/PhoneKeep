@@ -418,6 +418,9 @@ class FirstRunGuide(tk.Frame):
             self.app.s["auto_backup"] = "daily" if yes else "off"
             if yes:
                 self.app.set_start_at_login(True)                   # E2: the helper starts at login, and runs the schedule (B2)
+                if self.app.udid:                                   # B8: "yes" ticks this phone for automatic backups
+                    cur = [u for u in (self.app.s.data.get("auto_backup_phones") or []) if u != self.app.udid]
+                    self.app.s["auto_backup_phones"] = cur + [self.app.udid]
         elif key == "app_lock":
             self.app.s["app_lock"] = bool(yes)
         elif key == "wifi" and yes:

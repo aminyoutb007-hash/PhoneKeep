@@ -461,10 +461,11 @@ class PhoneWindow(tk.Toplevel):
         rr(4, 4, W - 4, H - 4, 44, "#1c1c1e")
         rr(12, 12, W - 12, H - 12, 36, "#2f6f63")
         if self.wall_img is not None:
+            # the phone's own picture already shows its time, date and island: nothing drawn over it (13 Nov)
             c.create_image(W // 2, H // 2, image=self.wall_img)
-        else:
-            c.create_text(W // 2, H // 2 + 40, text="Your wallpaper\nshows here when the\niPhone is connected",
-                          fill="#d7efe9", font=font(11), justify="center")
+            return
+        c.create_text(W // 2, H // 2 + 40, text="Your wallpaper\nshows here when the\niPhone is connected",
+                      fill="#d7efe9", font=font(11), justify="center")
         rr(W // 2 - 44, 22, W // 2 + 44, 46, 12, "#000000")             # Dynamic Island
         now = dt.datetime.now().strftime("%H:%M")
         c.create_text(46, 34, text=now, fill="white", font=font(12, "bold"))

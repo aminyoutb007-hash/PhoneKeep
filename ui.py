@@ -158,6 +158,140 @@ def app_icon(key: str, small: bool = False, size: int = 0):
     return _ICON_CACHE[k]
 
 
+class PhoneCard(tk.Canvas):
+    """B8: one reachable iPhone in the device area, drawn as a phone with its own wallpaper, its name,
+    model and iOS, and small cable / Wi-Fi and battery marks; the chosen one has a green outline and a ✓
+    (owner, 13 Nov: "can the two phones be displayed like this?")."""
+
+    W, H = 200, 306
+    PW, PH = 100, 204                     # the phone drawing (kept small so the options stay on screen)
+
+    def __init__(self, parent, name: str, model: str, ios: str, how: str, command: Callable, bg: str = None):
+        super().__init__(parent, width=self.W, height=self.H, highlightthickness=0, bd=0,
+                         bg=bg or parent.cget("bg"), cursor="hand2")
+        self.name, self.model, self.ios, self.how = name, model, ios, how
+        self.chosen = self.hover = False
+        self.wall = None
+        self.battery: Optional[dict] = None
+        self.bind("<ButtonRelease-1>", lambda e: command())
+        self.bind("<Enter>", lambda e: self._set_hover(True))
+        self.bind("<Leave>", lambda e: self._set_hover(False))
+        self._draw()
+
+    def _set_hover(self, on):
+        self.hover = on
+        self._draw()
+
+    def set(self, chosen: bool):
+        self.chosen = chosen
+        self._draw()
+
+    def set_wallpaper(self, path) -> None:
+        """Show the phone's own wallpaper inside the drawn phone (rounded to the screen)."""
+        if not path or Image is None:
+            return
+        try:
+            from PIL import ImageDraw, ImageOps
+            sw, sh = self.PW - 10, self.PH - 10
+            im = ImageOps.fit(Image.open(path).convert("RGB"), (sw, sh))
+            mask = Image.new("L", (sw, sh), 0)
+            ImageDraw.Draw(mask).rounded_rectangle((0, 0, sw - 1, sh - 1), 15, fill=255)
+            out = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+            out.paste(im, (0, 0), mask)
+            self.wall = ImageTk.PhotoImage(out)
+            self._draw()
+        except Exception:
+            pass
+
+    def set_battery(self, battery: Optional[dict]) -> None:
+        self.battery = battery
+        self._draw()
+
+    def _rr(self, x0, y0, x1, y1, r, **kw):
+        pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1,
+               x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
+        return self.create_polygon(pts, smooth=True, **kw)
+
+    # small drawn icons (the emoji looked dated): Wi-Fi arcs, a cable plug, a battery that fills to its level
+    def _wifi(self, x, cy, colour):
+        for k, r in enumerate((3, 7, 11)):
+            if k == 0:
+                self.create_oval(x + 11 - 2, cy + 4 - 2, x + 11 + 2, cy + 4 + 2, fill=colour, outline=colour)
+            else:
+                self.create_arc(x + 11 - r, cy + 4 - r, x + 11 + r, cy + 4 + r, start=45, extent=90,
+                                style="arc", outline=colour, width=2)
+        return 22
+
+    def _plug(self, x, cy, colour):
+        self.create_line(x + 5, cy - 5, x + 5, cy - 1, fill=colour, width=2)
+        self.create_line(x + 11, cy - 5, x + 11, cy - 1, fill=colour, width=2)
+        self._rr(x + 2, cy - 1, x + 14, cy + 5, 2, fill=colour, outline=colour)
+        self.create_line(x + 8, cy + 5, x + 8, cy + 8, fill=colour, width=2)
+        return 16
+
+    def _battery(self, x, cy, level: int, charging: bool):
+        w, h = 22, 11
+        self._rr(x, cy - h // 2, x + w, cy + h // 2, 3, fill="", outline=MUTED, width=1)
+        self.create_rectangle(x + w + 1, cy - 2, x + w + 3, cy + 2, fill=MUTED, outline=MUTED)
+        colour = GREEN if charging else (RED if level <= 20 else INK)
+        fw = max(1, int((w - 4) * max(0, min(100, level)) / 100))
+        self.create_rectangle(x + 2, cy - h // 2 + 2, x + 2 + fw, cy + h // 2 - 2, fill=colour, outline=colour)
+        if charging:
+            self.create_text(x + w // 2 + 1, cy, text="⚡", fill="#ffffff", font=font(7, "bold"))
+        return w + 4
+
+    def _status_row(self, cx, cy):
+        """[Wi-Fi or cable] Wi-Fi   [battery] 100%, centred."""
+        f = tkfont.Font(font=font(11))
+        how = "Wi-Fi" if self.how != "cable" else "Cable"
+        batt = self.battery if self.battery and self.battery.get("level", -1) >= 0 else None
+        width = (22 if self.how != "cable" else 16) + 5 + f.measure(how)
+        if batt:
+            width += 16 + 26 + 7 + f.measure(f"{batt['level']}%")
+        x = cx - width // 2
+        x += (self._wifi(x, cy, MUTED) if self.how != "cable" else self._plug(x, cy, MUTED)) + 5
+        t = self.create_text(x, cy, text=how, fill=MUTED, font=font(11), anchor="w")
+        x = self.bbox(t)[2] + 16
+        if batt:
+            x += self._battery(x, cy, batt["level"], bool(batt.get("charging"))) + 3
+            self.create_text(x, cy, text=f"{batt['level']}%", fill=MUTED, font=font(11), anchor="w")
+
+    def _draw(self):
+        self.delete("all")
+        W, PW, PH = self.W, self.PW, self.PH
+        H = int(self.cget("height"))
+        if self.chosen or self.hover:
+            self._rr(3, 3, W - 3, H - 3, 18, fill=GREEN_SOFT if self.chosen else "#f6f8f9",
+                     outline=GREEN if self.chosen else LINE, width=2 if self.chosen else 1)
+        x0, y0 = (W - PW) // 2, 12
+        self._rr(x0, y0, x0 + PW, y0 + PH, 20, fill="#1c1c1e")                      # the phone
+        if self.wall is not None:
+            # the phone's own picture already has its clock, island and home bar: draw nothing over it
+            # (owner, 13 Nov: "two clocks")
+            self.create_image(W // 2, y0 + PH // 2, image=self.wall)
+        else:
+            self._rr(x0 + 5, y0 + 5, x0 + PW - 5, y0 + PH - 5, 18, fill="#2f6f63")
+            self._rr(W // 2 - 17, y0 + 9, W // 2 + 17, y0 + 19, 5, fill="#000000")   # Dynamic Island
+            now = dt.datetime.now().strftime("%H:%M")
+            self.create_text(W // 2, y0 + 50, text=now, fill="white", font=font(19, "bold"))
+            self._rr(W // 2 - 26, y0 + PH - 14, W // 2 + 26, y0 + PH - 11, 1, fill="#ffffff")  # home bar
+        # text lines stacked by their real height, so a larger system font never makes them overlap
+        # (owner's Mac, 13 Nov: "looks crowded")
+        y = y0 + PH + 12
+        for text, f, colour, gap in ((self.name, font(13, "bold"), INK, 3), (self.model, font(11), MUTED, 1),
+                                     (f"iOS {self.ios}", font(11), MUTED, 8)):
+            item = self.create_text(W // 2, y, text=text, fill=colour, font=f, anchor="n", width=W - 20, justify="center")
+            y = self.bbox(item)[3] + gap
+        self._status_row(W // 2, y + 7)
+        need = y + 24
+        if int(self.cget("height")) != need:     # first draw at this font: fit the card, then draw its outline again
+            self.configure(height=need)
+            self.after_idle(self._draw)
+        if self.chosen:
+            self.create_oval(W - 32, 10, W - 12, 30, fill=GREEN, outline=GREEN)
+            self.create_text(W - 22, 20, text="✓", fill="#ffffff", font=font(11, "bold"))
+
+
 class ChoiceCard(tk.Canvas):
     """One of the "What do you want to keep?" choices: a soft rounded card with PhoneKeep's drawn icon,
     a title and one line of detail; chosen = green outline, light green fill and a ✓ badge
