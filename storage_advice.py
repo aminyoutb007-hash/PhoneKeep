@@ -131,8 +131,8 @@ def forecast(history: list, today: Optional[dt.datetime] = None) -> Optional[str
 # -- sizes from the backup ----------------------------------------------------------------------------------------
 # Each app's own database records every item's size, also when the file itself isn't in the backup (Messages in
 # iCloud leaves attachments out; WhatsApp keeps some media out). Those figures are what the iPhone counts, so they
-# come first; the files in the backup are the fallback (14 Nov, a real backup: 0.06 GB of WhatsApp files against
-# 0.13 GB in its database, and no Messages attachments folder at all).
+# come first; the files in the backup are the fallback (14 Nov, on a real backup the WhatsApp files were well
+# below what its database records, and there was no Messages attachments folder at all).
 def _db(reader, domain: str, rel: str) -> Optional[sqlite3.Connection]:
     """A database from the backup, copied (with -wal / -shm) into the reader's private folder and opened."""
     import hashlib
