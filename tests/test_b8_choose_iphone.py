@@ -156,7 +156,9 @@ try:
     a.choose_phone(B["UniqueDeviceID"])
     a.update()
     check(a.udid == B["UniqueDeviceID"] and a.dev_name.cget("text") == "Test iPhone B" and a.open_btn.enabled
-          and "Wi-Fi" in a.dev_line.cget("text"), "picking a phone makes the card and its buttons that phone's")
+          and "Wi-Fi" in a.dev_line.cget("text"), "picking a phone makes the card and its buttons that phone's"
+          f" (udid {a.udid == B['UniqueDeviceID']}, name {a.dev_name.cget('text')!r}, open {a.open_btn.enabled},"
+          f" line {a.dev_line.cget('text')!r}, busy {a.busy}, detecting {a.detecting})")
     check(a.s["chosen_udid"] == B["UniqueDeviceID"], "and the choice is remembered")
     detect()
     check(a.udid == B["UniqueDeviceID"], "looking for phones again keeps the chosen one")
