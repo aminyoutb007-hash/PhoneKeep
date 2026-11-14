@@ -601,6 +601,21 @@ def battery_state(udid: Optional[str] = None) -> Optional[dict]:
     return None
 
 
+def device_overview(udid: Optional[str] = None, apps: bool = True):
+    """V1-V3: a deviceinfo.Overview of the connected phone (read-only), or None if it couldn't be asked."""
+    import deviceinfo
+    try:
+        check_pmd3()
+        cmd = _launcher_cmd() + ["--pk-overview"] + (["--udid", udid] if udid else []) + ([] if apps else ["--no-apps"])
+        env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+        r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
+                           timeout=180, **_NOWIN)
+        raw = deviceinfo.parse_output(r.stdout)
+        return deviceinfo.from_raw(raw) if raw is not None else None
+    except Exception:
+        return None
+
+
 RESET_PASSWORD_HELP = (
     "If you don't know the backup password, your iPhone can remove it without losing anything:\n\n"
     "1. On the iPhone open Settings → General → Transfer or Reset iPhone → Reset.\n"
