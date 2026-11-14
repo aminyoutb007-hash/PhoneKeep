@@ -57,6 +57,7 @@ class Facts:
     health_history: list = field(default_factory=list)   # [(datetime, health %)], oldest first
     crashes: Optional[dict] = None                    # app name -> crashes in the last 7 days (H4)
     unexpected_restarts: Optional[int] = None         # in the last 7 days (H4)
+    self_restarts: Optional[int] = None               # iOS restarting itself (SystemMemoryReset), last 7 days: amber
     no_passcode: Optional[bool] = None                # H5
     unknown_profiles: Optional[list] = None           # names of profiles / device management not recognised
     jailbreak: Optional[list] = None                  # what was found
@@ -193,6 +194,11 @@ def stability_card(f: Facts) -> Card:
         found.append("The iPhone restarted unexpectedly " + ("once" if n == 1 else f"{n} times") + " this week. "
                      + cr.RESTART_ADVICE)
         level, slow = RED, "your iPhone restarted unexpectedly this week"
+    self_found = []
+    if f.self_restarts:
+        n = f.self_restarts
+        self_found.append("The iPhone restarted " + ("once" if n == 1 else f"{n} times") + " this week, possibly by "
+                          "itself. " + cr.SELF_RESTART_ADVICE)
     # most crashes first, so the first app over the line sets the card when no restart already made it red
     for app, n in sorted((f.crashes or {}).items(), key=lambda kv: (-kv[1], kv[0])):
         if n < t["crash_amber"]:
@@ -200,6 +206,9 @@ def stability_card(f: Facts) -> Card:
         found.append(f"{app} crashed {n} times this week. {cr.ADVICE}")
         if level == GREEN:
             level, slow = (RED if n >= t["crash_red"] else AMBER), f"{app} crashed {n} times this week"
+    found += self_found                               # after the crashes: amber at most
+    if self_found and level == GREEN:
+        level, slow = AMBER, "your iPhone restarted this week, possibly by itself"
     if level == GREEN:
         why = ("No app crashes in the last 7 days." if not any((f.crashes or {}).values())
                else f"No app crashed {t['crash_amber']} or more times in the last 7 days.")
@@ -310,20 +319,20 @@ def facts(phone_dir: Optional[Path], ov=None, now: Optional[dt.datetime] = None)
     hist = [(w, e.get("health")) for e in d["history"] if (w := _when(e)) is not None]
     import crashes as cr
     crash, restarts = cr.counts(d.get("stability"), THRESHOLDS["crash_days"])   # H4: as of the last read
+    stab = dict(crashes=crash, unexpected_restarts=restarts,
+                self_restarts=cr.self_restarts(d.get("stability"), THRESHOLDS["crash_days"]))
     sec = security_facts(d)                                                    # H5: as of the last read
     if ov is not None and entry_from(ov, now or dt.datetime.now()) is not None:
         return Facts(when=now or dt.datetime.now(), live=True, total=ov.total, free=ov.free,
-                     health=ov.battery.health, health_history=hist, crashes=crash, unexpected_restarts=restarts,
-                     **sec)
+                     health=ov.battery.health, health_history=hist, **stab, **sec)
     last = next((e for e in reversed(d["history"]) if _when(e) is not None), None)
     if last is None:
         if sec.get("ios_outdated") is None:
             return None
-        return Facts(when=now or dt.datetime.now(), crashes=crash, unexpected_restarts=restarts, **sec)
+        return Facts(when=now or dt.datetime.now(), **stab, **sec)
     w = _when(last)
     return Facts(when=w, live=False, total=last.get("total"), free=last.get("free"), health=last.get("health"),
-                 health_history=[(hw, h) for hw, h in hist if hw <= w], crashes=crash, unexpected_restarts=restarts,
-                 **sec)
+                 health_history=[(hw, h) for hw, h in hist if hw <= w], **stab, **sec)
 
 
 def security_checks(d: dict) -> list:
