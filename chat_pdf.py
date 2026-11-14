@@ -14,8 +14,8 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import re
+import shutil
 import sys
-import tempfile
 import time
 import unicodedata
 from pathlib import Path
@@ -510,7 +510,8 @@ def write_pdf(chats: list[dict], dest: Path, base: Path, app_title: str = "",
     that messages' 'media' paths are relative to."""
     _register_fonts()
     dest.parent.mkdir(parents=True, exist_ok=True)
-    work = Path(tempfile.mkdtemp(prefix="phonekeep-pdf-"))
+    import quicklook
+    work = quicklook.private_tmp("phonekeep-pdf-")
     emoji = EmojiCache(work / "emoji")
     images = _Images(work / "img")
     st = _styles()
@@ -579,7 +580,10 @@ def write_pdf(chats: list[dict], dest: Path, base: Path, app_title: str = "",
             progress(60.0 * done / total)
     if progress:
         progress(70.0)
-    doc.build(story, canvasmaker=_NumberedCanvas)
+    try:
+        doc.build(story, canvasmaker=_NumberedCanvas)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)     # the chat's photos and emoji, copied for the PDF
     if progress:
         progress(100.0)
     return dest

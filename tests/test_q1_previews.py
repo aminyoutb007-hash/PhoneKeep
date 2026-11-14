@@ -61,6 +61,19 @@ class FakeEnc:
 r._enc = FakeEnc()
 check(r.read_bytes("HomeDomain", rel, fid) == b"decrypted:" + rel.encode(),
       "an encrypted backup's file is decrypted into memory (never to disk)")
+
+
+class FakeEncBroken:
+    def extract_file_as_bytes(self, rel, domain_like=None):
+        raise MemoryError("too big to decrypt in memory")
+
+    def extract_file(self, relative_path, domain_like=None, output_filename=None):
+        Path(output_filename).write_bytes(b"from-disk:" + relative_path.encode())
+
+
+r._enc = FakeEncBroken()
+check(r.read_bytes("HomeDomain", rel, fid) == b"from-disk:" + rel.encode() and not list(ql.private_dir().glob("read-*"))
+      and "MemoryError" in r.last_error, "if decrypting in memory fails, it's decrypted to the private folder, read and removed")
 r._enc = None
 r.close()
 
@@ -82,6 +95,28 @@ class Reader:
 bps = ph.BackupPhotoSource(Reader(), HERE / "work" / "q1-cache")
 check(bps.read("DCIM/100APPLE/IMG_0001.JPG") == b"JPEGDATA" and bps.read("DCIM/none.JPG") is None,
       "a photo in a backup is read into memory")
+
+# -- a photo straight from the iPhone: if reading it whole fails, it's copied (like Save) and read from the copy --
+import asyncio, threading
+
+
+class FakeAfc:
+    async def get_file_contents(self, path):
+        raise ConnectionError("read refused")
+
+    async def pull(self, src, dest, progress_bar=False):
+        Path(dest).write_bytes(b"PHOTO:" + src.encode())
+
+
+dps = ph.DevicePhotoSource.__new__(ph.DevicePhotoSource)
+ph.PhotoSource.__init__(dps, HERE / "work" / "q1-dev")
+dps.loop = asyncio.new_event_loop()
+threading.Thread(target=dps.loop.run_forever, daemon=True).start()
+dps.afc, dps._sizes = FakeAfc(), {}
+got = dps.read("PhotoData/CPLAssets/group1/AAAA.HEIC")
+check(got == b"PHOTO:PhotoData/CPLAssets/group1/AAAA.HEIC" and not list(ql.private_dir().glob("read-*")),
+      "a photo on the iPhone that can't be read whole is copied, read and the copy removed at once")
+dps.loop.call_soon_threadsafe(dps.loop.stop)
 
 # -- the viewer ---------------------------------------------------------------------------------------------------
 ql.cleanup()
@@ -211,6 +246,52 @@ psrc = (HERE.parent / "phone.py").read_text(encoding="utf-8")
 check(psrc.count("preview=self._preview_from(getter)") == 4 and "on_preview=preview" in psrc and "quicklook.bind_space(files" in psrc
       and "phonekeep-view-" not in psrc and "phonekeep-play-" not in psrc,
       "Space previews in Photos, All files, Files from apps, voicemail, voice memos, music and books; no other temp folders")
+
+
+# -- nothing copied or decrypted off the phone outlives PhoneKeep (14 Nov: 23 decrypted backups were left behind) --
+r = wv.BackupReader(fake, None, lambda m: None)
+kept = Path(r._tmp.name)
+check(kept.parent == ql.private_dir(), "the backup reader's decrypted files are kept in the private folder")
+ql.cleanup()                                   # what PhoneKeep does when it closes, even when it quits with os._exit
+check(not kept.exists(), "so they're deleted when PhoneKeep closes, even with the reader still open")
+r.close()
+check(True, "closing the reader after that is fine")
+
+# the decryptor's own Manifest copy: replaced by ours, and usable from the window's thread (real_check, 14 Nov:
+# a PDF preview from an encrypted backup failed with "Error querying Manifest database!")
+import sqlite3, tempfile, threading
+from iphone_backup_decrypt import EncryptedBackup
+enc = object.__new__(EncryptedBackup)              # the real class and its own queries, without a real password
+own = Path(tempfile.mkdtemp())
+shutil.copy(fake / "Manifest.db", own / "Manifest.db")
+ours = ql.private_tmp("phonekeep_") / "Manifest.db"
+shutil.copy(fake / "Manifest.db", ours)
+
+
+def unlock():                                      # BackupReader unlocks on a worker; previews ask from the window
+    enc._temporary_folder, enc._temp_decrypted_manifest_db_path = str(own), str(own / "Manifest.db")
+    enc._temp_manifest_db_conn = sqlite3.connect(own / "Manifest.db")
+    wv._share_manifest(enc, ours)
+
+
+th = threading.Thread(target=unlock)
+th.start(); th.join()
+check(not own.exists(), "the decryptor's own copy of the Manifest is deleted at once")
+try:
+    fid, _plist = enc._file_metadata_from_manifest(rel, domain_like="HomeDomain")
+    check(isinstance(fid, str) and len(fid) == 40,"the decryptor answers from the window's thread")
+except Exception as e:
+    check(False, f"the decryptor answers from the window's thread ({type(e).__name__}: {e.__cause__ or e})")
+enc._temp_manifest_db_conn.close()
+ql.cleanup()
+
+t = ql.private_tmp("phonekeep-photos-")
+check(t.is_dir() and t.parent == ql.private_dir(), "photos copied off the phone go in the private folder too")
+ql.cleanup()
+for f in ("phone.py", "device.py", "chat_pdf.py", "phonekeep.py"):
+    s = (HERE.parent / f).read_text(encoding="utf-8")
+    check("mkdtemp(prefix=" not in s and 'TemporaryDirectory(prefix="phonekeep_")' not in s,
+          f"{f} makes no temporary folder outside the private folder")
 
 print("\nQ1 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

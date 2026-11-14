@@ -20,7 +20,6 @@ import queue
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import threading
 import tkinter as tk
@@ -1105,7 +1104,7 @@ class PhoneWindow(tk.Toplevel):
         def from_device():
             src = self.photo_src
             if src is None or not isinstance(src, ph.DevicePhotoSource):
-                src = ph.DevicePhotoSource(self.udid, Path(tempfile.mkdtemp(prefix="phonekeep-photos-")))
+                src = ph.DevicePhotoSource(self.udid, quicklook.private_tmp("phonekeep-photos-"))
             return src, src.items()
 
         def from_backup():
@@ -1146,6 +1145,7 @@ class PhoneWindow(tk.Toplevel):
             quicklook.Viewer(self, [quicklook.Item(i.name + (" (only in iCloud: preview)" if i.cloud_only else ""),
                                                    read=(lambda i=i: thumb(i)) if i.cloud_only else (lambda i=i: src.read(i.id)),
                                                    to_file=lambda d, i=i: src.copy(i.id, d), size=i.size,
+                                                   why=lambda: getattr(src, "last_error", None),
                                                    kind="video" if i.video else "")
                                     for i in shown], idx)
         panel = ui.PhotoPanel(self.content, src, items, select_all=False, on_open=open_one, on_preview=preview,
@@ -1168,7 +1168,7 @@ class PhoneWindow(tk.Toplevel):
             def go():
                 import photoconv
                 done = []
-                conv_tmp = Path(tempfile.mkdtemp(prefix="phonekeep-heic-"))
+                conv_tmp = quicklook.private_tmp("phonekeep-heic-")
                 try:
                     for i in chosen:
                         month = i.when.strftime("%Y-%m") if i.when.year > 1970 else "Unknown date"
@@ -1419,6 +1419,7 @@ class PhoneWindow(tk.Toplevel):
             for i in siblings:
                 _k, domain, rel, size, _mtime = meta[i]
                 items.append(quicklook.Item(Path(rel).name, read=lambda d=domain, r=rel: self.data.read(d, r),
+                                            why=lambda: getattr(self.data.reader, "last_error", None),
                                             to_file=lambda dest, d=domain, r=rel: self.data.copy(d, r, dest), size=size))
             self.allfiles_viewer = quicklook.Viewer(self, items, siblings.index(sel[0]),
                                                     on_close=lambda: tree.focus_set())
@@ -1741,7 +1742,7 @@ class PhoneWindow(tk.Toplevel):
             if e is not None and e.is_dir:
                 load(state["app"], e.path)
             elif e is not None:
-                tmp = Path(tempfile.mkdtemp(prefix="phonekeep-file-"))
+                tmp = quicklook.private_tmp("phonekeep-file-")
                 self.banner(f"Opening {e.name}…")
                 self.live_runner.submit(lambda: self.live.app_pull(state["app"], e.path, tmp) and tmp / e.name,
                                         lambda p: (self.banner(""), open_file(p)) if p else None,

@@ -83,7 +83,7 @@ def _apply_library(items: list[PhotoItem], lib, has_file=None) -> list[PhotoItem
             continue
         # not found where it should be: a DCIM file missing from the phone's folder, a file not in the backup,
         # or the library saying the original isn't on the phone ("Optimise iPhone Storage")
-        cloud = key.startswith("DCIM/") or (has_file is not None and not has_file(key))
+        cloud = key.startswith("DCIM/") or a.local is False or (has_file is not None and not has_file(key))
         name = getattr(a, "original", None) or Path(key).name       # "IMG_1234.HEIC", not the iCloud file name
         items.append(PhotoItem(key, name, 0, a.taken or dt.datetime(1970, 1, 1), a.video or ext in VID_EXT,
                                cloud_only=cloud))
@@ -304,7 +304,30 @@ class DevicePhotoSource(PhotoSource):
         return _pair_live_photos(out)
 
     def items(self) -> list[PhotoItem]:
-        return _apply_library(self._run(self._items(), timeout=3600), self.library())
+        items = _apply_library(self._run(self._items(), timeout=3600), self.library())
+        # The library says a photo is on the phone when only a smaller version is (checked on the owner's
+        # iPhone, 14 Nov: 22 of 46 such photos had no file). Look for each one; a missing file is iCloud-only.
+        todo = [i for i in items if i.id.startswith("PhotoData/") and not i.cloud_only]
+        if todo:
+            found = self._run(self._exist([i.id for i in todo]), timeout=3600)
+            for i in todo:
+                if i.id in found:
+                    self._sizes[i.id] = found[i.id]
+                    i.size = found[i.id]
+                else:
+                    i.cloud_only = True
+        return items
+
+    async def _exist(self, ids: list[str]) -> dict:
+        """{id: size} for the files that are on the phone."""
+        out = {}
+        for rid in ids:
+            try:
+                st = await _aw(self.afc.stat(rid))
+                out[rid] = int(st.get("st_size", 0))
+            except Exception:
+                pass
+        return out
 
     def _library_copy(self) -> Optional[Path]:
         dest = self.cache / "library" / "Photos.sqlite"
@@ -372,8 +395,19 @@ class DevicePhotoSource(PhotoSource):
         with self._lock:
             try:
                 return self._run(_aw(self.afc.get_file_contents(item_id)), timeout=300)
-            except Exception:
-                return None
+            except Exception as e:
+                self.last_error = f"{type(e).__name__}: {e}"
+            # fall back to copying it (the way Save does), then reading the copy and removing it at once
+            import quicklook
+            tmp = quicklook.private_dir() / ("read-" + hashlib.sha1(item_id.encode(), usedforsecurity=False).hexdigest()[:16])
+            try:
+                if self._run(self._pull(item_id, tmp)) and tmp.exists():
+                    return tmp.read_bytes()
+            except Exception as e:
+                self.last_error = f"{type(e).__name__}: {e}"
+            finally:
+                tmp.unlink(missing_ok=True)
+            return None
 
     def close(self) -> None:
         try:

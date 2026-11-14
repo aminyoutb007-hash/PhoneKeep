@@ -87,7 +87,10 @@ class LiveDevice:
 
     def __init__(self, udid: Optional[str], cache_dir: Optional[Path] = None):
         self.udid = udid
-        self.cache = Path(cache_dir or tempfile.mkdtemp(prefix="phonekeep-live-"))
+        if cache_dir is None:
+            import quicklook
+            cache_dir = quicklook.private_tmp("phonekeep-live-")     # goes when PhoneKeep closes
+        self.cache = Path(cache_dir)
         self.cache.mkdir(parents=True, exist_ok=True)
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)

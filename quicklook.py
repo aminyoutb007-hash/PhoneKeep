@@ -8,7 +8,7 @@ What's shown, and where the bytes go:
     PDFs are drawn by macOS itself (Quartz) on a Mac; on Windows a PDF opens in the PDF app from the private
     folder below, because Tk can't draw one.
   * video and audio need a file to play: they are copied to a private folder (only the user can read it),
-    played by Quick Look on a Mac or the computer's player elsewhere, and the folder is deleted when
+    played by the computer's own player (QuickTime Player on a Mac), and the folder is deleted when
     PhoneKeep closes and again at the next start in case it crashed.
 
 An Item is the name plus how to get the content: read() → bytes for what is shown from memory,
@@ -66,6 +66,7 @@ class Item:
     to_file: Optional[Callable[[Path], bool]] = None          # for video, audio and anything else
     size: Optional[int] = None
     kind: str = ""
+    why: Optional[Callable[[], Optional[str]]] = None         # why it couldn't be read, for the message
 
     def __post_init__(self):
         self.kind = self.kind or kind_of(self.name)
@@ -91,16 +92,24 @@ def private_dir() -> Path:
     return d
 
 
+def private_tmp(prefix: str) -> Path:
+    """A new folder inside the private folder, for anything copied or decrypted off the phone. It goes with the
+    private folder when PhoneKeep closes (even when it quits with os._exit) or, after a crash, when it next starts."""
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=private_dir()))
+
+
 def cleanup() -> None:
     """Delete everything previews left behind (called when PhoneKeep closes and when it starts)."""
     shutil.rmtree(_dir_path(), ignore_errors=True)
 
 
 def play(path: Path) -> None:
-    """Quick Look on a Mac (it has a scrubber), the computer's own player elsewhere."""
+    """The computer's own player (QuickTime Player on a Mac, with its scrubber)."""
     try:
         if sys.platform == "darwin":
-            subprocess.Popen(["qlmanage", "-p", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # the Mac's own app for it (QuickTime Player for video and audio). Not qlmanage: it's a debugging
+            # tool and crashed on macOS 26 (owner's Mac, 14 Nov).
+            subprocess.Popen(["open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif os.name == "nt":
             os.startfile(str(path))  # type: ignore[attr-defined]
         else:
@@ -289,7 +298,10 @@ class Viewer(tk.Toplevel):
             if in_memory:
                 data = it.read()
                 if data is None:
-                    raise FileNotFoundError("This item isn't in the backup.")
+                    why = getattr(it, "why", None)
+                    why = why() if callable(why) else why
+                    raise FileNotFoundError("PhoneKeep couldn't read it from the iPhone or the backup."
+                                            + (f"\n({why})" if why else ""))
                 if it.kind == "image" and Image is not None:
                     return "image", image_of(data, box)
                 if it.kind == "text":
@@ -353,7 +365,7 @@ class Viewer(tk.Toplevel):
                 b.bind("<Button-1>", lambda e: self.open_from_file())
                 self.status = tk.Label(self.body, text="", bg=BG, fg=MUTED, font=("Helvetica", 11))
                 self.status.pack()
-                tk.Label(self.body, text=("Plays with Quick Look." if sys.platform == "darwin" else
+                tk.Label(self.body, text=("Plays in QuickTime Player." if sys.platform == "darwin" else
                                           "Opens in the computer's own app.") +
                          " A private copy is kept only until PhoneKeep closes.",
                          bg=BG, fg=MUTED, font=("Helvetica", 11)).pack()
