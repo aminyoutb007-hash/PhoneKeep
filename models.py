@@ -30,3 +30,15 @@ def model_name(product_type: str | None) -> str:
     if product_type in IPHONES:
         return IPHONES[product_type]
     return "iPad" if product_type.startswith("iPad") else "iPhone"
+
+
+# The back's colour, from the code the phone reports as DeviceEnclosureColor. Apple publishes no list, so each
+# entry is one checked on a real phone; an unknown code shows no colour rather than a guess.
+COLOURS = {
+    ("iPhone15,3", "17"): "Deep Purple",      # checked 14 Nov 2026 on the owner's iPhone 14 Pro Max
+}
+
+
+def colour_name(product_type: str | None, enclosure_code) -> str:
+    return COLOURS.get((product_type or "", str(enclosure_code or "").strip()), "")
+

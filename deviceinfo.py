@@ -116,6 +116,9 @@ def _int(v) -> Optional[int]:
 
 
 def _colour(raw: dict) -> tuple[str, str]:
+    known = models.colour_name(raw.get("ProductType"), raw.get("DeviceEnclosureColor"))
+    if known:
+        return known, ""
     for key in ("DeviceEnclosureColor", "DeviceColor"):
         v = str(raw.get(key) or "").strip()
         if not v:

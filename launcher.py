@@ -226,6 +226,14 @@ def _pk_overview(args: list) -> None:
         async with await create_using_usbmux(serial=udid) as lockdown:
             allv = (await lockdown.get_value()) or {}
             out["info"] = {k: allv.get(k) for k in keep_info if allv.get(k) is not None}
+            for k in ("DeviceEnclosureColor", "ModelNumber"):       # not always in the full list: ask by name
+                if k not in out["info"]:
+                    try:
+                        v = await lockdown.get_value(key=k)
+                        if v is not None:
+                            out["info"][k] = v
+                    except Exception:
+                        pass
             for key, domain in (("disk", "com.apple.disk_usage"), ("battery", "com.apple.mobile.battery")):
                 try:
                     out[key] = (await lockdown.get_value(domain=domain)) or {}

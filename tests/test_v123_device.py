@@ -55,6 +55,13 @@ for t, want in ((63_000_000_000, "64 GB"), (127_800_000_000, "128 GB"), (511_000
 hexov = di.from_raw({"info": {"DeviceEnclosureColor": "#3B3B3C", "DeviceColor": "1"}})
 check(hexov.colour == "" and hexov.colour_hex == "#3b3b3c", "a colour given as a value is shown as a swatch, not a made-up name")
 check(di.from_raw({"info": {"DeviceColor": "3"}}).colour == "", "a bare colour number shows nothing rather than a guess")
+check(di.from_raw({"info": {"ProductType": "iPhone15,3", "DeviceEnclosureColor": "17", "DeviceColor": "1"}}).colour == "Deep Purple",
+      "a colour code checked on a real phone is named (iPhone 14 Pro Max, 17 → Deep Purple)")
+check(di.from_raw({"info": {"ProductType": "iPhone16,2", "DeviceEnclosureColor": "17"}}).colour == "",
+      "the same code on another model isn't assumed to mean the same colour")
+_src = (HERE.parent / "launcher.py").read_text(encoding="utf-8")
+check('for k in ("DeviceEnclosureColor", "ModelNumber")' in _src and "get_value(key=k)" in _src,
+      "the back's colour is asked for by name (the full list leaves it out on some iOS versions)")
 
 b = ov.battery
 check(b.health == round(100 * 4410 / 4832) == 91 and b.cycles == 212 and b.level == 64 and b.charging and b.temperature == 30.5,

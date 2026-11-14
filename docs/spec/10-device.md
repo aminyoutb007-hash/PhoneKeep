@@ -5,7 +5,7 @@
 **What the user sees and does:** under the phone picture in the phone window: model name ("iPhone 17 Pro Max"), colour, iOS version, capacity and free space (a bar), serial number (click to copy), battery health (V2), last backup and the lock badge.
 
 **Done when**
-- [ ] Every value matches the iPhone's Settings → General → About. *(14 Nov, owner's iPhone 14 Pro Max: model, iOS, capacity and serial match. Colour not shown yet: the phone reports a number, not a name. Follow-up.)*
+- [ ] Every value matches the iPhone's Settings → General → About. *(14 Nov, owner's iPhone 14 Pro Max: model, iOS, capacity and serial match. Colour: the phone reports a code (DeviceEnclosureColor); codes are named once checked on a real phone, starting with this one.)*
 
 ## V2. Battery health
 
