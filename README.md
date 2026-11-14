@@ -155,3 +155,15 @@ Tip: create a tag such as `v2.0.0` (Releases → Draft a new release) and the in
 - [pymobiledevice3](https://github.com/doronz88/pymobiledevice3): USB communication, backups and direct file copy
 - [iphone_backup_decrypt](https://github.com/jsharkey13/iphone_backup_decrypt): encrypted backup decryption
 - [Pillow](https://python-pillow.org) + [pillow-heif](https://github.com/bigcat88/pillow_heif): thumbnails and HEIC conversion
+
+## Licence
+
+PhoneKeep is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version
+(GPL-3.0-or-later). It comes with no warranty. The full text is in [LICENSE](LICENSE).
+
+The app also contains other people's libraries and fonts, each under its own licence; they are listed in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Both files are inside the Mac app (`PhoneKeep.app/Contents/Resources`)
+and are installed next to `PhoneKeep.exe` on Windows.
+
+"PhoneKeep" and the PhoneKeep logo are trademarks of the author. They are not licensed under the GPL.

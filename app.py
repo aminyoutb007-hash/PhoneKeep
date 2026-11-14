@@ -47,6 +47,12 @@ def _fmt_eta(seconds: float) -> str:
     return f"about {m} min left" if m < 90 else f"about {m // 60} h {m % 60:02d} min left"
 
 
+def about_lines() -> list:
+    """The About box under the name and version: what PhoneKeep does, and its licence with where the source is."""
+    return ["", "Backs up your iPhone to this computer.", "Encrypted with your backup password; never sent online.",
+            "", wv.LICENCE_LINE]
+
+
 def reveal(path: Path) -> None:
     """Show a file or folder in Finder / Explorer."""
     path = Path(path)
@@ -1454,8 +1460,7 @@ class App(_dnd_root()):
         lines = [f"{wv.APP_NAME} {wv.VERSION}"]
         if wv.BUILD_LABEL:
             lines.append(f"Test build {wv.BUILD_LABEL}")
-        lines += ["", "Backs up your iPhone to this computer.", "Encrypted with your backup password; never sent online."]
-        messagebox.showinfo(f"About {wv.APP_NAME}", "\n".join(lines), parent=self)
+        messagebox.showinfo(f"About {wv.APP_NAME}", "\n".join(lines + about_lines()), parent=self)
 
     def open_settings(self, focus: str = None):
         SettingsWindow(self, focus)

@@ -41,6 +41,7 @@ hiddenimports += ["exportfilter", "saveall_ui", "quicklook", "overview_ui", "dev
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))  # project folder
 datas += [(os.path.join(ROOT, "assets", "fonts"), os.path.join("assets", "fonts"))]   # PDF fonts (M3)
 datas += [(os.path.join(ROOT, "assets", "icons"), os.path.join("assets", "icons"))]   # app icons (tools/make_app_icons.py)
+datas += [(os.path.join(ROOT, f), ".") for f in ("LICENSE", "THIRD_PARTY_NOTICES.md")]   # GPL-3.0-or-later (Mac: Contents/Resources)
 ICON = os.path.join(SPECPATH, "icon.ico" if sys.platform == "win32" else "icon.png")
 
 a = Analysis([os.path.join(ROOT, "launcher.py")], pathex=[ROOT], binaries=binaries, datas=datas,
@@ -62,5 +63,5 @@ if sys.platform == "darwin":
                      "CFBundleVersion": "5.0.1",
                      "NSHighResolutionCapable": True,
                      "LSMinimumSystemVersion": "11.0",
-                     "NSHumanReadableCopyright": "Open source. Runs locally; nothing is uploaded.",
+                     "NSHumanReadableCopyright": "Free software under the GNU GPL v3 or later. Runs locally; nothing is uploaded.",
                  })

@@ -149,6 +149,8 @@ jobs:
           out=$(dist/PhoneKeep.app/Contents/MacOS/PhoneKeep --pk-launch-check 2>&1 | tail -5)
           echo "$out"
           echo "$out" | grep -q "PKLAUNCH ok"
+      - name: Licence check (LICENSE and THIRD_PARTY_NOTICES.md are inside the app)
+        run: python tests/test_licence.py --built dist/PhoneKeep.app
       - name: Make the .dmg (drag-to-Applications)
         run: |
           mkdir dmg
@@ -241,6 +243,8 @@ jobs:
           $out = & dist\PhoneKeep\phonekeep-cli.exe --pk-launch-check 2>&1 | Out-String
           Write-Host $out
           if ($out -notmatch "PKLAUNCH ok") { throw "The packaged app did not open its window" }
+      - name: Licence check (LICENSE and THIRD_PARTY_NOTICES.md are inside the app)
+        run: python tests\test_licence.py --built dist\PhoneKeep
       - name: Make PhoneKeep-Setup.exe
         run: |
           choco install innosetup -y --no-progress
