@@ -186,6 +186,8 @@ elif args[0] == "--pk-backup":
     print("PKPCT 100", flush=True)
 elif args[0] == "--pk-overview":
     assert "--no-apps" in args             # after a backup only storage and battery are asked, quickly
+    if Path(r"{phone_said}.dozing").exists():
+        import time; time.sleep(60)        # a Wi-Fi phone that dozed off once the backup was done
     print("PKOVERVIEW " + Path(r"{phone_said}").read_text(), flush=True)
 ''')
 wv._launcher_cmd = lambda: [sys.executable, str(stub)]
@@ -232,6 +234,35 @@ dot = hc.icon_image(None, 64, dot=True)
 check(dot.tobytes() != hc.icon_image(None, 64).tobytes() and dot.getpixel((53, 10))[3] > 0, "the dot is drawn on the icon")
 rec = json.loads((W / "Backups" / "00008030-H1TEST" / "checkup.json").read_text(encoding="utf-8"))
 check(len(rec["history"]) == 6, "every backup recorded the check-up")
+
+# the dot is worked out once per backup, not on every icon refresh (follow-up to #40)
+reads = []
+real_any_red = cu.any_red
+cu.any_red = lambda folder: (reads.append(folder), real_any_red(folder))[1]
+h._red.clear()
+for _ in range(20):                                       # the icon refreshes often
+    h.needs_attention()
+check(len(reads) == 1, f"20 icon refreshes read the phone's record once ({len(reads)})")
+phone_reports(30)
+back_up()
+check(not h.needs_attention() and len(reads) == 2, f"after the next backup it's read again, once ({len(reads)})")
+h.needs_attention()
+check(len(reads) == 2, "and kept until the backup after that")
+cu.any_red = real_any_red
+
+# a phone that dozes off after its backup doesn't hold up the end of it (follow-up to #40)
+check(wv.CHECKUP_TIMEOUT == 20, "the check-up's read after a backup waits at most 20 s")
+wv.CHECKUP_TIMEOUT = 2
+Path(str(phone_said) + ".dozing").write_text("")
+t0 = time.time()
+back_up()
+took = time.time() - t0
+rec = json.loads((W / "Backups" / "00008030-H1TEST" / "checkup.json").read_text(encoding="utf-8"))
+check(took < 15 and len(rec["history"]) == 7, f"the backup ends after the timeout ({took:.0f} s), with nothing recorded")
+Path(str(phone_said) + ".dozing").unlink()
+wv.CHECKUP_TIMEOUT = 20
+phone_reports(3)                                          # red again, for the window checks below
+back_up()
 
 # -- the screen, in a phone window: opens in under 1 second -----------------------------------------------------
 try:

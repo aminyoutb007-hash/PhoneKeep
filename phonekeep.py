@@ -354,6 +354,9 @@ def _stream_backup(cmd: list[str], log: Log, progress, seen: dict) -> tuple[int,
     return proc.wait(), tail
 
 
+CHECKUP_TIMEOUT = 20      # seconds for the check-up's read after a backup (H1)
+
+
 def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = None,
                 log: Log = _print, progress: Optional[Callable[[float], None]] = None,
                 status: Optional[Callable[[str], None]] = None,
@@ -505,7 +508,8 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
     _snaps.prune(backup_root, udid, keep=keep, until_disk_full=until_disk_full, log=log)
     try:                       # H1: the check-up's record (storage, battery) for "As of last backup" and history
         import checkup
-        checkup.record(_snaps.phone_dir(backup_root, udid), device_overview(udid, apps=False))
+        # at most 20 s: a Wi-Fi phone that dozes off once the backup is done mustn't hold up its end
+        checkup.record(_snaps.phone_dir(backup_root, udid), device_overview(udid, apps=False, timeout=CHECKUP_TIMEOUT))
     except Exception as e:     # never fails a backup that's already made
         log(f"The check-up couldn't be recorded: {type(e).__name__}: {e}")
     if progress:
@@ -606,15 +610,16 @@ def battery_state(udid: Optional[str] = None) -> Optional[dict]:
     return None
 
 
-def device_overview(udid: Optional[str] = None, apps: bool = True):
-    """V1-V3: a deviceinfo.Overview of the connected phone (read-only), or None if it couldn't be asked."""
+def device_overview(udid: Optional[str] = None, apps: bool = True, timeout: float = 180):
+    """V1-V3: a deviceinfo.Overview of the connected phone (read-only), or None if it couldn't be asked
+    within `timeout` seconds."""
     import deviceinfo
     try:
         check_pmd3()
         cmd = _launcher_cmd() + ["--pk-overview"] + (["--udid", udid] if udid else []) + ([] if apps else ["--no-apps"])
         env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
         r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
-                           timeout=180, **_NOWIN)
+                           timeout=timeout, **_NOWIN)
         raw = deviceinfo.parse_output(r.stdout)
         return deviceinfo.from_raw(raw) if raw is not None else None
     except Exception:
