@@ -183,6 +183,16 @@ try:
     check(set(sw.phone_vars) == {A["UniqueDeviceID"], B["UniqueDeviceID"]} and sw.phone_vars[A["UniqueDeviceID"]].get()
           and not sw.phone_vars[B["UniqueDeviceID"]].get(), "Settings lists each phone; a new one is not ticked")
     sw.destroy()
+    # Mac: clicking the Dock icon brings back a minimised or off-screen window
+    a.deiconify(); a.update()
+    a.iconify(); a.update()
+    a.show_all_windows(); a.update()
+    check(a.state() == "normal", f"a click on the Dock icon brings a minimised window back ({a.state()})")
+    a.geometry(f"+{a.winfo_screenwidth() + 500}+100"); a.update()
+    a.show_all_windows(); a.update()
+    check(a.winfo_x() < a.winfo_screenwidth() - 80, f"and one that ended up off the screen ({a.winfo_x()})")
+    check('createcommand("tk::mac::ReopenApplication", self.show_all_windows)' in
+          (HERE.parent / "app.py").read_text(encoding="utf-8"), "the Dock click is wired to it on a Mac")
     a.destroy()
 except tk.TclError as ex:
     print(f"(window checks skipped: no display: {ex})")
