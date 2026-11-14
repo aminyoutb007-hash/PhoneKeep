@@ -92,6 +92,12 @@ def private_dir() -> Path:
     return d
 
 
+def private_tmp(prefix: str) -> Path:
+    """A new folder inside the private folder, for anything copied or decrypted off the phone. It goes with the
+    private folder when PhoneKeep closes (even when it quits with os._exit) or, after a crash, when it next starts."""
+    return Path(tempfile.mkdtemp(prefix=prefix, dir=private_dir()))
+
+
 def cleanup() -> None:
     """Delete everything previews left behind (called when PhoneKeep closes and when it starts)."""
     shutil.rmtree(_dir_path(), ignore_errors=True)

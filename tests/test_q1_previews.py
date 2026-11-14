@@ -247,5 +247,51 @@ check(psrc.count("preview=self._preview_from(getter)") == 4 and "on_preview=prev
       and "phonekeep-view-" not in psrc and "phonekeep-play-" not in psrc,
       "Space previews in Photos, All files, Files from apps, voicemail, voice memos, music and books; no other temp folders")
 
+
+# -- nothing copied or decrypted off the phone outlives PhoneKeep (14 Nov: 23 decrypted backups were left behind) --
+r = wv.BackupReader(fake, None, lambda m: None)
+kept = Path(r._tmp.name)
+check(kept.parent == ql.private_dir(), "the backup reader's decrypted files are kept in the private folder")
+ql.cleanup()                                   # what PhoneKeep does when it closes, even when it quits with os._exit
+check(not kept.exists(), "so they're deleted when PhoneKeep closes, even with the reader still open")
+r.close()
+check(True, "closing the reader after that is fine")
+
+# the decryptor's own Manifest copy: replaced by ours, and usable from the window's thread (real_check, 14 Nov:
+# a PDF preview from an encrypted backup failed with "Error querying Manifest database!")
+import sqlite3, tempfile, threading
+from iphone_backup_decrypt import EncryptedBackup
+enc = object.__new__(EncryptedBackup)              # the real class and its own queries, without a real password
+own = Path(tempfile.mkdtemp())
+shutil.copy(fake / "Manifest.db", own / "Manifest.db")
+ours = ql.private_tmp("phonekeep_") / "Manifest.db"
+shutil.copy(fake / "Manifest.db", ours)
+
+
+def unlock():                                      # BackupReader unlocks on a worker; previews ask from the window
+    enc._temporary_folder, enc._temp_decrypted_manifest_db_path = str(own), str(own / "Manifest.db")
+    enc._temp_manifest_db_conn = sqlite3.connect(own / "Manifest.db")
+    wv._share_manifest(enc, ours)
+
+
+th = threading.Thread(target=unlock)
+th.start(); th.join()
+check(not own.exists(), "the decryptor's own copy of the Manifest is deleted at once")
+try:
+    fid, _plist = enc._file_metadata_from_manifest(rel, domain_like="HomeDomain")
+    check(isinstance(fid, str) and len(fid) == 40,"the decryptor answers from the window's thread")
+except Exception as e:
+    check(False, f"the decryptor answers from the window's thread ({type(e).__name__}: {e.__cause__ or e})")
+enc._temp_manifest_db_conn.close()
+ql.cleanup()
+
+t = ql.private_tmp("phonekeep-photos-")
+check(t.is_dir() and t.parent == ql.private_dir(), "photos copied off the phone go in the private folder too")
+ql.cleanup()
+for f in ("phone.py", "device.py", "chat_pdf.py", "phonekeep.py"):
+    s = (HERE.parent / f).read_text(encoding="utf-8")
+    check("mkdtemp(prefix=" not in s and 'TemporaryDirectory(prefix="phonekeep_")' not in s,
+          f"{f} makes no temporary folder outside the private folder")
+
 print("\nQ1 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

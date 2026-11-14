@@ -12,7 +12,7 @@ These make PhoneKeep pleasant. They never come before security or ease of use, a
 - Video and audio need a file to play: they are copied to a private temporary folder (readable only by the user) and deleted when PhoneKeep closes, and again at the next launch in case it crashed.
 
 **Done when**
-- [ ] Space previews every kind of item listed above on Mac and Windows.
+- [ ] Space previews every kind of item listed above on Mac and Windows. *(Mac: 14 Nov, `tools/real_check.py` on a real iPhone: a photo, a video, an iCloud-only photo and a PDF from an encrypted backup. Windows: deferred.)*
 
 ## Q2. Chats as on the phone
 

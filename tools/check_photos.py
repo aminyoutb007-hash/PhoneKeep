@@ -4,7 +4,7 @@ and only counts and album names are printed (no photos are copied).
 
     .venv/bin/python tools/check_photos.py
 """
-import sys, tempfile, traceback
+import shutil, sys, tempfile, traceback
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -46,3 +46,4 @@ except Exception:
     traceback.print_exc()
 finally:
     src.close()
+    shutil.rmtree(src.cache, ignore_errors=True)    # the library copied off the phone

@@ -833,6 +833,24 @@ def safe_join(base: Path, rel: str) -> Optional[Path]:
     return Path(base).joinpath(*parts)
 
 
+def _share_manifest(enc, manifest: Path) -> None:
+    """Point the decryptor at our decrypted Manifest (in the private folder) instead of its own copy.
+    Its copy sat in a folder of its own that only its __del__ removed, so every PhoneKeep that quit left one
+    behind (14 Nov: 54 of them). And its connection could only be used from the thread that unlocked the backup,
+    so a preview from the window failed with "Error querying Manifest database!". Callers hold the data lock."""
+    try:
+        own = enc._temporary_folder
+        if enc._temp_manifest_db_conn is not None:
+            enc._temp_manifest_db_conn.close()
+        enc._temp_manifest_db_conn = sqlite3.connect(str(manifest), check_same_thread=False)
+        enc._temp_decrypted_manifest_db_path = str(manifest)
+        enc._temporary_folder = None              # ours is removed with the reader's private folder
+        if own:
+            shutil.rmtree(own, ignore_errors=True)
+    except AttributeError:
+        pass                                      # a newer decryptor: keep its own copy
+
+
 class BackupReader:
     def __init__(self, path: Path | str, password: Optional[str] = None, log: Log = _print):
         self.path = Path(path)
@@ -844,7 +862,10 @@ class BackupReader:
         self._snapshot = _snaps.is_snapshot(self.path)      # blobs live in the content store (B3)
         if self._snapshot:
             _snaps.install_decrypt_hook()
-        self._tmp = tempfile.TemporaryDirectory(prefix="phonekeep_")
+        import quicklook
+        # decrypted databases: in the private folder, so they never outlive PhoneKeep (14 Nov: 23 were left behind)
+        self._tmp = tempfile.TemporaryDirectory(prefix="phonekeep_", dir=quicklook.private_dir(),
+                                                ignore_cleanup_errors=True)
         self._enc = None
         if self.encrypted:
             if not password:
@@ -861,6 +882,7 @@ class BackupReader:
                 self._enc.save_manifest_file(str(manifest))
             except Exception as e:
                 raise PhoneKeepError.from_problem(f"Could not unlock the backup: {type(e).__name__}: {e}")
+            _share_manifest(self._enc, manifest)
             self.manifest = manifest
         else:
             self.manifest = self.path / "Manifest.db"
