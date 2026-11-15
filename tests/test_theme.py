@@ -6,7 +6,10 @@ Checks:
   keep their own look and aren't checked);
 - the main button is accent with white text, a secondary button white with the border colour, and the selected row in
   sidebars and lists the pale accent;
-- the font is the system font: Segoe UI on Windows, Tk's default (San Francisco) on a Mac; body 13 pt.
+- the font is the system font: Segoe UI on Windows, Tk's default (San Francisco) on a Mac; body 13 pt;
+- window headers are light (15 Nov): card background, title in the text colour, second line in the secondary text
+  colour, header links (Settings, Refresh from iPhone, Saved files) in the accent, a 1 px border line under each; every
+  window that had the green header makes it with ui.header().
 """
 import os, re, sys
 from pathlib import Path
@@ -62,6 +65,24 @@ check(fill.upper() == "#FFFFFF" and fg == theme.TEXT, "secondary button: white w
 src = (ROOT / "ui.py").read_text(encoding="utf-8")
 check('outline = LINE if self.kind == "secondary"' in src, "secondary button: the border colour around it")
 
+check((theme.HEADER_BG, theme.HEADER_TITLE, theme.HEADER_TEXT, theme.HEADER_LINK, theme.HEADER_LINE) ==
+      (theme.CARD, theme.TEXT, theme.TEXT_2, theme.ACCENT, theme.BORDER),
+      "headers: card background, title text, secondary second line, accent links, border line")
+fill, hover, fg, _ = ui.RoundButton.COLORS["ghost"]
+check((fill, fg) == (theme.HEADER_BG, theme.HEADER_LINK), "header links: accent on the header's background")
+HEADERS = {"app.py": 2, "phone.py": 1, "ui.py": 2}          # main, Open a backup; phone; chats and photos choosers
+green_head = []
+for f, n in HEADERS.items():
+    code = (ROOT / f).read_text(encoding="utf-8")
+    made = code.count("head = ui.header(self)") + code.count("head = header(self)")
+    if made != n:
+        green_head.append(f"{f}: {made} of {n}")
+    for k, line in enumerate(code.splitlines(), 1):
+        if re.search(r"\bbg=(ui\.)?GREEN\b|theme\.ON_ACCENT_2", line):
+            green_head.append(f"{f}:{k}")
+check(not green_head, "every window that had the green header has the light one" +
+      (f": {green_head}" if green_head else ""))
+
 try:
     import tkinter as tk
     from tkinter import ttk
@@ -71,6 +92,11 @@ try:
     sel = ttk.Style(root).map("Treeview", "background")
     check(any("selected" in str(state) and str(c).upper() == theme.ACCENT_PALE for *state, c in sel),
           f"the selected row in sidebars and lists is the pale accent: {sel}")
+    head = ui.header(root)
+    kids = head.winfo_children()
+    check(head.cget("bg") == theme.HEADER_BG and len(kids) == 1 and kids[0].cget("bg") == theme.HEADER_LINE
+          and int(kids[0].cget("height")) == 1 and kids[0].pack_info()["side"] == "bottom",
+          "ui.header(): the header's background with a 1 px border line along its bottom")
     root.destroy()
 except tk.TclError as ex:
     print(f"(style check skipped: no display: {ex})")

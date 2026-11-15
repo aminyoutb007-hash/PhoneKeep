@@ -23,6 +23,11 @@ BODY_SIZE = 13                 # body text in points on a Mac (13-14); fonts are
 
 # -- derived from Direction A ----------------------------------------------------------------------------------------------
 ON_ACCENT = "#FFFFFF"          # text and ticks on the accent
+HEADER_BG = CARD               # window headers are light (Direction A, 15 Nov)
+HEADER_TITLE = TEXT
+HEADER_TEXT = TEXT_2           # a header's second line
+HEADER_LINK = ACCENT           # header links and icons (Settings, Refresh from iPhone, Saved files)
+HEADER_LINE = BORDER           # the 1 px line under a header
 ON_DARK = "#FFFFFF"            # text on a drawn phone screen or a dark badge
 ON_ACCENT_2 = ACCENT_PALE      # quieter text on the accent (a header's second line)
 ACCENT_DISABLED = "#9FCBC6"    # a main button that can't be clicked yet

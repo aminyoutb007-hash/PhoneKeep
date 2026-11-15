@@ -74,13 +74,21 @@ def setup_styles(root: tk.Misc) -> None:
 PROTECTED = "🔒 Encrypted with your backup password · never sent online"
 PROTECTED_SHORT = "🔒 Encrypted · never sent online"     # the phone window's header, where space is short
 
+def header(parent: tk.Misc) -> tk.Frame:
+    """A window's header: light, with a 1 px line along its bottom (inside it, so a banner packed after it stays
+    below the line)."""
+    head = tk.Frame(parent, bg=theme.HEADER_BG)
+    tk.Frame(head, bg=theme.HEADER_LINE, height=1).pack(side="bottom", fill="x")
+    return head
+
+
 class RoundButton(tk.Canvas):
     """A pill-shaped button: kind = primary | secondary | ghost | light."""
 
     COLORS = {
         "primary": (theme.ACCENT, theme.ACCENT_HOVER, theme.ON_ACCENT, theme.ACCENT_DISABLED),
         "secondary": (theme.CARD, theme.SECONDARY_HOVER, theme.TEXT, theme.SECONDARY_DISABLED),
-        "ghost": (theme.ACCENT, theme.ACCENT_HOVER, theme.ON_ACCENT, theme.ACCENT),
+        "ghost": (theme.HEADER_BG, theme.ACCENT_PALE, theme.HEADER_LINK, theme.HEADER_BG),   # a link in a header
         "light": (theme.ACCENT_PALE, theme.ACCENT_PALE_HOVER, theme.ACCENT_HOVER, theme.ACCENT_PALE),
     }
 
@@ -987,11 +995,11 @@ class ChatPicker(tk.Toplevel):
         self.minsize(820, 480)
         self.transient(parent)
         self.result = None
-        head = tk.Frame(self, bg=GREEN)
+        head = header(self)
         head.pack(fill="x")
-        tk.Label(head, text="Choose the chats to export", bg=GREEN, fg=theme.ON_ACCENT,
+        tk.Label(head, text="Choose the chats to export", bg=theme.HEADER_BG, fg=theme.HEADER_TITLE,
                  font=font(17, "bold")).pack(side="left", padx=18, pady=12)
-        tk.Label(head, text="Click a chat to preview it · tick the box to keep it", bg=GREEN, fg=theme.ON_ACCENT_2,
+        tk.Label(head, text="Click a chat to preview it · tick the box to keep it", bg=theme.HEADER_BG, fg=theme.HEADER_TEXT,
                  font=font(12)).pack(side="left", pady=12)
         self.panel = ChatPanel(self, lists, preview)
         self.panel.pack(fill="both", expand=True)
@@ -1445,12 +1453,12 @@ class PhotoPicker(tk.Toplevel):
         self.minsize(820, 520)
         self.transient(parent)
         self.result = None
-        head = tk.Frame(self, bg=GREEN)
+        head = header(self)
         head.pack(fill="x")
-        tk.Label(head, text="Choose the photos & videos to keep", bg=GREEN, fg=theme.ON_ACCENT,
+        tk.Label(head, text="Choose the photos & videos to keep", bg=theme.HEADER_BG, fg=theme.HEADER_TITLE,
                  font=font(17, "bold")).pack(side="left", padx=18, pady=12)
-        tk.Label(head, text=f"from {source.label} · click a photo to select or unselect it", bg=GREEN,
-                 fg=theme.ON_ACCENT_2, font=font(12)).pack(side="left", pady=12)
+        tk.Label(head, text=f"from {source.label} · click a photo to select or unselect it", bg=theme.HEADER_BG,
+                 fg=theme.HEADER_TEXT, font=font(12)).pack(side="left", pady=12)
         self.panel = PhotoPanel(self, source, items, unlock=unlock)
         self.panel.pack(fill="both", expand=True)
         RoundButton(self.panel.foot, "Continue", self._ok, "primary", 160, 40).pack(side="right")
