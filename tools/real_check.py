@@ -138,6 +138,30 @@ win = phone.PhoneWindow(app, dev, dev["UniqueDeviceID"])
 win.crashes_read = True     # the check-up reads crash reports into the phone's real folder: the H4 step reads them
                             # into the temporary folder instead
 try:
+    # -- 5.1.3: filled in fast (all but the app list), and the app list in two passes ---------------------------
+    t_open = time.time()
+    pump(app, lambda: win.overview is not None and win.wall_img is not None, 60)
+    filled = time.time() - t_open
+    check(win.overview is not None and win.wall_img is not None and filled < 5,
+          f"the window fills in (details, battery, storage, wallpaper) without the app list ({filled:.1f} s)")
+    import overview_ui
+    t_apps = time.time()
+    overview_ui.storage_view(win, win.overview)
+    pump(app, lambda: win._apps_list is not None or not win._apps_state, 30)
+    names_s = time.time() - t_apps
+    pump(app, lambda: win._apps_state != "loading", 300)
+    check(win._apps_list and names_s < 3 and win._apps_state == "done" and all(x.sized for x in win.overview.apps),
+          f"Storage: the app names first ({names_s:.1f} s), then every size ({time.time() - t_apps:.0f} s)")
+    import phoneapps
+    check(len(phoneapps.load_saved(win.udid)[0]) == len(win.overview.apps),
+          "the app list with sizes is saved for next time (in the temporary folder here)")
+    # 5.1.3: the storage question on its own (the second try when the overview's one timed out), read-only
+    t_st = time.time()
+    disk = wv.storage_values(win.udid)
+    check(disk and disk.get("TotalDataAvailable") is not None and win.storage_state == "" and win.overview.free is not None,
+          f"storage answers on its own within its limit ({time.time() - t_st:.1f} s), and the card isn't waiting")
+    win.show_home()
+
     # -- home screen ----------------------------------------------------------------------------------------
     backup_apps = [k for k, *_r, where in phone.APPS if where == "backup"]
     ok = pump(app, lambda: win.data is not None and all(k in win.counts for k in backup_apps), 300)

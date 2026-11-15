@@ -20,6 +20,7 @@ import shutil
 import sqlite3
 import tempfile
 import threading
+import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -101,11 +102,18 @@ class LiveDevice:
         self._conn_lock = threading.Lock()
         self.lockdown = None
         self.generation = 0          # counts reconnects (5.1.3)
-        self.run(self._connect(), 60)
+        import timing
+        with timing.step("live: lockdown connect"):
+            self.run(self._connect(), 60)
 
     # plumbing -----------------------------------------------------------------
+    answered_at = 0.0       # when the iPhone last answered anything (5.1.3: a storage question that timed out is
+                            # asked again then)
+
     def run(self, coro, timeout: float = 600):
-        return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
+        r = asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
+        self.answered_at = time.time()
+        return r
 
     async def _connect(self):
         from pymobiledevice3.lockdown import create_using_usbmux
@@ -184,7 +192,8 @@ class LiveDevice:
     @retry_once
     def wallpaper(self, which: str = "homescreen") -> Optional[Path]:
         """PNG of the home screen (or 'lockscreen') wallpaper, or None."""
-        with self._lock:
+        import timing
+        with self._lock, timing.step(f"live: wallpaper ({which})"):
             data = self.run(self._wallpaper(which), 60)
         if not data:
             return None
@@ -315,6 +324,34 @@ class LiveDevice:
     def copy_media(self, path: str, dest: Path, is_dir: bool = False) -> bool:
         with self._lock:
             return self.run(self._copy_media(path, dest, is_dir), 3600)
+
+    # the app list, in two passes (5.1.3): names at once, sizes a few at a time ---------------------------------
+    async def _app_names(self) -> dict[str, str]:
+        from pymobiledevice3.services.installation_proxy import InstallationProxyService
+        async with InstallationProxyService(self.lockdown) as ip:
+            found = await _aw(ip.browse(options={"ApplicationType": "User"},
+                                        attributes=["CFBundleIdentifier", "CFBundleDisplayName", "CFBundleName"]))
+        return {a["CFBundleIdentifier"]: a.get("CFBundleDisplayName") or a.get("CFBundleName") or ""
+                for a in found or [] if a.get("CFBundleIdentifier")}
+
+    def app_names(self, timeout: float = 60) -> dict[str, str]:
+        """bundle id -> name of the installed apps, without sizes (a fraction of a second over a cable)."""
+        import timing
+        with self._lock, timing.step("live: app names"):
+            return self.run(self._app_names(), timeout)
+
+    async def _app_sizes(self, bundles: list[str]) -> dict[str, tuple[int, int]]:
+        from pymobiledevice3.services.installation_proxy import InstallationProxyService
+        async with InstallationProxyService(self.lockdown) as ip:
+            apps = await _aw(ip.get_apps(application_type="User", calculate_sizes=True, bundle_identifiers=bundles))
+        return {b: (int(a.get("StaticDiskUsage") or 0), int(a.get("DynamicDiskUsage") or 0))
+                for b, a in (apps or {}).items()}
+
+    def app_sizes(self, bundles: list[str], timeout: float = 120) -> dict[str, tuple[int, int]]:
+        """bundle id -> (app bytes, data bytes) for these apps (about 1 s for 20 over a cable)."""
+        import timing
+        with self._lock, timing.step(f"live: app sizes ({len(bundles)} apps)"):
+            return self.run(self._app_sizes(bundles), timeout)
 
     # apps & their files -------------------------------------------------------
     async def _apps(self) -> list[AppInfo]:

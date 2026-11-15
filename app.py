@@ -979,13 +979,13 @@ class App(_dnd_root()):
 
     def _should_read_extra(self, udid: str) -> bool:
         extra = self._phone_extra.get(udid) or {}
-        if self.busy or (extra.get("wall") and extra.get("battery")):
+        if self.busy or ((extra.get("wall") or extra.get("no_wall")) and extra.get("battery")):
             return False
         return time.time() - extra.get("reading", 0) >= self.EXTRA_RETRY
 
     @staticmethod
     def _wallpaper_file(udid: str) -> Path:
-        return wv.DEFAULT_HOME / "cache" / "phones" / re.sub(r"[^0-9A-Za-z-]", "", udid or "x") / "wallpaper.png"
+        return wv.phone_cache(udid) / "wallpaper.png"
 
     def _saved_wallpaper(self, udid: str):
         f = self._wallpaper_file(udid)
@@ -994,7 +994,11 @@ class App(_dnd_root()):
     def _read_phone_extra(self, udid: str):
         """Wallpaper (lock screen, else home screen) and battery of one phone, for its card."""
         extra = dict(self._phone_extra.get(udid) or {})
+        d = next((x for x in getattr(self, "devices", []) if (x.get("UniqueDeviceID") or x.get("Identifier")) == udid), {})
         try:
+            if d.get("ConnectionType") == "Network":      # the wallpaper only comes over a cable: the saved copy
+                extra["wall"], extra["no_wall"] = self._saved_wallpaper(udid), True
+                raise LookupError("over Wi-Fi")
             import device as devmod
             live = devmod.LiveDevice(udid)
             try:
@@ -1008,7 +1012,8 @@ class App(_dnd_root()):
                 extra["wall"] = keep
         except Exception:
             pass
-        extra["battery"] = wv.battery_state(udid) or extra.get("battery")
+        extra["battery"] = (wv.battery_state(udid, timeout=wv.WIFI_TIMEOUT // 3) if d.get("ConnectionType") == "Network"
+                            else wv.battery_state(udid)) or extra.get("battery")
         self._phone_extra[udid] = extra
 
         def show():

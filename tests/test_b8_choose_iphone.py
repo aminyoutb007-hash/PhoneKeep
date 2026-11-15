@@ -117,6 +117,7 @@ try:
     # a phone on Wi-Fi that dozes: the first read finds nothing, a later one gets its picture, which is kept
     import device as _devmod
     reachable = {"on": False}
+    a._wallpaper_file(B["UniqueDeviceID"]).unlink(missing_ok=True)     # none kept from an earlier run
 
     class _Live:
         def __init__(self, udid, cache_dir=None):
@@ -133,7 +134,9 @@ try:
             pass
     _real_live, _real_bat = _devmod.LiveDevice, wv.battery_state
     _devmod.LiveDevice = _Live
-    wv.battery_state = lambda udid=None: {"level": 55, "charging": False} if reachable["on"] else None
+    asked_wall = []
+    _Live.wallpaper = lambda self, which="homescreen": asked_wall.append(which)
+    wv.battery_state = lambda udid=None, **k: {"level": 55, "charging": False} if reachable["on"] else None
     a._phone_extra = {}
     a._read_phone_extra(B["UniqueDeviceID"])
     check(not a._phone_extra[B["UniqueDeviceID"]].get("wall") and a._should_read_extra(B["UniqueDeviceID"]) is True,
@@ -145,10 +148,12 @@ try:
     a._read_phone_extra(B["UniqueDeviceID"])
     a.update()
     kept = a._wallpaper_file(B["UniqueDeviceID"])
-    check(kept.exists() and a._phone_extra[B["UniqueDeviceID"]]["battery"]["level"] == 55
+    check(a._phone_extra[B["UniqueDeviceID"]]["battery"]["level"] == 55 and not asked_wall and not kept.exists()
           and not a._should_read_extra(B["UniqueDeviceID"]),
-          "once it answers, its picture and battery show, and the picture is kept on disk")
-    check(str(kept).startswith(str(wv.DEFAULT_HOME)), "kept in PhoneKeep's own folder")
+          "once it answers over Wi-Fi, its battery shows; the wallpaper isn't asked for (only over a cable, 5.1.3)")
+    check(str(kept).startswith(str(wv.DEFAULT_HOME)), "a phone's picture is kept in PhoneKeep's own folder")
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    _Im.new("RGB", (300, 600), (120, 60, 160)).save(kept)          # as if saved the last time it was on the cable
     reachable["on"] = False
     a._phone_extra = {}
     detect()
