@@ -1,0 +1,74 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>PhoneKeep · Settings</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F5F5F7}
+a{color:#0F766E}a:hover{color:#0B5A54}
+</style>
+</head><body>
+
+<div style="min-height: 800px; background: #F5F5F7; font-family: Inter, system-ui, sans-serif; color: #1D1D1F; display: flex; flex-wrap: wrap">
+  <nav aria-label="Settings sections" style="flex: 0 1 240px; background: #FBFBFD; border-right: 1px solid #E5E5EA; padding: 24px 12px; display: flex; flex-direction: column; gap: 2px; box-sizing: border-box">
+    <span style="font-size: 20px; font-weight: 700; padding: 0 10px 16px">Settings</span>
+    <a href="#" style="padding: 9px 10px; border-radius: 8px; background: #E8F5F2; color: #0B5A54; text-decoration: none; font-size: 14px; font-weight: 600">Backups</a>
+    <a href="#" style="padding: 9px 10px; border-radius: 8px; color: #1D1D1F; text-decoration: none; font-size: 14px">Automatic backups</a>
+    <a href="#" style="padding: 9px 10px; border-radius: 8px; color: #1D1D1F; text-decoration: none; font-size: 14px">Security</a>
+    <a href="#" style="padding: 9px 10px; border-radius: 8px; color: #1D1D1F; text-decoration: none; font-size: 14px">Saving</a>
+    <a href="#" style="padding: 9px 10px; border-radius: 8px; color: #1D1D1F; text-decoration: none; font-size: 14px">Activity</a>
+    <a href="#" style="padding: 9px 10px; border-radius: 8px; color: #1D1D1F; text-decoration: none; font-size: 14px">About</a>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; padding: 32px 40px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px; max-width: 920px">
+    <section style="background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600">Where backups are kept</h2>
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+        <span style="width: 40px; height: 40px; border-radius: 10px; background: #F2F2F7; display: flex; align-items: center; justify-content: center; flex: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3A3A3C" stroke-width="2" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></span>
+        <div style="flex: 1 1 240px; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-size: 14px; font-weight: 500">~/PhoneKeep/Backups</span>
+          <span style="font-size: 13px; color: #6E6E73">Backups use 41 GB · 312 GB free on this disk</span>
+        </div>
+        <button style="height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid #E5E5EA; background: #FFFFFF; font: 500 13px Inter, sans-serif">Show</button>
+        <button style="height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid #E5E5EA; background: #FFFFFF; font: 500 13px Inter, sans-serif">Change…</button>
+      </div>
+    </section>
+
+    <section style="background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 14px">
+      <h2 style="margin: 0; font-size: 15px; font-weight: 600">Snapshots</h2>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+        <label for="keep" style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px; font-weight: 500">Keep the last</span><span style="font-size: 13px; color: #6E6E73">Older ones are removed; locked snapshots are always kept</span></label>
+        <select id="keep" style="height: 36px; border-radius: 8px; border: 1px solid #D2D2D7; padding: 0 8px; font: 14px Inter, sans-serif; background: #FFFFFF">
+          <option>10 snapshots</option><option>20 snapshots</option><option>Until the disk is nearly full</option>
+        </select>
+      </div>
+    </section>
+
+    <section style="background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 4px">
+      <h2 style="margin: 0 0 10px; font-size: 15px; font-weight: 600">Automatic backups</h2>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #F2F2F7">
+        <label for="auto" style="font-size: 14px">Back up every night around 21:00</label>
+        <input id="auto" type="checkbox" checked style="width: 40px; height: 22px; accent-color: #0F766E">
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #F2F2F7">
+        <label for="charge" style="font-size: 14px">Only while the iPhone is charging</label>
+        <input id="charge" type="checkbox" style="width: 40px; height: 22px; accent-color: #0F766E">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; padding: 10px 0">
+        <span style="font-size: 14px">Which iPhones</span>
+        <label style="display: flex; align-items: center; gap: 10px; font-size: 14px"><input type="checkbox" checked style="width: 18px; height: 18px; accent-color: #0F766E">Sam's iPhone <span style="color: #6E6E73">· iPhone 15 Pro</span></label>
+        <label style="display: flex; align-items: center; gap: 10px; font-size: 14px"><input type="checkbox" style="width: 18px; height: 18px; accent-color: #0F766E">Work iPhone <span style="color: #6E6E73">· iPhone 13</span></label>
+      </div>
+    </section>
+
+    <section style="background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 4px">
+      <h2 style="margin: 0 0 10px; font-size: 15px; font-weight: 600">Security</h2>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #F2F2F7">
+        <span style="display: flex; flex-direction: column; gap: 2px"><label for="lock" style="font-size: 14px">Lock PhoneKeep with Touch ID</label><span style="font-size: 13px; color: #6E6E73">Asks before showing your chats and photos</span></span>
+        <input id="lock" type="checkbox" checked style="width: 40px; height: 22px; accent-color: #0F766E">
+      </div>
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0">
+        <span style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 14px">Backup password</span><span style="font-size: 13px; color: #6E6E73">Saved in your Keychain · backups are encrypted</span></span>
+        <button style="height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid #E5E5EA; background: #FFFFFF; font: 500 13px Inter, sans-serif">Change password…</button>
+      </div>
+    </section>
+  </main>
+</div>
+</body></html>

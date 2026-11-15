@@ -1,0 +1,66 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>PhoneKeep · Checkup</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F5F5F7}
+a{color:#0F766E}a:hover{color:#0B5A54}
+</style>
+</head><body>
+
+<div style="min-height: 800px; background: #F5F5F7; font-family: Inter, system-ui, sans-serif; color: #1D1D1F; display: flex; flex-direction: column">
+  <header style="display: flex; align-items: center; gap: 16px; padding: 14px 32px; background: #FFFFFF; border-bottom: 1px solid #E5E5EA; flex-wrap: wrap">
+    <a href="Phone.dc.html" style="display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid #E5E5EA; color: #1D1D1F; text-decoration: none; font-size: 13px; font-weight: 500">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1D1D1F" stroke-width="2.2" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>Sam's iPhone
+    </a>
+    <h1 style="margin: 0; font-size: 20px; font-weight: 700">Check-up</h1>
+    <span style="font-size: 13px; color: #6E6E73">Read from the iPhone just now</span>
+  </header>
+
+  <main style="flex: 1; padding: 28px 32px; max-width: 1280px; width: 100%; box-sizing: border-box; margin: 0 auto; display: flex; flex-direction: column; gap: 24px">
+    <div style="display: flex; align-items: center; gap: 14px; background: #FFF8EB; border: 1px solid #F5D9A8; border-radius: 16px; padding: 18px 22px">
+      <span style="width: 40px; height: 40px; border-radius: 999px; background: #F59E0B; display: flex; align-items: center; justify-content: center; flex: none"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.6" aria-hidden="true"><path d="M12 7v6M12 17h0"></path></svg></span>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 18px; font-weight: 700">1 thing needs attention</span>
+        <span style="font-size: 14px; color: #5C4A1F">Storage is 88% full. Everything else looks fine.</span>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px">
+      <section style="background: #FFFFFF; border: 1px solid #E5E5EA; border-top: 4px solid #F59E0B; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; justify-content: space-between; align-items: center"><h2 style="margin: 0; font-size: 16px; font-weight: 700">Storage</h2><span style="font-size: 12px; font-weight: 600; color: #92400E; background: #FEF3C7; padding: 3px 8px; border-radius: 999px">Needs attention</span></div>
+        <span style="font-size: 28px; font-weight: 700">88% full</span>
+        <div style="height: 8px; border-radius: 999px; background: #E5E5EA; overflow: hidden"><div style="width: 88%; height: 100%; background: #F59E0B"></div></div>
+        <span style="font-size: 13px; color: #6E6E73">Free about 9 GB to get below 85%.</span>
+        <a href="#" style="font-size: 14px; font-weight: 600; text-decoration: none">See suggestions</a>
+      </section>
+      <section style="background: #FFFFFF; border: 1px solid #E5E5EA; border-top: 4px solid #22A06B; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; justify-content: space-between; align-items: center"><h2 style="margin: 0; font-size: 16px; font-weight: 700">Battery</h2><span style="font-size: 12px; font-weight: 600; color: #166534; background: #DCFCE7; padding: 3px 8px; border-radius: 999px">Good</span></div>
+        <span style="font-size: 28px; font-weight: 700">About 91%</span>
+        <svg viewBox="0 0 220 48" width="100%" height="48" role="img" aria-label="Battery health slowly falling from 95% to 91% over a year"><polyline points="4,8 50,10 96,14 142,18 188,22 216,24" fill="none" stroke="#22A06B" stroke-width="2.5"></polyline><circle cx="216" cy="24" r="4" fill="#22A06B"></circle><line x1="4" y1="44" x2="216" y2="44" stroke="#8E8E93" stroke-dasharray="4 3"></line></svg>
+        <span style="font-size: 13px; color: #6E6E73">Normal for 212 charge cycles.</span>
+        <a href="#" style="font-size: 14px; font-weight: 600; text-decoration: none">See history</a>
+      </section>
+      <section style="background: #FFFFFF; border: 1px solid #E5E5EA; border-top: 4px solid #22A06B; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; justify-content: space-between; align-items: center"><h2 style="margin: 0; font-size: 16px; font-weight: 700">Stability</h2><span style="font-size: 12px; font-weight: 600; color: #166534; background: #DCFCE7; padding: 3px 8px; border-radius: 999px">Good</span></div>
+        <span style="font-size: 28px; font-weight: 700">2 crashes</span>
+        <span style="font-size: 13px; color: #6E6E73">This week, both in one app. No unexpected restarts.</span>
+        <a href="#" style="font-size: 14px; font-weight: 600; text-decoration: none">See details</a>
+      </section>
+      <section style="background: #FFFFFF; border: 1px solid #E5E5EA; border-top: 4px solid #22A06B; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; justify-content: space-between; align-items: center"><h2 style="margin: 0; font-size: 16px; font-weight: 700">Security</h2><span style="font-size: 12px; font-weight: 600; color: #166534; background: #DCFCE7; padding: 3px 8px; border-radius: 999px">Good</span></div>
+        <span style="font-size: 28px; font-weight: 700">iOS 26.5</span>
+        <span style="font-size: 13px; color: #6E6E73">No problems found in these checks: profiles, apps from outside the App Store, signs of jailbreak.</span>
+        <a href="#" style="font-size: 14px; font-weight: 600; text-decoration: none">See details</a>
+      </section>
+    </div>
+
+    <section style="background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 16px; padding: 22px; display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap">
+      <span style="width: 44px; height: 44px; border-radius: 12px; background: #E8F5F2; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h0"></path></svg></span>
+      <div style="flex: 1 1 400px; display: flex; flex-direction: column; gap: 6px">
+        <h2 style="margin: 0; font-size: 17px; font-weight: 700">Why is my phone slow?</h2>
+        <p style="margin: 0; font-size: 15px; line-height: 1.5; color: #3A3A3C">Most likely storage: it's 88% full, and an iPhone slows down when it has little room to work. Start with the suggestions under Storage. Your battery is healthy, so it isn't holding the phone back.</p>
+      </div>
+      <button style="height: 44px; padding: 0 20px; border-radius: 12px; border: none; background: #0F766E; color: #FFFFFF; font: 600 15px Inter, sans-serif; align-self: center">Free up space</button>
+    </section>
+  </main>
+</div>
+</body></html>
