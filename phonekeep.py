@@ -623,6 +623,27 @@ def phone_cache(udid: Optional[str]) -> Path:
     return home / "cache" / "phones" / re.sub(r"[^0-9A-Za-z-]", "", udid or "x")
 
 
+def phone_picture(udid: Optional[str]) -> Path:
+    """The saved copy of a phone's home screen (the phone window's picture), shown at once in the main window and the
+    phone window, and over Wi-Fi (5.1.3). Only on this computer."""
+    return phone_cache(udid) / "homescreen.png"
+
+
+def keep_phone_picture(udid: Optional[str], src) -> Optional[Path]:
+    """Replace the saved home screen with a fresh one (quietly: never half-written). Returns the saved file."""
+    if not udid or not src:
+        return None
+    dest = phone_picture(udid)
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(".tmp")
+        shutil.copyfile(src, tmp)
+        tmp.replace(dest)
+        return dest
+    except OSError:
+        return None
+
+
 WIFI_TIMEOUT = 30          # the whole overview over Wi-Fi; each query inside it gets a few seconds (5.1.3)
 
 

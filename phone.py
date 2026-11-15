@@ -332,6 +332,9 @@ class PhoneWindow(tk.Toplevel):
         self._reload_when_connected = False
 
         self._build()
+        saved = wv.phone_picture(self.udid) if self.udid else None
+        if saved is not None and saved.exists():
+            self._set_wallpaper(saved)         # the saved home screen at once, replaced when a fresh one comes
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.show_home()
         self._connect_live()
@@ -604,18 +607,10 @@ class PhoneWindow(tk.Toplevel):
             self.live = live
             self.live_error = None
             self._update_src_line()
-            saved = wv.phone_cache(self.udid) / "wallpaper.png"
-            if self.wifi:                      # only over a cable: the saved copy from the last time (5.1.3)
-                self._set_wallpaper(saved if saved.exists() else None)
-            else:
+            if not self.wifi:                  # only over a cable; over Wi-Fi the saved copy stays (5.1.3)
                 def wall():
                     p = live.wallpaper("homescreen") or live.wallpaper("lockscreen")
-                    if p:
-                        try:
-                            saved.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copyfile(p, saved)
-                        except OSError:
-                            pass
+                    wv.keep_phone_picture(self.udid, p)
                     return p
                 self.live_runner.submit(wall, self._set_wallpaper, lambda e: None)
             if self.where is None and callable(getattr(live, "where", None)):

@@ -47,6 +47,7 @@ STEPS = [
     ("Mac window tabs: every window is made with tabs off (5.1.2)", "test_mac_tabs.py", False),
     ("Reconnect: the iPhone unplugged and plugged back in (5.1.3)", "test_reconnect.py", True),
     ("Fast overview: the window fills in without waiting for the app list; Wi-Fi asks less (5.1.3)", "test_fast_overview.py", True),
+    ("Main window: the iPhone's home screen in the small phone picture (5.1.3)", "test_main_wallpaper.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
