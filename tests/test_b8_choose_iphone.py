@@ -6,8 +6,10 @@ Done when (checked here with stand-in phones; the real two-iPhone check is on th
   Back up now) its own, and the choice is remembered.
 - "Unplugging the chosen phone does not switch the window to the other phone."  → the card says it's no longer
   connected and lists the other; nothing is chosen for the owner.
-- "With both ticked for automatic backups, the helper backs up both, one after the other."  → per-phone ticks in
-  Settings; the helper skips an unticked phone; a backup of one phone waits for another phone's backup to finish.
+- "With both ticked for automatic backups, the helper backs up both, one after the other, each named in its
+  notification."  → per-phone ticks in Settings; the helper skips an unticked phone; a backup of one phone waits for
+  another phone's backup to finish; with two invented phones both ticked, the helper's own tick backs up one, the
+  other waits, then backs it up, and each "iPhone backed up" notification names its phone.
 Also: a phone seen on both cable and Wi-Fi is listed once, as cable; with one phone nothing changes.
 """
 import datetime as dt, json, os, shutil, subprocess, sys, threading, time
@@ -258,8 +260,57 @@ check(wv.cancel_backup(), "Cancel works while waiting")
 t.join(5)
 check(out.get("r") == "cancelled", "and stops the waiting backup")
 other.kill(); other.wait()
+# -- both ticked: the helper backs up both, one after the other, each named in its notification ------------------
+# (owner, 15 Nov: checked with two invented test phones, not a second real one). The real helper's tick, with the
+# phones, the backup itself and the clock stood in: nothing talks to a phone.
+import plistlib
+W2 = W / "two" / "Backups"
+for ph in (A, B):
+    d = W2 / ph["UniqueDeviceID"] / "current" / ph["UniqueDeviceID"]
+    d.mkdir(parents=True)
+    (d / "Manifest.db").write_bytes(b"")
+    (d / "Info.plist").write_bytes(plistlib.dumps({"Device Name": ph["DeviceName"],
+                                                  "Last Backup Date": dt.datetime(2026, 11, 19, 21, 3)}))
+    (d / "Manifest.plist").write_bytes(plistlib.dumps({"IsEncrypted": True}))
+s.update(auto_backup="daily", auto_backup_hour=21, auto_backup_phones=[A["UniqueDeviceID"], B["UniqueDeviceID"]],
+         only_when_charging=False)
+hc.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+wv.list_devices = lambda: [A, B]
+real_make, real_enc = wv.make_backup, wv.backup_will_encrypt
+wv.backup_will_encrypt = lambda udid: True
+ran, inside = [], {"n": 0, "most": 0}
+
+
+def stand_in_backup(root, udid, **k):
+    """A backup that takes a moment and notes whether another one was running at the same time."""
+    inside["n"] += 1
+    inside["most"] = max(inside["most"], inside["n"])
+    ran.append(udid)
+    time.sleep(0.3)
+    inside["n"] -= 1
+wv.make_backup = stand_in_backup
+told = []
+h2 = hc.Helper(notify=lambda t, m: told.append((t, m)), backup_dir=W2)
+h2.clock = lambda: dt.datetime(2026, 11, 20, 21, 5)
+h2._refresh_at = 0
+results = []
+for _ in range(4):                                # the helper ticks every minute; here, once each backup has ended
+    results.append(h2.tick())
+    end = time.time() + 5
+    while h2.busy and time.time() < end:
+        time.sleep(0.05)
+wv.make_backup, wv.backup_will_encrypt = real_make, real_enc
+check(sorted(ran) == sorted([A["UniqueDeviceID"], B["UniqueDeviceID"]]) and len(ran) == 2,
+      f"both ticked phones are backed up once each ({results})")
+check(inside["most"] == 1 and "wait:a backup is already running" in results[0],
+      "  one after the other: while the first runs, the second waits")
+done = [m for t, m in told if t == "iPhone backed up"]
+check(len(done) == 2 and any(m.startswith("Test iPhone A ·") for m in done) and any(m.startswith("Test iPhone B ·") for m in done),
+      f"  each named in its own notification: {done}")
+check(all("backup:" not in r for r in results[2:]), "  and nothing more once both are backed up")
+
 src = (HERE.parent / "phonekeep.py").read_text(encoding="utf-8")
-check("_wait_for_other_phone(backup_root, udid" in src and "backup-running.lock" in src, "make_backup waits for another phone's backup")
+check("_wait_for_other_phone(backup_root, udid" and "backup-running.lock" in src, "make_backup waits for another phone's backup")
 
 print("\nB8 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)
