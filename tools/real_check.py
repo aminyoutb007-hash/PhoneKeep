@@ -393,6 +393,10 @@ try:
     # (so the range is shown to cut) and items inside the 30 days don't mention it (so the search is shown to cut).
     import sections as sx
     ctx = sx.Ctx(win.data.reader, WORK / "d9-read", lambda m: None, False, {})
+    try:
+        sx.load_contacts(ctx)                      # chat names and senders as the app shows them (export_all does too)
+    except Exception:
+        pass
 
     def day(when):
         if isinstance(when, (int, float)):
@@ -427,11 +431,13 @@ try:
             outside += hit and not inside
             other += inside and not hit
         return kept, outside, other
-    tested = set()
+    tested, runs = set(), [0]
 
     def d9(word, kinds, lo, hi):
-        dest = WORK / f"everything-{len(tested)}-{word}"
+        runs[0] += 1
+        dest = WORK / f"everything-{runs[0]}"
         win.last_save_all = None
+        win.bar_text.configure(text="")            # a "Couldn't" left by an earlier run mustn't end this wait
         win.save_everything({"sections": kinds, "dates": (lo, hi), "search": word, "formats": {"web", "csv"}}, dest)
         pump(app, lambda: win.last_save_all is not None or "Couldn't" in win.bar_text.cget("text"), 900)
         saved = {}
