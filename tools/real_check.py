@@ -166,9 +166,10 @@ try:
         checkup_ui.details(win, "storage")
         pump(app, lambda: getattr(win, "storage_suggestions", None) is not None, 600)
         sg = getattr(win, "storage_suggestions", None)
-        check(sg is not None and all(s.size >= 500 * 1000 ** 2 and s.steps.startswith("On the iPhone: ") for s in sg)
+        check(sg is not None and all(s.size >= 500 * 1000 ** 2                 # C1's own say "Review them in Photo clean-up"
+                                     and s.steps.startswith(("On the iPhone: ", "Review them in Photo clean-up")) for s in sg)
               and [s.size for s in sg] == sorted((s.size for s in sg), reverse=True),
-              "Storage details: suggestions largest first, each 500 MB or more with steps on the phone")
+              "Storage details: suggestions largest first, each 500 MB or more with steps on the phone or in Photo clean-up")
         note(f"{len(sg or [])} suggestions: " + ", ".join(s.key for s in sg or [])
              + ("; a forecast is shown" if getattr(win, "storage_forecast", None) else "; no forecast (needs 4+ backups)"))
         # H3: the Battery details, with one point per recorded backup and tips for this model
@@ -239,6 +240,20 @@ try:
                                                   to_file=lambda d: src.copy(photo.id, d))], 0)
             check(v.shown_kind == "image", f"Space on a photo shows it ({v.shown_kind})")
             v.close()
+            # 5.1.3, read-only and without unplugging: the watcher finds this iPhone by its UDID, and a dropped
+            # connection (stood in for) reconnects to the same iPhone and the read works
+            import reconnect as rc
+            pump(app, lambda: False, 2 * phone.WATCH_MS / 1000 + 1)
+            check(rc.where(win.udid) == "USB" and win.phone_here and win.sub.cget("text").endswith("connected by USB cable"),
+                  "the iPhone on the cable is found by its UDID and the header says so")
+            (src.cache / "full" / photo.id).unlink(missing_ok=True)
+            gen, src.afc = src.generation, rc.NotConnected()
+            data = src.read(photo.id)
+            gen_l, win.live.lockdown = win.live.generation, rc.NotConnected()
+            apps_back = win.live.apps()
+            check(bool(data) and src.generation == gen + 1 and src.udid == win.udid and apps_back
+                  and win.live.generation == gen_l + 1 and win.live.udid == win.udid,
+                  "a dropped connection reconnects to the same iPhone by itself: the photo and the app list read again")
         if video:
             v = viewer_shows(app, [quicklook.Item(video.name, to_file=lambda d: src.copy(video.id, d), kind="video")], 0)
             path = v.open_from_file(wait=True) if v.shown_kind == "play" else None

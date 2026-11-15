@@ -334,6 +334,9 @@ class Viewer(tk.Toplevel):
                 if data is None:
                     why = getattr(it, "why", None)
                     why = why() if callable(why) else why
+                    import reconnect
+                    if why == reconnect.DISCONNECTED:           # the phone went (5.1.3): just say so
+                        raise FileNotFoundError(why)
                     raise FileNotFoundError("PhoneKeep couldn't read it from the iPhone or the backup."
                                             + (f"\n({why})" if why else ""))
                 if it.kind == "image" and Image is not None:

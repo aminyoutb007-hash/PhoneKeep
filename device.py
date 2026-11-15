@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
+from reconnect import NotConnected, retry_once
+
 
 async def _aw(x):
     return await x if inspect.isawaitable(x) else x
@@ -96,7 +98,9 @@ class LiveDevice:
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
         self.thread.start()
         self._lock = threading.Lock()
+        self._conn_lock = threading.Lock()
         self.lockdown = None
+        self.generation = 0          # counts reconnects (5.1.3)
         self.run(self._connect(), 60)
 
     # plumbing -----------------------------------------------------------------
@@ -106,6 +110,28 @@ class LiveDevice:
     async def _connect(self):
         from pymobiledevice3.lockdown import create_using_usbmux
         self.lockdown = await _aw(create_using_usbmux(serial=self.udid))
+
+    def where(self) -> Optional[str]:
+        """"USB" / "Network" when this iPhone is reachable now, None when it's gone (read-only, 5.1.3)."""
+        import reconnect
+        return reconnect.where(self.udid)
+
+    def reconnect(self, seen: Optional[int] = None):
+        """A new connection to the same phone (by its UDID, never another one), after the old one dropped. `seen`:
+        the generation the caller saw fail; if another thread has reconnected since, that's kept."""
+        if not self.udid:
+            raise ConnectionError("no UDID: can't tell which iPhone to reconnect to")
+        with self._conn_lock:
+            if seen is not None and seen != self.generation:
+                return
+            old, self.lockdown = self.lockdown, NotConnected()
+            try:
+                if old is not None and not isinstance(old, NotConnected):
+                    self.run(_aw(old.close()), 5)
+            except Exception:
+                pass
+            self.run(self._connect(), 60)
+            self.generation += 1
 
     async def _afc(self):
         from pymobiledevice3.services.afc import AfcService
@@ -155,6 +181,7 @@ class LiveDevice:
         finally:
             await self._close(sb)
 
+    @retry_once
     def wallpaper(self, which: str = "homescreen") -> Optional[Path]:
         """PNG of the home screen (or 'lockscreen') wallpaper, or None."""
         with self._lock:
@@ -205,6 +232,7 @@ class LiveDevice:
         finally:
             await self._close(afc)
 
+    @retry_once
     def music(self) -> list[Track]:
         with self._lock:
             return self.run(self._music(), 1800)
@@ -250,6 +278,7 @@ class LiveDevice:
         finally:
             await self._close(afc)
 
+    @retry_once
     def books(self) -> list[Book]:
         with self._lock:
             return self.run(self._books(), 600)
@@ -282,6 +311,7 @@ class LiveDevice:
         finally:
             await self._close(afc)
 
+    @retry_once
     def copy_media(self, path: str, dest: Path, is_dir: bool = False) -> bool:
         with self._lock:
             return self.run(self._copy_media(path, dest, is_dir), 3600)
@@ -303,6 +333,7 @@ class LiveDevice:
         out.sort(key=lambda a: (not a.shares_files, a.name.lower()))
         return out
 
+    @retry_once
     def apps(self) -> list[AppInfo]:
         with self._lock:
             return self.run(self._apps(), 300)
@@ -329,6 +360,7 @@ class LiveDevice:
         finally:
             await self._close(ha)
 
+    @retry_once
     def app_list(self, bundle_id: str, path: str = "Documents") -> list[Entry]:
         with self._lock:
             return self.run(self._app_list(bundle_id, path), 300)
@@ -346,6 +378,7 @@ class LiveDevice:
         finally:
             await self._close(ha)
 
+    @retry_once
     def app_pull(self, bundle_id: str, path: str, dest_dir: Path) -> bool:
         """Copy a file or folder from an app's Documents into dest_dir."""
         with self._lock:
