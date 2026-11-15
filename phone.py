@@ -31,6 +31,7 @@ import checkup_ui
 import keychain
 import overview_ui
 import quicklook
+import reconnect
 import saveall_ui
 import phonekeep as wv
 import snapshots as sn
@@ -105,6 +106,10 @@ def unique_path(p: Path) -> Path:
         if not q.exists():
             return q
         k += 1
+
+
+LIVE_KEYS = {"photos", "music", "books", "files"}     # the sections read live from the iPhone
+WATCH_MS = 3000                                       # how often to ask whether the iPhone is still there (5.1.3)
 
 
 class Runner:
@@ -315,6 +320,11 @@ class PhoneWindow(tk.Toplevel):
         self.overview_problem = ""
         self.photos_bytes = self.messages_bytes = None
         self.info_runner = Runner(self)
+        self.phone_here = True          # 5.1.3: False while the iPhone is unplugged / out of reach
+        self.where = None               # asks whether this iPhone (by its UDID) is reachable now; set once connected
+        self.watch_runner = Runner(self)
+        self._connecting = False
+        self._reload_when_connected = False
 
         self._build()
         self.protocol("WM_DELETE_WINDOW", self.close)
@@ -333,12 +343,11 @@ class PhoneWindow(tk.Toplevel):
         self.refresh_btn = RoundButton(head, "⟳  Refresh from iPhone", self.refresh, "ghost", 210, 34, 12)
         self.refresh_btn.pack(side="right")
         tk.Label(head, text=self.name, bg=theme.HEADER_BG, fg=theme.HEADER_TITLE, font=font(19, "bold")).pack(side="left", padx=(20, 10), pady=12)
-        how = "USB cable" if self.device.get("ConnectionType") == "USB" else "Wi-Fi"
         if self.opened_backup is not None and not self.live_wanted:
             info = wv.backup_info(self.opened_backup)
             sub_text = f"backup of {info.get('date') or '?'} · iOS {info.get('ios') or '?'} · no iPhone connected"
         else:
-            sub_text = f"iOS {self.device.get('ProductVersion', '?')} · connected by {how}"
+            sub_text = self._connected_text()
         self.sub = tk.Label(head, text=sub_text, bg=theme.HEADER_BG, fg=theme.HEADER_TEXT, font=font(12))
         self.sub.pack(side="left", pady=12)
         self.lock_badge = tk.Label(head, text="", bg=theme.HEADER_BG, fg=theme.HEADER_TEXT, font=font(12, "bold"))
@@ -574,29 +583,119 @@ class PhoneWindow(tk.Toplevel):
             self.bar_frame.pack(fill="x", after=self.winfo_children()[0])
 
     # connections --------------------------------------------------------------
-    def _connect_live(self):
+    def _connect_live(self, overview: bool = True):
         if not self.udid or not self.live_wanted:
             self.live_error = "No iPhone connected"
             self._update_src_line()
             return
         import device as devmod
+        self._connecting = True
 
         def go():
             return devmod.LiveDevice(self.udid)
 
         def ok(live):
+            self._connecting = False
             self.live = live
+            self.live_error = None
             self._update_src_line()
             self.live_runner.submit(lambda: live.wallpaper("homescreen") or live.wallpaper("lockscreen"),
                                     self._set_wallpaper, lambda e: None)
+            if self.where is None and callable(getattr(live, "where", None)):
+                self.where = live.where              # only ever this iPhone's UDID
+                self.after(WATCH_MS, self._watch)
             if self.current is None:
                 self.show_home()
+            elif self._reload_when_connected and self.current in LIVE_KEYS:
+                self.open_app(self.current)          # back: reload the section that's open
+            self._reload_when_connected = False
 
         def err(e):
+            self._connecting = False
             self.live_error = describe_error(e)
             self._update_src_line()
         self.live_runner.submit(go, ok, err)
-        self._read_overview()
+        if overview:
+            self._read_overview()
+
+    # 5.1.3: the iPhone unplugged and plugged back in ---------------------------------------------------------------
+    def _watch(self):
+        """Every few seconds, ask (read-only) whether this iPhone is still reachable, and how."""
+        def again(*_a):
+            try:
+                if self.winfo_exists():
+                    self.after(WATCH_MS, self._watch)
+            except tk.TclError:
+                pass
+
+        def ok(how):
+            try:
+                self.phone_seen(how)
+            finally:
+                again()
+        self.watch_runner.submit(self.where, ok, again)     # Apple's service couldn't be asked: nothing known
+
+    def phone_seen(self, how: Optional[str]):
+        """how: "USB" / "Network" when this iPhone is reachable, None when it's gone."""
+        if how is None:
+            if self.phone_here:
+                self._phone_gone()
+            return
+        if self.phone_here and not self.device.get("ConnectionType"):
+            self.device["ConnectionType"] = how     # not known when the window opened: just say how
+            self.sub.configure(text=self._connected_text())
+        elif not self.phone_here or how != self.device.get("ConnectionType"):
+            self._phone_back(how)                  # back, or moved between the cable and Wi-Fi: a new connection
+        elif self.live is None and not self._connecting:
+            self._connect_live(overview=False)     # here, but the last try didn't connect (e.g. still locked)
+
+    def _drop_live(self):
+        """Let go of the dead connections (closed in the background: closing a dead one can take seconds)."""
+        import photos as ph
+        old = [self.live]
+        if isinstance(self.photo_src, ph.DevicePhotoSource):
+            old.append(self.photo_src)
+            self.photo_src = None
+        self.live = None
+
+        def close_all():
+            for x in old:
+                try:
+                    x and x.close()
+                except Exception:
+                    pass
+        threading.Thread(target=close_all, daemon=True).start()
+
+    def _phone_gone(self):
+        import photos as ph
+        self.phone_here = False
+        showing_live = self.current in LIVE_KEYS and (self.current != "photos"
+                                                      or isinstance(self.photo_src, ph.DevicePhotoSource))
+        self._drop_live()
+        self.live_error = reconnect.PLUG_BACK
+        self.sub.configure(text=reconnect.GONE, fg=theme.WARN_TEXT)
+        self._update_src_line()
+        if showing_live:
+            self.open_app(self.current)
+
+    def _phone_back(self, how: str):
+        self.phone_here = True
+        self.device["ConnectionType"] = how
+        self.sub.configure(text=self._connected_text(), fg=theme.HEADER_TEXT)
+        self._drop_live()
+        self.live_error = None
+        self._reload_when_connected = True
+        self._connect_live()
+
+    def _connected_text(self) -> str:
+        how = "USB cable" if self.device.get("ConnectionType") == "USB" else "Wi-Fi"
+        return f"iOS {self.device.get('ProductVersion', '?')} · connected by {how}"
+
+    def calm(self, holder, msg: str):
+        """Not an error: something to do (plug the iPhone back in). Grey, no button."""
+        for w in holder.winfo_children():
+            w.destroy()
+        tk.Label(holder, text=msg, bg=BG, fg=MUTED, font=font(14), wraplength=640, justify="center").pack(pady=(70, 12))
 
     def _read_overview(self):
         """V1-V3: ask the phone about itself (read-only) in the background, then refresh the home strip."""
@@ -856,6 +955,9 @@ class PhoneWindow(tk.Toplevel):
         holder = self.loading("Reading from the iPhone…")
         if key == "photos":
             self._load_photos(holder)
+            return
+        if not self.phone_here:
+            self.calm(holder, reconnect.PLUG_BACK)
             return
         if self.live is None:
             self.failed(holder, self.live_error or "Connecting to the iPhone… try again in a moment.",
@@ -1127,6 +1229,8 @@ class PhoneWindow(tk.Toplevel):
         def dev_err(e):
             if self.data is not None:
                 self.backup_runner.submit(from_backup, ok, lambda e2: self.failed(holder, e2))
+            elif not self.phone_here:
+                self.calm(holder, reconnect.PLUG_BACK)
             else:
                 self.failed(holder, e, ("Try again", lambda: self.open_app("photos")))
         if self.udid and self.live is not None:
@@ -1893,7 +1997,7 @@ class PhoneWindow(tk.Toplevel):
         if self.refreshing and not messagebox.askyesno(
                 wv.APP_NAME, "A backup is still running. Close anyway? It will carry on next time.", parent=self):
             return
-        for r in (self.backup_runner, self.live_runner, self.info_runner):
+        for r in (self.backup_runner, self.live_runner, self.info_runner, self.watch_runner):
             r.stop()
         if quicklook.Viewer.current is not None:
             quicklook.Viewer.current.close()

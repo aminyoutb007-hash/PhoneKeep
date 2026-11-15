@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from reconnect import Disconnected, NotConnected, is_dropped, retry_once
+
 IMG_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".dng", ".tif", ".tiff", ".bmp"}
 VID_EXT = {".mov", ".mp4", ".m4v", ".3gp", ".avi"}
 THUMB_PX = 240
@@ -303,6 +305,8 @@ class DevicePhotoSource(PhotoSource):
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
         self.thread.start()
         self.afc = None
+        self._conn_lock = threading.Lock()
+        self.generation = 0          # counts reconnects (5.1.3)
         self._run(self._connect())
         self._sizes: dict[str, int] = {}
 
@@ -315,6 +319,22 @@ class DevicePhotoSource(PhotoSource):
         lockdown = await _aw(create_using_usbmux(serial=self.udid))
         self.afc = AfcService(lockdown)
         await _aw(self.afc.__aenter__())
+
+    def reconnect(self, seen: Optional[int] = None):
+        """A new connection to the same phone (by its UDID, never another one) after the old one dropped (5.1.3)."""
+        if not self.udid:
+            raise ConnectionError("no UDID: can't tell which iPhone to reconnect to")
+        with self._conn_lock:
+            if seen is not None and seen != self.generation:
+                return                       # another read has reconnected already
+            old, self.afc = self.afc, NotConnected()
+            try:
+                if old is not None and not isinstance(old, NotConnected):
+                    self._run(_aw(old.__aexit__(None, None, None)), timeout=5)
+            except Exception:
+                pass
+            self._run(self._connect(), timeout=60)
+            self.generation += 1
 
     async def _items(self) -> list[PhotoItem]:
         out = []
@@ -332,6 +352,7 @@ class DevicePhotoSource(PhotoSource):
                 out.append(PhotoItem(rid, f, size, when.replace(tzinfo=None), ext in VID_EXT))
         return _pair_live_photos(out)
 
+    @retry_once
     def items(self) -> list[PhotoItem]:
         items = _apply_library(self._run(self._items(), timeout=3600), self.library())
         # The library says a photo is on the phone when only a smaller version is (checked on the owner's
@@ -354,8 +375,9 @@ class DevicePhotoSource(PhotoSource):
             try:
                 st = await _aw(self.afc.stat(rid))
                 out[rid] = int(st.get("st_size", 0))
-            except Exception:
-                pass
+            except Exception as e:
+                if is_dropped(e):
+                    raise
         return out
 
     def _library_copy(self) -> Optional[Path]:
@@ -377,7 +399,9 @@ class DevicePhotoSource(PhotoSource):
         except TypeError:  # older signature without progress_bar
             await self.afc.pull(src, str(dest))
             return dest.exists()
-        except Exception:
+        except Exception as e:
+            if is_dropped(e):               # a dropped connection isn't "no such file": the retry reconnects
+                raise
             return False
 
     async def _thumbnail(self, item: PhotoItem) -> Optional[Path]:
@@ -387,7 +411,9 @@ class DevicePhotoSource(PhotoSource):
         tdir = f"PhotoData/Thumbnails/V2/{item.id}"
         try:
             names = [n for n in await _aw(self.afc.listdir(tdir)) if n.lower().endswith(".jpg")]
-        except Exception:
+        except Exception as e:
+            if is_dropped(e):
+                raise
             names = []
         src = self.cache / "src" / tp.name
         if names:
@@ -401,6 +427,7 @@ class DevicePhotoSource(PhotoSource):
             return _make_thumb(full, tp)
         return None
 
+    @retry_once
     def thumbnail(self, item: PhotoItem) -> Optional[Path]:
         with self._lock:
             return self._run(self._thumbnail(item), timeout=120)
@@ -408,6 +435,7 @@ class DevicePhotoSource(PhotoSource):
     def part_size(self, item_id: str) -> int:
         return self._sizes.get(item_id, 0)
 
+    @retry_once
     def edits(self, item: PhotoItem) -> list[str]:
         if not item.edited:                       # only the library says which photos were edited: one look each
             return []
@@ -416,7 +444,9 @@ class DevicePhotoSource(PhotoSource):
         async def look():
             try:
                 names = await _aw(self.afc.listdir(folder))
-            except Exception:
+            except Exception as e:
+                if is_dropped(e):
+                    raise
                 return []
             out = []
             for n in names:
@@ -430,6 +460,7 @@ class DevicePhotoSource(PhotoSource):
         with self._lock:
             return self._run(look(), timeout=60)
 
+    @retry_once
     def copy(self, item_id: str, dest: Path) -> bool:
         size = self._sizes.get(item_id)
         if dest.exists() and dest.stat().st_size > 0 and (size is None or dest.stat().st_size == size):
@@ -443,6 +474,16 @@ class DevicePhotoSource(PhotoSource):
             return self._run(self._pull(item_id, dest))
 
     def read(self, item_id: str) -> Optional[bytes]:
+        """For the Space preview, which shows `last_error` when this returns None: after a dropped connection it's
+        the plain sentence, never the exception's name (5.1.3)."""
+        try:
+            return self._read(item_id)
+        except Exception as e:
+            self.last_error = str(e) if isinstance(e, Disconnected) else f"{type(e).__name__}: {e}"
+            return None
+
+    @retry_once
+    def _read(self, item_id: str) -> Optional[bytes]:
         full = self.cache / "full" / item_id
         if full.exists():
             return full.read_bytes()
@@ -450,6 +491,8 @@ class DevicePhotoSource(PhotoSource):
             try:
                 return self._run(_aw(self.afc.get_file_contents(item_id)), timeout=300)
             except Exception as e:
+                if is_dropped(e):
+                    raise
                 self.last_error = f"{type(e).__name__}: {e}"
             # fall back to copying it (the way Save does), then reading the copy and removing it at once
             import quicklook
@@ -458,6 +501,8 @@ class DevicePhotoSource(PhotoSource):
                 if self._run(self._pull(item_id, tmp)) and tmp.exists():
                     return tmp.read_bytes()
             except Exception as e:
+                if is_dropped(e):
+                    raise
                 self.last_error = f"{type(e).__name__}: {e}"
             finally:
                 tmp.unlink(missing_ok=True)
