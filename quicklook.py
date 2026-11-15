@@ -214,25 +214,32 @@ def pdf_pages(data: bytes, width: int, max_pages: int = 12) -> Optional[list]:
         return None
 
 
+PDFIUM_LOCK = threading.Lock()      # PDFium isn't thread-safe, even for different documents: one at a time
+
+
 def pdfium_pages(data: bytes, width: int, max_pages: int = 12) -> Optional[list]:
-    """The same with PDFium (pypdfium2), from the bytes in memory: nothing is written to disk."""
-    try:
-        import pypdfium2 as pdfium
-        doc = pdfium.PdfDocument(data)
-    except Exception:
-        return None
-    try:
-        out = []
-        for n in range(min(len(doc), max_pages)):
-            page = doc[n]
-            scale = width / max(1.0, page.get_width())
-            out.append(page.render(scale=scale).to_pil().convert("RGB"))
-            page.close()
-        return out
-    except Exception:
-        return None
-    finally:
-        doc.close()
+    """The same with PDFium (pypdfium2), from the bytes in memory: nothing is written to disk. Every PDFium call
+    holds PDFIUM_LOCK: a closed preview's worker can still be drawing when the next preview starts."""
+    with PDFIUM_LOCK:
+        try:
+            import pypdfium2 as pdfium
+            doc = pdfium.PdfDocument(data)
+        except Exception:
+            return None
+        try:
+            out = []
+            for n in range(min(len(doc), max_pages)):
+                page = doc[n]
+                try:
+                    scale = width / max(1.0, page.get_width())
+                    out.append(page.render(scale=scale).to_pil().convert("RGB"))
+                finally:
+                    page.close()
+            return out
+        except Exception:
+            return None
+        finally:
+            doc.close()
 
 
 def human(n: Optional[int]) -> str:

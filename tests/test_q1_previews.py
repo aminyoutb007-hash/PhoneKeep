@@ -167,6 +167,37 @@ try:
         got = ql.pdfium_pages(PDF, 300)
         check(got is not None and len(got) == 2 and got[0].size[0] == 300,
               "  PDFium (used off the Mac) draws them from the bytes in memory")
+        # PDFium isn't thread-safe: previews opened one after another can draw at the same time; each gets its pages
+        import threading as _th
+        res, inside, most = [], [0], [0]
+        real = ql.pdfium_pages
+
+        def one():
+            res.append(real(PDF, 200))
+        _orig_render = None
+        try:
+            import pypdfium2 as _pdfium
+            _orig_render = _pdfium.PdfPage.render
+
+            def counted(self, *a, **k):                      # how many threads are inside PDFium at once
+                inside[0] += 1
+                most[0] = max(most[0], inside[0])
+                time.sleep(0.02)
+                try:
+                    return _orig_render(self, *a, **k)
+                finally:
+                    inside[0] -= 1
+            _pdfium.PdfPage.render = counted
+            ts = [_th.Thread(target=one) for _ in range(6)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join(30)
+        finally:
+            if _orig_render is not None:
+                _pdfium.PdfPage.render = _orig_render
+        check(len(res) == 6 and all(r is not None and len(r) == 2 for r in res) and most[0] == 1,
+              f"  six previews drawing at once: each gets its 2 pages, one inside PDFium at a time (at most {most[0]})")
     items = [ql.Item("IMG_0001.HEIC", read=lambda: png((200, 30, 30)), to_file=to_file("IMG_0001.HEIC")),
              ql.Item("Notes.txt", read=lambda: "Shopping list\nbread".encode(), to_file=to_file("Notes.txt")),
              ql.Item("Manual.pdf", read=lambda: PDF, to_file=to_file("Manual.pdf", PDF)),
