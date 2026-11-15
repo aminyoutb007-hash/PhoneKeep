@@ -128,7 +128,8 @@ check(any(line.startswith("PKDISK ") and json.loads(line[7:]) == DISK for line i
 
 # -- tools/time_phone.py never leaves anything decrypted behind -------------------------------------------------------
 tool = (HERE.parent / "tools" / "time_phone.py").read_text(encoding="utf-8")
-check('"backup_dir": str(WORK / "Backups")' in tool and tool.count("BACKUPS") == 3,       # noqa: F821
+app_block = tool[tool.index("class App("):tool.index("def pump(")]
+check('"backup_dir": str(WORK / "Backups")' in app_block and "BACKUPS" not in app_block,  # noqa: F821
       "time_phone: the phone window gets an empty backups folder (no backup opened, nothing decrypted)")
 check(tool.index("quicklook.cleanup_stale()") < tool.index("import phonekeep as wv"),  # noqa: F821
       "time_phone: at start, what a run stopped outright left behind is deleted")
@@ -196,6 +197,20 @@ gate.set()
 pump(app, lambda: win.storage_state == "" and "78.0 GB free" in strip_text(win), 10, "second try")             # noqa: F821
 check(calls["storage"] == 1 and calls["limit"] == 15 and win.overview.free == 78 * G and "78.0 GB free" in strip_text(win)
       and "disk" not in win.overview.problems, "the second try (15 s) answers: the storage figures show")    # noqa: F821
+win.close()
+
+# the phone is read again while the second try is still waiting (moved between cable and Wi-Fi, or back): the newer
+# read gets its own try, and the card never stays on "waiting"
+mode["answers"], calls["storage"] = False, 0
+win = open_window()
+first = win.overview
+win._read_overview()
+pump(app, lambda: win.overview is not first, 10, "newer read")                         # noqa: F821
+gate.set()
+pump(app, lambda: calls["storage"] == 2 and win.storage_state == "failed", 15, "both tries")  # noqa: F821
+check(calls["storage"] == 2 and win.storage_state == "failed" and win.storage_try is not None
+      and overview_ui.STORAGE_NO_ANSWER in strip_text(win),
+      "read again while the second try waits: the newer read gets its own try; no answer ends in 'Try again'")  # noqa: F821
 win.close()
 
 # storage never answers

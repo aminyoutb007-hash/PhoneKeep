@@ -15,7 +15,9 @@ Read-only: nothing here writes to the phone. A different phone is never picked u
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import functools
+import time
 from typing import Callable, Optional
 
 import phonekeep as wv
@@ -30,6 +32,49 @@ DROPPED_NAMES = {"ConnectionTerminatedError", "ConnectionAbortedError", "BrokenP
                  "IncompleteReadError", "ConnectionFailedError"}
 DROPPED_WORDS = ("terminated abruptly", "connection was terminated", "broken pipe", "connection reset",
                  "connection aborted")
+
+
+def run_on(owner, coro, timeout: float):
+    """Run a coroutine on `owner.loop` (a LiveDevice or DevicePhotoSource) and wait for it. Once the owner is closed
+    (the phone went and the window let go of it) this fails at once with a dropped connection, and so do reads that
+    were still waiting then, instead of hanging until their timeout (up to 10 minutes) and showing "TimeoutError"."""
+    if getattr(owner, "closed", False):
+        if asyncio.iscoroutine(coro):
+            coro.close()
+        raise ConnectionAbortedError("the connection was closed")
+    fut = asyncio.run_coroutine_threadsafe(coro, owner.loop)
+    pending = owner.__dict__.setdefault("_pending", set())
+    pending.add(fut)
+    try:
+        r = fut.result(timeout)
+    except concurrent.futures.CancelledError:
+        raise ConnectionAbortedError("the connection was closed") from None
+    finally:
+        pending.discard(fut)
+    owner.answered_at = time.time()
+    return r
+
+
+def shut(owner, closing=None, timeout: float = 10) -> None:
+    """Close `owner`: new reads fail at once, waiting ones are cancelled, then `closing` (a coroutine: closing the
+    phone's session) gets up to `timeout` seconds, and the owner's loop stops."""
+    owner.closed = True
+
+    def cancel_all():
+        for t in asyncio.all_tasks(owner.loop):
+            t.cancel()
+    try:
+        owner.loop.call_soon_threadsafe(cancel_all)
+        if closing is not None:
+            asyncio.run_coroutine_threadsafe(closing, owner.loop).result(timeout)
+    except BaseException as e:
+        if isinstance(e, (KeyboardInterrupt, SystemExit)):
+            raise
+    finally:
+        try:
+            owner.loop.call_soon_threadsafe(owner.loop.stop)
+        except RuntimeError:
+            pass
 
 
 class NotConnected:

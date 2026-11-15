@@ -20,7 +20,6 @@ import shutil
 import sqlite3
 import tempfile
 import threading
-import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -118,11 +117,11 @@ class LiveDevice:
     # plumbing -----------------------------------------------------------------
     answered_at = 0.0       # when the iPhone last answered anything (5.1.3: a storage question that timed out is
                             # asked again then)
+    closed = False          # once closed, reads fail at once as a dropped connection (5.1.3)
 
     def run(self, coro, timeout: float = 600):
-        r = asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
-        self.answered_at = time.time()
-        return r
+        import reconnect
+        return reconnect.run_on(self, coro, timeout)
 
     async def _connect(self):
         from pymobiledevice3.lockdown import create_using_usbmux
@@ -138,6 +137,8 @@ class LiveDevice:
         the generation the caller saw fail; if another thread has reconnected since, that's kept."""
         if not self.udid:
             raise ConnectionError("no UDID: can't tell which iPhone to reconnect to")
+        if self.closed:                          # let go of by the window: a new connection is the window's job
+            raise ConnectionAbortedError("the connection was closed")
         with self._conn_lock:
             if seen is not None and seen != self.generation:
                 return
@@ -173,12 +174,10 @@ class LiveDevice:
         return dest.exists()
 
     def close(self):
-        try:
-            if self.lockdown is not None and hasattr(self.lockdown, "close"):
-                self.run(_aw(self.lockdown.close()), 10)
-        except Exception:
-            pass
-        self.loop.call_soon_threadsafe(self.loop.stop)
+        import reconnect
+        ld = self.lockdown
+        reconnect.shut(self, _aw(ld.close()) if ld is not None and not isinstance(ld, NotConnected)
+                       and hasattr(ld, "close") else None)
 
     # wallpaper ----------------------------------------------------------------
     async def _wallpaper(self, which: str) -> Optional[bytes]:
@@ -343,6 +342,7 @@ class LiveDevice:
         return {a["CFBundleIdentifier"]: a.get("CFBundleDisplayName") or a.get("CFBundleName") or ""
                 for a in found or [] if a.get("CFBundleIdentifier")}
 
+    @retry_once
     def app_names(self, timeout: float = 60) -> dict[str, str]:
         """bundle id -> name of the installed apps, without sizes (a fraction of a second over a cable)."""
         import timing
@@ -356,6 +356,7 @@ class LiveDevice:
         return {b: (int(a.get("StaticDiskUsage") or 0), int(a.get("DynamicDiskUsage") or 0))
                 for b, a in (apps or {}).items()}
 
+    @retry_once
     def app_sizes(self, bundles: list[str], timeout: float = 120) -> dict[str, tuple[int, int]]:
         """bundle id -> (app bytes, data bytes) for these apps (about 1 s for 20 over a cable)."""
         import timing
