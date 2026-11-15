@@ -354,8 +354,11 @@ class PhoneWindow(tk.Toplevel):
         head.pack(fill="x")
         # the buttons on the right are packed first, so a narrow window trims the text on the left instead of
         # drawing it over "Refresh from iPhone" (owner's Mac, 13 Nov)
+        # L1 (Direction A): Save everything is the window's main button, at the right of the header
+        self.save_all_btn = RoundButton(head, "Save everything…", self.save_everything, "primary", 180, 34, 12)
+        self.save_all_btn.pack(side="right", padx=(6, 16))
         RoundButton(head, "📂  Saved files", lambda: (self.out_root.mkdir(parents=True, exist_ok=True),
-                                                      reveal(self.out_root)), "ghost", 150, 34, 12).pack(side="right", padx=(6, 16))
+                                                      reveal(self.out_root)), "ghost", 150, 34, 12).pack(side="right", padx=(6, 0))
         self.refresh_btn = RoundButton(head, "⟳  Refresh from iPhone", self.refresh, "ghost", 210, 34, 12)
         self.refresh_btn.pack(side="right")
         tk.Label(head, text=self.name, bg=theme.HEADER_BG, fg=theme.HEADER_TITLE, font=font(19, "bold")).pack(side="left", padx=(20, 10), pady=12)
@@ -366,7 +369,7 @@ class PhoneWindow(tk.Toplevel):
             sub_text = self._connected_text()
         self.sub = tk.Label(head, text=sub_text, bg=theme.HEADER_BG, fg=theme.HEADER_TEXT, font=font(12))
         self.sub.pack(side="left", pady=12)
-        self.lock_badge = tk.Label(head, text="", bg=theme.HEADER_BG, fg=theme.HEADER_TEXT, font=font(12, "bold"))
+        self.lock_badge = tk.Label(head, text="", bg=theme.HEADER_BG, fg=theme.HEADER_LINK, font=font(12, "bold"))
         self.lock_badge.pack(side="left", padx=(14, 0), pady=12)
 
         self.bar_frame = tk.Frame(self, bg=GREEN_SOFT)
@@ -383,10 +386,9 @@ class PhoneWindow(tk.Toplevel):
         self.mock.pack(pady=(4, 8))
         self.mock.bind("<Button-1>", lambda e: self.show_home())
         self._draw_phone()
-        self.src_line = tk.Label(left, text="", bg=BG, fg=MUTED, font=font(11), justify="center", wraplength=250)
-        self.src_line.pack()
-        # B3: the timeline of snapshots. Click one to see the phone as it was then; right-click for more.
-        self.timeline = tk.Frame(left, bg=BG)
+        self.src_line, self.src_text = None, ""          # L1: shown under the tiles on the home screen
+        # B3: the snapshots, in the Snapshot card (L1). Choose one to see the phone as it was then; ⋯ for more.
+        self.timeline = tk.Frame(left, bg=CARD, highlightthickness=1, highlightbackground=LINE)
         self.timeline.pack(fill="x", pady=(10, 0))
         self.viewing = tk.Label(left, text="", bg=theme.WARN_BG, fg=theme.WARN_TEXT, font=font(11, "bold"))
         self._build_timeline()
@@ -401,13 +403,18 @@ class PhoneWindow(tk.Toplevel):
             w.destroy()
         snaps = sn.list_snapshots(self.backup_dir, self.udid) if self.udid else []
         self.snaps = snaps
+        tk.Label(self.timeline, text="SNAPSHOT", bg=CARD, fg=MUTED, font=font(11, "bold"), anchor="w").pack(
+            fill="x", padx=14, pady=(12, 4))
         if not snaps:
+            none = ("Only the latest backup so far." if self.udid and sn.has_backup(self.backup_dir, self.udid)
+                    else "None yet: the first backup makes one.")
+            tk.Label(self.timeline, text=none, bg=CARD, fg=MUTED, font=font(11),
+                     anchor="w", wraplength=230, justify="left").pack(fill="x", padx=14, pady=(0, 12))
             return
-        tk.Label(self.timeline, text="Snapshots", bg=BG, fg=INK, font=font(12, "bold"), anchor="w").pack(fill="x")
         # one drop-down list of every snapshot, newest first, and ⋯ for keep forever / rename / delete
         # (owner, 13 Nov: "the snapshots should be a drop list")
-        row = tk.Frame(self.timeline, bg=BG)
-        row.pack(fill="x", pady=(2, 0))
+        row = tk.Frame(self.timeline, bg=CARD)
+        row.pack(fill="x", padx=14, pady=(2, 0))
         current = self.snapshot.id if self.snapshot else snaps[0].id
         titles = sn.timeline_titles(snaps)
         self.snap_choices = [("🔒 " if snap.locked else "") + t + ("  (latest)" if n == 0 else "")
@@ -418,17 +425,17 @@ class PhoneWindow(tk.Toplevel):
         self.snap_box.pack(side="left")
         self.snap_box.bind("<<ComboboxSelected>>",
                            lambda e: self.open_snapshot(snaps[self.snap_choices.index(self.snap_var.get())]))
-        more = tk.Label(row, text="⋯", bg=CARD, fg=INK, font=font(14, "bold"), padx=8, cursor="hand2")
+        more = tk.Label(row, text="⋯", bg=theme.SECONDARY_HOVER, fg=INK, font=font(14, "bold"), padx=8, cursor="hand2")
         more.pack(side="left", padx=(6, 0))
         sel = lambda: snaps[self.snap_choices.index(self.snap_var.get())]
         more.bind("<Button-1>", lambda e: self._snapshot_menu(e, sel()))
         tk.Label(self.timeline, text=f"{len(snaps)} snapshot{'s' if len(snaps) != 1 else ''} · ⋯ for keep, rename, delete",
-                 bg=BG, fg=MUTED, font=font(10), anchor="w").pack(fill="x", pady=(2, 0))
+                 bg=CARD, fg=MUTED, font=font(10), anchor="w").pack(fill="x", padx=14, pady=(4, 0))
         detail = self.snapshot or snaps[0]
         size = f"{detail.size / 1e9:.1f} GB" if detail.size >= 1e9 else f"{detail.size / 1e6:.1f} MB"
         tk.Label(self.timeline, text=f"{detail.when.strftime('%d %b %Y %H:%M').lstrip('0')} · {size} · iOS {detail.ios or '?'} · "
                                      + ("🔒 encrypted" if detail.encrypted else "not encrypted"),
-                 bg=BG, fg=MUTED, font=font(10), anchor="w", wraplength=250, justify="left").pack(fill="x", pady=(2, 0))
+                 bg=CARD, fg=MUTED, font=font(10), anchor="w", wraplength=230, justify="left").pack(fill="x", padx=14, pady=(2, 12))
 
     def open_snapshot(self, snap: Optional[sn.Snapshot]):
         """Show the phone as it was at that snapshot (None = the latest)."""
@@ -539,7 +546,12 @@ class PhoneWindow(tk.Toplevel):
             parts.append("Photos, music, books & files: live from the iPhone")
         elif self.live_error:
             parts.append("iPhone not reachable: photos come from the backup")
-        self.src_line.configure(text="\n\n".join(parts))
+        self.src_text = ". ".join(parts) + "."
+        try:
+            if self.src_line is not None:
+                self.src_line.configure(text=self.src_text)
+        except tk.TclError:                    # the home screen isn't showing
+            self.src_line = None
 
     def passcode_notice(self, text):
         """The iPhone waits for its passcode: say so big at the top and bring this window forward."""
@@ -954,48 +966,50 @@ class PhoneWindow(tk.Toplevel):
             w.destroy()
 
     def show_home(self):
+        """L1 (Direction A): the three cards, then "What's on this iPhone" as tiles in four columns, then where the
+        data comes from."""
         self.current = None
         self._clear()
-        trow = tk.Frame(self.content, bg=BG)
-        trow.pack(fill="x")
-        # D9: one place to save everything, with one date range and one search
-        self.save_all_btn = RoundButton(trow, "⤓  Save everything…", self.save_everything, "secondary", 190, 34, 12)
-        self.save_all_btn.pack(side="right")
-        tk.Label(trow, text="Your iPhone", bg=BG, fg=INK, font=font(20, "bold"), anchor="w").pack(side="left")
-        tk.Label(self.content, text="Click an app to see what's in it, preview it and save what you want.",
-                 bg=BG, fg=MUTED, font=font(13), anchor="w").pack(fill="x", pady=(2, 12))
         if self.udid and self.live_wanted:          # V1-V3: about this iPhone, its battery and storage
             last = ""
             if self.backup_path is not None and (Path(self.backup_path) / "Manifest.db").exists():
                 last = f"Last backup {wv.backup_info(self.backup_path).get('date') or '?'}"
             self.overview_strip = overview_ui.cards(self, self.content, self.overview, last, self.overview_problem)
-            self.overview_strip.pack(fill="x", pady=(0, 14))
+            self.overview_strip.pack(fill="x", pady=(0, 18))
+        tk.Label(self.content, text="What's on this iPhone", bg=BG, fg=INK, font=font(19, "bold"), anchor="w").pack(
+            fill="x", pady=(0, 10))
         grid = tk.Frame(self.content, bg=BG)
-        grid.pack(fill="both", expand=True)
-        self.tile_count = {}
-        cols = 5
+        grid.pack(fill="x")
+        self.tile_count, self.tiles = {}, {}
+        cols = 4
         for i, (key, label, icon, colour, where) in enumerate(APPS):
-            t = tk.Frame(grid, bg=BG, cursor="hand2")
-            t.grid(row=i // cols, column=i % cols, padx=10, pady=10, sticky="n")
-            cv = tk.Canvas(t, width=92, height=92, bg=BG, highlightthickness=0, cursor="hand2")
-            cv.pack()
-            img = app_icon(key)
+            t = tk.Frame(grid, bg=CARD, highlightthickness=1, highlightbackground=LINE, cursor="hand2")
+            t.grid(row=i // cols, column=i % cols, padx=5, pady=5, sticky="nsew")
+            img = app_icon(key, size=48)
             if img is not None:
-                cv.create_image(46, 46, image=img)
+                ic = tk.Label(t, image=img, bg=CARD, cursor="hand2")
             else:
-                pts = [8 + 22, 8, 84 - 22, 8, 84, 8, 84, 8 + 22, 84, 84 - 22, 84, 84, 84 - 22, 84,
-                       8 + 22, 84, 8, 84, 8, 84 - 22, 8, 8 + 22, 8, 8]
-                cv.create_polygon(pts, smooth=True, fill=colour, outline=LINE if colour.lower() == theme.CARD.lower() else "")
-                cv.create_text(46, 46, text=icon, font=font(34))
-            tk.Label(t, text=label, bg=BG, fg=INK, font=font(12, "bold"), wraplength=120).pack()
-            cl = tk.Label(t, text="", bg=BG, fg=MUTED, font=font(11))
-            cl.pack()
-            self.tile_count[key] = cl
-            for w in (t, cv, cl) + tuple(x for x in t.winfo_children() if isinstance(x, tk.Label)):
+                ic = tk.Label(t, text=icon, bg=CARD, font=font(26), cursor="hand2")
+            ic.pack(side="left", padx=(12, 10), pady=10)
+            words = tk.Frame(t, bg=CARD, cursor="hand2")
+            words.pack(side="left", fill="x", expand=True, padx=(0, 10))
+            tk.Label(words, text=label, bg=CARD, fg=INK, font=font(13, "bold"), anchor="w", justify="left",
+                     cursor="hand2").pack(fill="x")
+            words.bind("<Configure>", lambda e, w=words: [c.configure(wraplength=max(60, e.width))
+                                                          for c in w.winfo_children()], add="+")
+            cl = tk.Label(words, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w", cursor="hand2")
+            cl.pack(fill="x")
+            self.tile_count[key], self.tiles[key] = cl, t
+            for w in (t, ic, words, cl) + tuple(words.winfo_children()):
                 w.bind("<Button-1>", lambda e, k=key: self.open_app(k))
+                w.bind("<Enter>", lambda e, f=t: f.configure(highlightbackground=theme.BORDER_HOVER))
+                w.bind("<Leave>", lambda e, f=t: f.configure(highlightbackground=LINE))
             self._paint_count(key)
         for c in range(cols):
-            grid.columnconfigure(c, weight=1)
+            grid.columnconfigure(c, weight=1, uniform="tiles")
+        self.src_line = tk.Label(self.content, text=self.src_text, bg=BG, fg=MUTED, font=font(11), anchor="w",
+                                 justify="left", wraplength=760)
+        self.src_line.pack(fill="x", pady=(12, 0))
 
     def _paint_count(self, key):
         lab = getattr(self, "tile_count", {}).get(key)
