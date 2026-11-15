@@ -210,6 +210,13 @@ def apps_note(ov: di.Overview) -> str:
 
 
 def storage_view(win, ov: di.Overview):
+    # V6: while app sizes arrive the screen is rebuilt every 2 s; the apps list keeps where it was scrolled to
+    was = getattr(win, "apps_canvas", None)
+    try:
+        keep = was.yview()[0] if was is not None and win.current == "storage" and was.winfo_exists() else 0.0
+    except tk.TclError:
+        keep = 0.0
+    win.apps_canvas = None
     win.current = "storage"
     win._clear()
     _header(win, "Storage", f"{ov.model} · {ov.capacity_label()}")
@@ -295,3 +302,7 @@ def storage_view(win, ov: di.Overview):
                      wraplength=360).pack(anchor="w")
             win.app_rows.append(a.name)
             win.app_tips.append(tip)
+        if keep:                                        # put it back once the list has its full size
+            canvas.update_idletasks()
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.yview_moveto(keep)
