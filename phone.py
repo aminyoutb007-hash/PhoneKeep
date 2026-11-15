@@ -335,6 +335,7 @@ class PhoneWindow(tk.Toplevel):
         self.storage_state = ""             # "" / "waiting" (asked again) / "failed" (no answer, "Try again")
         self._storage_failed_at = 0.0
         self._storage_tick_id = None
+        self._storage_for = None            # the overview the running second try is for
         self._connecting = False
         self._reload_when_connected = False
 
@@ -745,13 +746,16 @@ class PhoneWindow(tk.Toplevel):
         """5.1.3: the storage question had no answer (over Wi-Fi a locked or dozing iPhone can hold it back): ask it
         once more on its own, in the background, with a longer limit. Read-only. Meanwhile the card says it's
         waiting; if there's still no answer it says so, with "Try again"."""
-        if self.storage_state == "waiting" or self.overview is None or not self.udid:
+        if self.overview is None or not self.udid:
             return
+        if self.storage_state == "waiting" and self._storage_for is self.overview:
+            return                                  # already asking for this read of the phone
         self._storage_tick_cancel()
         self.storage_state = "waiting"
         if show:
             self._storage_refresh()
         udid, ov = self.udid, self.overview
+        self._storage_for = ov                      # a newer read of the phone (reconnected) gets its own try
 
         def ok(disk):
             if disk is None:
@@ -2148,6 +2152,7 @@ class PhoneWindow(tk.Toplevel):
         for r in (self.backup_runner, self.live_runner, self.info_runner, self.apps_runner, self.watch_runner,
                   self.storage_runner):
             r.stop()
+        self._storage_tick_cancel()
         if quicklook.Viewer.current is not None:
             quicklook.Viewer.current.close()
         for x in (self.data, self.live, self.photo_src):
