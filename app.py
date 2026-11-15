@@ -294,17 +294,17 @@ class App(_dnd_root()):
 
     # ------------------------------------------------------------------ layout
     def _build(self):
-        head = tk.Frame(self, bg=GREEN)
+        head = ui.header(self)
         head.pack(fill="x")
-        tk.Label(head, text="PhoneKeep", bg=GREEN, fg=theme.ON_ACCENT, font=font(21, "bold")).pack(side="left", padx=(22, 10), pady=14)
+        tk.Label(head, text="PhoneKeep", bg=theme.HEADER_BG, fg=theme.HEADER_TITLE, font=font(21, "bold")).pack(side="left", padx=(22, 10), pady=14)
         # right-hand items first, so a narrow window trims the tagline instead of overlapping it; a test build
         # shows "· test build" here and its full label in About (13 Nov: the long label ran over the tagline)
         ui.RoundButton(head, "⚙  Settings", self.open_settings, "ghost", 130, 34, 13).pack(side="right", padx=16)
-        ver = tk.Label(head, text=f"v{wv.VERSION}" + (" · test build" if wv.BUILD_LABEL else ""), bg=GREEN,
-                       fg=theme.ON_ACCENT_2, font=font(11), cursor="hand2")
+        ver = tk.Label(head, text=f"v{wv.VERSION}" + (" · test build" if wv.BUILD_LABEL else ""), bg=theme.HEADER_BG,
+                       fg=theme.HEADER_TEXT, font=font(11), cursor="hand2")
         ver.pack(side="right", padx=(0, 4))
         ver.bind("<Button-1>", lambda e: self.open_about())
-        tk.Label(head, text="Back up your iPhone to this computer", bg=GREEN, fg=theme.ON_ACCENT_2,
+        tk.Label(head, text="Back up your iPhone to this computer", bg=theme.HEADER_BG, fg=theme.HEADER_TEXT,
                  font=font(13)).pack(side="left", pady=14)
 
         # problem banner (E3): one sentence, one button, Show details. Packed only when needed.
@@ -1598,9 +1598,9 @@ class OpenBackupDialog(tk.Toplevel):
         self.title("Open a backup")
         self.geometry("640x460")
         self.transient(app)
-        head = tk.Frame(self, bg=GREEN)
+        head = ui.header(self)
         head.pack(fill="x")
-        tk.Label(head, text="Open a backup", bg=GREEN, fg=theme.ON_ACCENT, font=font(17, "bold")).pack(side="left", padx=18, pady=12)
+        tk.Label(head, text="Open a backup", bg=theme.HEADER_BG, fg=theme.HEADER_TITLE, font=font(17, "bold")).pack(side="left", padx=18, pady=12)
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True, padx=18, pady=14)
         tk.Label(body, text="Backups on this computer. You can also drop a backup folder onto the main window.",

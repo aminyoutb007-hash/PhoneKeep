@@ -324,7 +324,7 @@ class PhoneWindow(tk.Toplevel):
 
     # layout --------------------------------------------------------------------
     def _build(self):
-        head = tk.Frame(self, bg=GREEN)
+        head = ui.header(self)
         head.pack(fill="x")
         # the buttons on the right are packed first, so a narrow window trims the text on the left instead of
         # drawing it over "Refresh from iPhone" (owner's Mac, 13 Nov)
@@ -332,16 +332,16 @@ class PhoneWindow(tk.Toplevel):
                                                       reveal(self.out_root)), "ghost", 150, 34, 12).pack(side="right", padx=(6, 16))
         self.refresh_btn = RoundButton(head, "⟳  Refresh from iPhone", self.refresh, "ghost", 210, 34, 12)
         self.refresh_btn.pack(side="right")
-        tk.Label(head, text=self.name, bg=GREEN, fg=theme.ON_ACCENT, font=font(19, "bold")).pack(side="left", padx=(20, 10), pady=12)
+        tk.Label(head, text=self.name, bg=theme.HEADER_BG, fg=theme.HEADER_TITLE, font=font(19, "bold")).pack(side="left", padx=(20, 10), pady=12)
         how = "USB cable" if self.device.get("ConnectionType") == "USB" else "Wi-Fi"
         if self.opened_backup is not None and not self.live_wanted:
             info = wv.backup_info(self.opened_backup)
             sub_text = f"backup of {info.get('date') or '?'} · iOS {info.get('ios') or '?'} · no iPhone connected"
         else:
             sub_text = f"iOS {self.device.get('ProductVersion', '?')} · connected by {how}"
-        self.sub = tk.Label(head, text=sub_text, bg=GREEN, fg=theme.ON_ACCENT_2, font=font(12))
+        self.sub = tk.Label(head, text=sub_text, bg=theme.HEADER_BG, fg=theme.HEADER_TEXT, font=font(12))
         self.sub.pack(side="left", pady=12)
-        self.lock_badge = tk.Label(head, text="", bg=GREEN, fg=theme.ON_ACCENT_2, font=font(12, "bold"))
+        self.lock_badge = tk.Label(head, text="", bg=theme.HEADER_BG, fg=theme.HEADER_TEXT, font=font(12, "bold"))
         self.lock_badge.pack(side="left", padx=(14, 0), pady=12)
 
         self.bar_frame = tk.Frame(self, bg=GREEN_SOFT)
