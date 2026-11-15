@@ -275,6 +275,7 @@ for ph in (A, B):
 s.update(auto_backup="daily", auto_backup_hour=21, auto_backup_phones=[A["UniqueDeviceID"], B["UniqueDeviceID"]],
          only_when_charging=False)
 hc.SETTINGS_FILE.write_text(json.dumps(s), encoding="utf-8")
+real_list = wv.list_devices
 wv.list_devices = lambda: [A, B]
 real_make, real_enc = wv.make_backup, wv.backup_will_encrypt
 wv.backup_will_encrypt = lambda udid: True
@@ -300,17 +301,20 @@ for _ in range(4):                                # the helper ticks every minut
     while h2.busy and time.time() < end:
         time.sleep(0.05)
 wv.make_backup, wv.backup_will_encrypt = real_make, real_enc
+wv.list_devices = real_list
 check(sorted(ran) == sorted([A["UniqueDeviceID"], B["UniqueDeviceID"]]) and len(ran) == 2,
       f"both ticked phones are backed up once each ({results})")
-check(inside["most"] == 1 and "wait:a backup is already running" in results[0],
-      "  one after the other: while the first runs, the second waits")
+first = ran[0] if ran else ""
+check(inside["most"] == 1 and "wait:a backup is already running" in results[0] and f"backup:{first}" in results[0]
+      and len(ran) == 2 and f"backup:{ran[1]}" in results[1] and ran[1] != first,
+      "  one after the other: while the first runs, the second waits, and the next tick backs up the one that waited")
 done = [m for t, m in told if t == "iPhone backed up"]
 check(len(done) == 2 and any(m.startswith("Test iPhone A ·") for m in done) and any(m.startswith("Test iPhone B ·") for m in done),
       f"  each named in its own notification: {done}")
 check(all("backup:" not in r for r in results[2:]), "  and nothing more once both are backed up")
 
 src = (HERE.parent / "phonekeep.py").read_text(encoding="utf-8")
-check("_wait_for_other_phone(backup_root, udid" and "backup-running.lock" in src, "make_backup waits for another phone's backup")
+check("_wait_for_other_phone(backup_root, udid" in src and "backup-running.lock" in src, "make_backup waits for another phone's backup")
 
 print("\nB8 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)
