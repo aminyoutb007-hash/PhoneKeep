@@ -117,6 +117,7 @@ try:
     # a phone on Wi-Fi that dozes: the first read finds nothing, a later one gets its picture, which is kept
     import device as _devmod
     reachable = {"on": False}
+    a._wallpaper_file(B["UniqueDeviceID"]).unlink(missing_ok=True)     # none kept from an earlier run
 
     class _Live:
         def __init__(self, udid, cache_dir=None):

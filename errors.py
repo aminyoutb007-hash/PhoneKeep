@@ -22,6 +22,8 @@ SHOW_DETAILS = "show_details"
 INSTALL_APPLE_DEVICES = "install_apple_devices"
 ENTER_PASSWORD = "enter_password"
 
+DISCONNECTED = "The iPhone was disconnected. Plug it back in and try again."     # 5.1.3, also used by reconnect.py
+
 
 @dataclass
 class Problem:
@@ -51,6 +53,9 @@ TABLE = [
       "there is not enough space", "error 112", "winerror 112",
       "notenoughdiskspace", "needs more than", "bytes free", "more needed)"],      # the iPhone's own refusal
      "Not enough space on {disk}: {free} free.", "Change location", CHANGE_LOCATION),
+    ("disconnected",                                       # the iPhone unplugged mid-read (5.1.3)
+     ["connectionterminatederror", "connection was terminated", "connectionabortederror"],
+     DISCONNECTED, "Try again", TRY_AGAIN),
     ("apple_service_missing",
      ["usbmuxd", "apple mobile device", "could not connect to usbmuxd", "connectionrefused", "no usbmux"],
      "Can't reach Apple's USB service. Install the Apple Devices app (from the Microsoft Store) or iTunes, then try again."

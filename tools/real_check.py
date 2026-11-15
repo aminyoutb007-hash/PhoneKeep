@@ -259,6 +259,20 @@ try:
                                                   to_file=lambda d: src.copy(photo.id, d))], 0)
             check(v.shown_kind == "image", f"Space on a photo shows it ({v.shown_kind})")
             v.close()
+            # 5.1.3, read-only and without unplugging: the watcher finds this iPhone by its UDID, and a dropped
+            # connection (stood in for) reconnects to the same iPhone and the read works
+            import reconnect as rc
+            pump(app, lambda: False, 2 * phone.WATCH_MS / 1000 + 1)
+            check(rc.where(win.udid) == "USB" and win.phone_here and win.sub.cget("text").endswith("connected by USB cable"),
+                  "the iPhone on the cable is found by its UDID and the header says so")
+            (src.cache / "full" / photo.id).unlink(missing_ok=True)
+            gen, src.afc = src.generation, rc.NotConnected()
+            data = src.read(photo.id)
+            gen_l, win.live.lockdown = win.live.generation, rc.NotConnected()
+            apps_back = win.live.apps()
+            check(bool(data) and src.generation == gen + 1 and src.udid == win.udid and apps_back
+                  and win.live.generation == gen_l + 1 and win.live.udid == win.udid,
+                  "a dropped connection reconnects to the same iPhone by itself: the photo and the app list read again")
         if video:
             v = viewer_shows(app, [quicklook.Item(video.name, to_file=lambda d: src.copy(video.id, d), kind="video")], 0)
             path = v.open_from_file(wait=True) if v.shown_kind == "play" else None
