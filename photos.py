@@ -19,6 +19,7 @@ import inspect
 import os
 import shutil
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -310,8 +311,12 @@ class DevicePhotoSource(PhotoSource):
         self._run(self._connect())
         self._sizes: dict[str, int] = {}
 
+    answered_at = 0.0       # when the iPhone last answered anything (5.1.3)
+
     def _run(self, coro, timeout: float = 600):
-        return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
+        r = asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
+        self.answered_at = time.time()
+        return r
 
     async def _connect(self):
         from pymobiledevice3.lockdown import create_using_usbmux

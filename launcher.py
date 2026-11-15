@@ -343,25 +343,33 @@ def _pk_battery(args: list) -> None:
 
 
 def _pk_storage(args: list) -> None:
-    """Internal: print PKSTORAGE total=<bytes> used=<bytes> free=<bytes> from the phone's disk-usage domain."""
+    """Internal: print PKSTORAGE total=<bytes> used=<bytes> free=<bytes> from the phone's disk-usage domain, and
+    PKDISK <json> with the domain itself. --limit <seconds>: give up after that long (5.1.3: the second try after
+    the overview's storage question timed out over Wi-Fi)."""
     import asyncio
+    import json
     udid = args[args.index("--udid") + 1] if "--udid" in args else None
+    limit = float(args[args.index("--limit") + 1]) if "--limit" in args else None
     try:
         from pymobiledevice3.lockdown import create_using_usbmux
     except ImportError as e:
         print(f"PKAPI {e}", flush=True)
         sys.exit(3)
 
-    async def run():
+    async def read():
         async with await create_using_usbmux(serial=udid) as lockdown:
-            v = (await lockdown.get_value(domain="com.apple.disk_usage")) or {}
-            total = int(v.get("TotalDiskCapacity") or v.get("TotalDataCapacity") or 0)
-            free = int(v.get("TotalDataAvailable") or 0)
-            cap = int(v.get("TotalDataCapacity") or total)
-            print(f"PKSTORAGE total={total} used={max(0, cap - free)} free={free}", flush=True)
+            return (await lockdown.get_value(domain="com.apple.disk_usage")) or {}
+
+    async def run():
+        v = await (asyncio.wait_for(read(), limit) if limit else read())
+        total = int(v.get("TotalDiskCapacity") or v.get("TotalDataCapacity") or 0)
+        free = int(v.get("TotalDataAvailable") or 0)
+        cap = int(v.get("TotalDataCapacity") or total)
+        print(f"PKSTORAGE total={total} used={max(0, cap - free)} free={free}", flush=True)
+        print("PKDISK " + json.dumps(v, default=str), flush=True)
     try:
         asyncio.run(run())
-    except Exception as e:
+    except (Exception, asyncio.CancelledError) as e:
         print(f"PKERR {type(e).__name__}: {e}", flush=True)
         sys.exit(1)
 
@@ -387,61 +395,102 @@ def _pk_overview(args: list) -> None:
     import timing
     wifi = "--wifi" in args
     each = 6 if wifi else None                       # Wi-Fi: one slow answer can't hold up the rest (5.1.3)
-
-    def q(coro):
-        return asyncio.wait_for(coro, each) if each else coro
+    deadline = _t.monotonic() + 24 if wifi else None  # always answer before the app's 30 s limit, with what's in
 
     async def run():
         out = {"problems": {}}
-        t = _t.perf_counter()
-        lockdown = await (asyncio.wait_for(create_using_usbmux(serial=udid), 3 * each) if each
-                          else create_using_usbmux(serial=udid))
-        timing.log("overview: lockdown connect", _t.perf_counter() - t)
-        async with lockdown:
-            with timing.step("overview: all lockdown values"):
-                allv = (await q(lockdown.get_value())) or {}
+        conn = {"lockdown": None}
+
+        def left():
+            if deadline is None:
+                return None
+            return max(0.0, min(each, deadline - _t.monotonic()))
+
+        async def connect(limit):
+            t = _t.perf_counter()
+            c = create_using_usbmux(serial=udid)
+            conn["lockdown"] = await (asyncio.wait_for(c, limit) if limit else c)
+            timing.log("overview: lockdown connect", _t.perf_counter() - t)
+
+        async def close():
+            ld, conn["lockdown"] = conn["lockdown"], None
+            if ld is not None:
+                try:
+                    await asyncio.wait_for(ld.close(), 2)
+                except BaseException as e:           # a stuck connection: let it go
+                    if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                        raise
+
+        async def ask(name, make):
+            """One question on its own: a time-out or error here is noted under problems and never stops the
+            others. After a time-out the connection may still be waiting for that answer, so the next question gets
+            a fresh one."""
+            limit = left()
+            if limit is not None and limit <= 0:
+                out["problems"][name] = "TimeoutError: no time left"
+                return None
+            try:
+                if conn["lockdown"] is None:
+                    await connect(limit)
+                    limit = left()
+                    if limit is not None and limit <= 0:
+                        raise asyncio.TimeoutError()
+                with timing.step(f"overview: {name}"):
+                    return await (asyncio.wait_for(make(conn["lockdown"]), limit) if limit else make(conn["lockdown"]))
+            except (Exception, asyncio.CancelledError) as e:
+                out["problems"][name] = f"{type(e).__name__}: {e}"
+                if isinstance(e, (asyncio.TimeoutError, asyncio.CancelledError)):
+                    await close()
+                return None
+
+        await connect(3 * each if each else None)      # no connection at all: nothing to show (PKERR)
+        try:
+            allv = (await ask("info", lambda ld: ld.get_value())) or {}
             out["info"] = {k: allv.get(k) for k in keep_info if allv.get(k) is not None}
             for k in ("DeviceEnclosureColor", "ModelNumber"):       # not always in the full list: ask by name
-                if k not in out["info"]:
-                    try:
-                        with timing.step(f"overview: lockdown value {k}"):
-                            v = await q(lockdown.get_value(key=k))
-                        if v is not None:
-                            out["info"][k] = v
-                    except Exception:
-                        pass
-            for key, domain in (("disk", "com.apple.disk_usage"), ("battery", "com.apple.mobile.battery")):
-                try:
-                    with timing.step(f"overview: {key} domain"):
-                        out[key] = (await q(lockdown.get_value(domain=domain))) or {}
-                except Exception as e:
-                    out["problems"][key] = f"{type(e).__name__}: {e}"
-            try:
-                if wifi:                             # only over a cable; the saved copy is used instead
-                    raise RuntimeError("over Wi-Fi: connect by cable for the battery's details")
-                from pymobiledevice3.services.diagnostics import DiagnosticsService
-                with timing.step("overview: battery ioregistry (diagnostics)"):
-                    async with DiagnosticsService(lockdown) as diag:
-                        io = (await diag.ioregistry(ioclass="AppleSmartBattery")) or {}
-                bd = io.get("BatteryData") if isinstance(io.get("BatteryData"), dict) else {}
-                out["battery_io"] = {k: io[k] for k in keep_io if k in io}
-                out["battery_io"]["BatteryData"] = {k: bd[k] for k in keep_io if k in bd}
-            except Exception as e:
-                out["problems"]["battery_io"] = f"{type(e).__name__}: {e}"
+                if k not in out["info"] and "info" not in out["problems"]:
+                    v = await ask(f"lockdown value {k}", lambda ld, k=k: ld.get_value(key=k))
+                    out["problems"].pop(f"lockdown value {k}", None)
+                    if v is not None:
+                        out["info"][k] = v
+            # the battery before the storage: the storage answer is the one a locked or dozing iPhone holds back
+            for key, domain in (("battery", "com.apple.mobile.battery"), ("disk", "com.apple.disk_usage")):
+                v = await ask(f"{key} domain", lambda ld, d=domain: ld.get_value(domain=d))
+                if f"{key} domain" in out["problems"]:
+                    out["problems"][key] = out["problems"].pop(f"{key} domain")
+                else:
+                    out[key] = v or {}
+            if wifi:                                 # only over a cable; the saved copy is used instead
+                out["problems"]["battery_io"] = "RuntimeError: over Wi-Fi: connect by cable for the battery's details"
+            else:
+                async def io(ld):
+                    from pymobiledevice3.services.diagnostics import DiagnosticsService
+                    async with DiagnosticsService(ld) as diag:
+                        return (await diag.ioregistry(ioclass="AppleSmartBattery")) or {}
+                v = await ask("battery ioregistry (diagnostics)", io)
+                if v is None:
+                    out["problems"]["battery_io"] = out["problems"].pop("battery ioregistry (diagnostics)", "no answer")
+                else:
+                    bd = v.get("BatteryData") if isinstance(v.get("BatteryData"), dict) else {}
+                    out["battery_io"] = {k: v[k] for k in keep_io if k in v}
+                    out["battery_io"]["BatteryData"] = {k: bd[k] for k in keep_io if k in bd}
             if "--no-apps" not in args:
-                try:
+                async def apps_with_sizes(ld):
                     from pymobiledevice3.services.installation_proxy import InstallationProxyService
-                    with timing.step("overview: app list with sizes"):
-                        async with InstallationProxyService(lockdown) as ip:
-                            apps = await ip.get_apps(application_type="User", calculate_sizes=True)
+                    async with InstallationProxyService(ld) as ip:
+                        return await ip.get_apps(application_type="User", calculate_sizes=True)
+                apps = await ask("app list with sizes", apps_with_sizes)
+                if apps is None:
+                    out["problems"]["apps"] = out["problems"].pop("app list with sizes", "no answer")
+                else:
                     out["apps"] = {b: {k: a.get(k) for k in ("CFBundleDisplayName", "CFBundleName", "StaticDiskUsage",
                                                              "DynamicDiskUsage")} for b, a in (apps or {}).items()}
-                except Exception as e:
-                    out["problems"]["apps"] = f"{type(e).__name__}: {e}"
+        finally:
+            await close()
         print("PKOVERVIEW " + json.dumps(out, default=str), flush=True)
     try:
         asyncio.run(run())
-    except Exception as e:
+    except (Exception, asyncio.CancelledError) as e:
         print(f"PKERR {type(e).__name__}: {e}", flush=True)
         sys.exit(1)
 

@@ -20,6 +20,7 @@ import shutil
 import sqlite3
 import tempfile
 import threading
+import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -106,8 +107,13 @@ class LiveDevice:
             self.run(self._connect(), 60)
 
     # plumbing -----------------------------------------------------------------
+    answered_at = 0.0       # when the iPhone last answered anything (5.1.3: a storage question that timed out is
+                            # asked again then)
+
     def run(self, coro, timeout: float = 600):
-        return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
+        r = asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
+        self.answered_at = time.time()
+        return r
 
     async def _connect(self):
         from pymobiledevice3.lockdown import create_using_usbmux

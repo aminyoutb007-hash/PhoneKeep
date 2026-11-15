@@ -2,15 +2,25 @@
 to "window fully filled". Read-only for the phone; prints step names and seconds only (no names, no values).
 
     .venv/bin/python tools/time_phone.py            the phone as it's reachable now (cable or Wi-Fi)
+    .venv/bin/python tools/time_phone.py --udid X   this phone, when more than one is reachable
+
+With more than one iPhone reachable and no --udid, it times the one with backups in PhoneKeep's backups folder, and
+stops if that isn't exactly one: it never picks a phone by chance.
 
 It runs PhoneKeep's own code the way the app does: the main window's phone card (wallpaper and battery), then the
 phone window (connection, wallpaper, the overview: battery and storage), then Storage (the app list: names, then sizes). The timing log goes to a temporary
 file, deleted at the end. Nothing is written to the phone or to PhoneKeep's folder, and nothing leaves the computer.
+
+It never opens a backup (the phone window gets an empty backups folder), so nothing is decrypted. Anything PhoneKeep's
+code puts in its private temporary folder is deleted when the tool ends, also on an error, Ctrl-C or a stop signal; and
+what a run that was killed outright left behind is deleted when the tool next starts, the way PhoneKeep does.
 """
 from __future__ import annotations
 
-import json
+import atexit
 import os
+import shutil
+import signal
 import sys
 import tempfile
 import time
@@ -20,16 +30,55 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 REAL_HOME = Path(os.environ.get("PHONEKEEP_HOME") or Path.home() / "PhoneKeep")
-settings = {}
-try:
-    settings = json.loads((REAL_HOME / "settings.json").read_text(encoding="utf-8"))
-except (OSError, ValueError):
-    pass
-WORK = Path(tempfile.mkdtemp(prefix="pk-timing-"))
+try:                                    # only to tell which phone is backed up here (folders by UDID; none opened)
+    import json
+    BACKUPS = Path(json.loads((REAL_HOME / "settings.json").read_text(encoding="utf-8")).get("backup_dir")
+                   or REAL_HOME / "Backups")
+except (OSError, ValueError, AttributeError):
+    BACKUPS = REAL_HOME / "Backups"
+WANT = sys.argv[sys.argv.index("--udid") + 1] if "--udid" in sys.argv else None
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _clean_stale_work():
+    """Work folders of earlier runs that were stopped outright (named by their process; older ones without)."""
+    for d in Path(tempfile.gettempdir()).glob("pk-timing-*"):
+        pid = d.name.split("-")[2]
+        if not (pid.isdigit() and _alive(int(pid))):
+            shutil.rmtree(d, ignore_errors=True)
+
+
+_clean_stale_work()
+WORK = Path(tempfile.mkdtemp(prefix=f"pk-timing-{os.getpid()}-"))
 LOG = WORK / "timing.log"
 os.environ["PHONEKEEP_HOME"] = str(WORK / "home")          # nothing written to the real PhoneKeep folder
 os.environ["PHONEKEEP_TIMING"] = str(LOG)
 os.environ["PHONEKEEP_NO_HELPER"] = "1"
+
+import quicklook                                            # noqa: E402
+
+quicklook.cleanup_stale()               # what an earlier run (or PhoneKeep) stopped outright left behind
+
+
+def _clean():
+    quicklook.cleanup()                 # this run's private temporary folder
+    shutil.rmtree(WORK, ignore_errors=True)
+
+
+atexit.register(_clean)                 # runs on a normal end, an error and Ctrl-C (KeyboardInterrupt)
+signal.signal(signal.SIGINT, signal.default_int_handler)    # Ctrl-C stops it even when started in the background
+for _sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+    if _sig is not None:
+        signal.signal(_sig, lambda *_a: sys.exit(1))       # a stop signal: end normally, so the clean-up runs
 
 import tkinter as tk                                        # noqa: E402
 
@@ -43,7 +92,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.withdraw()
-        self.s = {"backup_dir": settings.get("backup_dir") or str(REAL_HOME / "Backups"),
+        self.s = {"backup_dir": str(WORK / "Backups"),      # empty: no backup is opened, nothing decrypted
                   "archive_dir": str(WORK / "Archive")}
         self.busy = False
         self._backup_password = None
@@ -76,6 +125,17 @@ devs = wv.list_devices()
 mark("phone seen (usbmux list)")
 if not devs:
     sys.exit("No iPhone reachable. Plug it in (or put it on the same Wi-Fi), unlock it, then run this again.")
+def udid_of(d):
+    return d.get("UniqueDeviceID") or d.get("Identifier")
+
+
+if WANT:
+    devs = [d for d in devs if udid_of(d) == WANT]
+elif len(devs) > 1:
+    import snapshots as sn                                  # noqa: E402
+    devs = [d for d in devs if sn.latest_backup_path(BACKUPS, udid_of(d))]
+if len(devs) != 1:
+    sys.exit("More than one iPhone is reachable (or not the one asked for). Run again with --udid <the iPhone's UDID>.")
 dev = devs[0]
 how = "USB" if dev.get("ConnectionType") == "USB" else "Wi-Fi"
 udid = dev.get("UniqueDeviceID") or dev.get("Identifier")
@@ -155,5 +215,4 @@ for name, runs in steps.items():
 print(f"\nOver {how}: time since the start")
 for name, secs in marks:
     print(f"{name:48} {secs:8.2f}")
-import shutil                                               # noqa: E402
-shutil.rmtree(WORK, ignore_errors=True)
+_clean()

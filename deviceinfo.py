@@ -196,6 +196,13 @@ def parse_output(stdout: str) -> Optional[dict]:
     return None
 
 
+def with_disk(ov: Overview, disk: dict) -> None:
+    """5.1.3: the storage values from a second try, into an overview whose storage question timed out."""
+    ov.total = _int(disk.get("TotalDiskCapacity")) or ov.total
+    ov.free = _int(disk.get("TotalDataAvailable"))
+    ov.problems.pop("disk", None)
+
+
 # -- V3: storage, split into rough categories -----------------------------------------------------------------
 CATEGORY_COLOURS = theme.STORAGE      # the storage bar (theme.py)
 
