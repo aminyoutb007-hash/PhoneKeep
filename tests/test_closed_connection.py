@@ -131,6 +131,15 @@ import errors
 check(errors.explain(ConnectionAbortedError("the connection was closed")).message == DISCONNECTED,
       "  and a dropped connection outside a retry reads the same plain sentence")
 
+# the usual case after the phone goes: the one retry couldn't reconnect, so there's nothing left to close
+live = devmod.LiveDevice("00008030-CLOSED", cache_dir=WORK / "live-nc")
+th, out = waiting_read(live, lambda: live.run(live.lockdown.get_value(domain="com.apple.disk_usage"), 600))
+live.lockdown = reconnect.NotConnected()
+live.close()
+th.join(5)
+check(not th.is_alive() and isinstance(out.get("e"), ConnectionAbortedError) and out["s"] < 3,
+      f"LiveDevice with nothing left to close: a waiting read still fails at once ({out.get('s', 0):.1f} s)")
+
 # -- DevicePhotoSource ----------------------------------------------------------------------------------------------
 src = ph.DevicePhotoSource("00008030-CLOSED", WORK / "photos")
 th, out = waiting_read(src, lambda: src._run(src.afc.listdir("DCIM"), 600))
@@ -146,6 +155,15 @@ except BaseException as e:
     got = e
 check(isinstance(got, ConnectionAbortedError) and reconnect.is_dropped(got) and time.time() - t < 2,
       "  a new read fails at once, as a dropped connection (so the window says so plainly)")
+
+src = ph.DevicePhotoSource("00008030-CLOSED", WORK / "photos-nc")
+afc = src.afc
+th, out = waiting_read(src, lambda: src._run(afc.listdir("DCIM"), 600))
+src.afc = reconnect.NotConnected()
+src.close()
+th.join(5)
+check(not th.is_alive() and isinstance(out.get("e"), ConnectionAbortedError) and out["s"] < 3,
+      f"DevicePhotoSource with nothing left to close: a waiting read still fails at once ({out.get('s', 0):.1f} s)")
 
 state["connect_fails"] = True
 threads = threading.active_count()

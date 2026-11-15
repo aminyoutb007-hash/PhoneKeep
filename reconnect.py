@@ -34,30 +34,41 @@ DROPPED_WORDS = ("terminated abruptly", "connection was terminated", "broken pip
                  "connection aborted")
 
 
+SLICE = 0.25        # how often a waiting read looks whether its connection was closed meanwhile
+
+
 def run_on(owner, coro, timeout: float):
     """Run a coroutine on `owner.loop` (a LiveDevice or DevicePhotoSource) and wait for it. Once the owner is closed
-    (the phone went and the window let go of it) this fails at once with a dropped connection, and so do reads that
-    were still waiting then, instead of hanging until their timeout (up to 10 minutes) and showing "TimeoutError"."""
+    (the phone went and the window let go of it) this fails at once with a dropped connection, and reads that were
+    still waiting fail within SLICE seconds, instead of hanging until their timeout (up to 10 minutes) and showing
+    "TimeoutError". Waiting in slices needs nothing from the owner's loop, which may already be stopped."""
     if getattr(owner, "closed", False):
         if asyncio.iscoroutine(coro):
             coro.close()
         raise ConnectionAbortedError("the connection was closed")
     fut = asyncio.run_coroutine_threadsafe(coro, owner.loop)
-    pending = owner.__dict__.setdefault("_pending", set())
-    pending.add(fut)
-    try:
-        r = fut.result(timeout)
-    except concurrent.futures.CancelledError:
-        raise ConnectionAbortedError("the connection was closed") from None
-    finally:
-        pending.discard(fut)
+    end = time.monotonic() + timeout
+    while True:
+        try:
+            r = fut.result(max(0.0, min(SLICE, end - time.monotonic())))
+            break
+        except concurrent.futures.TimeoutError:
+            if getattr(owner, "closed", False):
+                fut.cancel()
+                raise ConnectionAbortedError("the connection was closed") from None
+            if time.monotonic() >= end:
+                fut.cancel()
+                raise
+        except concurrent.futures.CancelledError:
+            raise ConnectionAbortedError("the connection was closed") from None
     owner.answered_at = time.time()
     return r
 
 
 def shut(owner, closing=None, timeout: float = 10) -> None:
-    """Close `owner`: new reads fail at once, waiting ones are cancelled, then `closing` (a coroutine: closing the
-    phone's session) gets up to `timeout` seconds, and the owner's loop stops."""
+    """Close `owner`: new reads fail at once and waiting ones within run_on's SLICE (they look at `closed`; their
+    tasks are also cancelled on the loop, to tidy up). Then `closing` (a coroutine: closing the phone's session)
+    gets up to `timeout` seconds, and the owner's loop stops."""
     owner.closed = True
 
     def cancel_all():
