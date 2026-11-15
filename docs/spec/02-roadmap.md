@@ -48,7 +48,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | B6 | Restore a backup to an iPhone (moved from P2 into 5.1 on 13 Nov, then to 5.2 on 14 Nov, owner) | Not available | To build | [03-backup.md](03-backup.md#b6-restore-a-backup-to-an-iphone) |
 | S4 | Signed and notarised installers (moved from 5.1 on 14 Nov, owner: needs the certificates) | Ad-hoc signed; users must click Open Anyway. Workflow signs when the secrets exist | Partial | [04-security.md](04-security.md#s4-signed-and-notarised-installers) |
 | C2 | Remove cleaned-up photos from the iPhone (moved to 5.2 on 14 Nov, owner; spike first; build only after agreement) | Not available | To build | [13-phone-health.md](13-phone-health.md#c2-remove-cleaned-up-photos-from-the-iphone) |
-| V6 | Storage tips: under Largest apps, how to free each app's space (owner, 15 Nov) | Not available | To build | [10-device.md](10-device.md#v6-storage-tips) |
+| V6 | Storage tips: under Largest apps, how to free each app's space (owner, 15 Nov) | Not available | Partial (the owner checks the in-app steps on the phone) | [10-device.md](10-device.md#v6-storage-tips) |
 | S5 | Spyware check (part of H5; out of 5.1 on 14 Nov, owner: revisit after 5.1, with the MVT licence decision) | Not available | To build | [04-security.md](04-security.md#s5-spyware-check) |
 
 ## P2: should have
