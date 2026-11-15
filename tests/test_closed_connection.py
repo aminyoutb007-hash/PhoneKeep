@@ -131,6 +131,41 @@ import errors
 check(errors.explain(ConnectionAbortedError("the connection was closed")).message == DISCONNECTED,
       "  and a dropped connection outside a retry reads the same plain sentence")
 
+# an open connection whose read never answers: it gives up at its own limit, as before, and the read is cancelled
+live = devmod.LiveDevice("00008030-CLOSED", cache_dir=WORK / "live-to")
+seen = {"cancelled": False}
+
+
+async def never():
+    try:
+        await asyncio.sleep(1000)
+    except asyncio.CancelledError:
+        seen["cancelled"] = True
+        raise
+res = {}
+
+
+def timed_read():
+    t0 = time.time()
+    try:
+        live.run(never(), 1.0)
+    except BaseException as e:
+        res["e"] = e
+    res["s"] = time.time() - t0
+th = threading.Thread(target=timed_read, daemon=True)
+th.start()
+th.join(5)                                  # if the limit were ignored it would wait forever: fail, don't hang
+got, took = res.get("e"), res.get("s", 99.0)
+end = time.time() + 2
+while not seen["cancelled"] and time.time() < end:
+    time.sleep(0.05)
+check(isinstance(got, TimeoutError) and 0.9 <= took < 1.6 and seen["cancelled"],
+      f"an open connection: a read that never answers ends at its limit with TimeoutError ({took:.2f} s), cancelled")
+t = time.time()
+check(live.run(asyncio.sleep(0.6, result="answer"), 5) == "answer" and 0.5 < time.time() - t < 1.2,
+      "  and an answer that takes longer than one slice still comes")
+live.close()
+
 # the usual case after the phone goes: the one retry couldn't reconnect, so there's nothing left to close
 live = devmod.LiveDevice("00008030-CLOSED", cache_dir=WORK / "live-nc")
 th, out = waiting_read(live, lambda: live.run(live.lockdown.get_value(domain="com.apple.disk_usage"), 600))
