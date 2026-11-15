@@ -18,3 +18,4 @@ tkinterdnd2>=0.4
 reportlab>=4.0          # chats to PDF (M3)
 arabic-reshaper>=3.0    # Arabic letter forms in PDFs
 python-bidi>=0.4        # right-to-left order in PDFs
+pypdfium2>=4.30; sys_platform != "darwin"   # Q1: PDF previews drawn in memory on Windows (macOS draws them on a Mac)

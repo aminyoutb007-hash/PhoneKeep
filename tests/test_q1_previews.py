@@ -3,7 +3,8 @@
 Done when "Space previews every kind of item listed above on Mac and Windows". Checked here with stand-in items:
 - photo (HEIC too), text, PDF, video, audio, other: Space opens a large preview over the window; the arrows move
   to the next / previous item; Space or Esc closes it.
-- images and text are shown from memory: nothing is written to disk for them.
+- images, text and PDFs are shown from memory (PDF pages drawn by macOS on a Mac, by PDFium elsewhere): nothing
+  is written to disk for them.
 - video and audio are copied to a private folder (only the user can read it), played from there, and the folder
   is deleted when PhoneKeep closes and again at the next start.
 - the backup reader gives a file's bytes in memory (plain and encrypted backups), the photo sources too.
@@ -141,9 +142,65 @@ try:
             return True
         return go
 
+    def a_pdf():
+        """A real two-page PDF with invented text, made here in memory."""
+        from reportlab.pdfgen import canvas
+        b = io.BytesIO()
+        c = canvas.Canvas(b)
+        for t in ("Invented manual, page one", "Page two"):
+            c.drawString(100, 700, t)
+            c.showPage()
+        c.save()
+        return b.getvalue()
+    PDF = a_pdf()
+    pages = ql.pdf_pages(PDF, 600)
+    check(pages is not None and len(pages) == 2 and pages[0].size[0] == 600,
+          f"a PDF's pages are drawn in memory on this computer ({sys.platform}: "
+          f"{'macOS' if sys.platform == 'darwin' else 'PDFium'}; {len(pages or [])} pages)")
+    check(ql.pdf_pages(b"%PDF-1.4 stand-in", 600) is None, "  a damaged PDF gives no pages (an Open button instead), no crash")
+    try:
+        import pypdfium2  # noqa: F401  (Windows and Linux; on a Mac only when installed by hand)
+        has_pdfium = True
+    except ImportError:
+        has_pdfium = False
+    if has_pdfium or sys.platform != "darwin":
+        got = ql.pdfium_pages(PDF, 300)
+        check(got is not None and len(got) == 2 and got[0].size[0] == 300,
+              "  PDFium (used off the Mac) draws them from the bytes in memory")
+        # PDFium isn't thread-safe: previews opened one after another can draw at the same time; each gets its pages
+        import threading as _th
+        res, inside, most = [], [0], [0]
+        real = ql.pdfium_pages
+
+        def one():
+            res.append(real(PDF, 200))
+        _orig_render = None
+        try:
+            import pypdfium2 as _pdfium
+            _orig_render = _pdfium.PdfPage.render
+
+            def counted(self, *a, **k):                      # how many threads are inside PDFium at once
+                inside[0] += 1
+                most[0] = max(most[0], inside[0])
+                time.sleep(0.02)
+                try:
+                    return _orig_render(self, *a, **k)
+                finally:
+                    inside[0] -= 1
+            _pdfium.PdfPage.render = counted
+            ts = [_th.Thread(target=one) for _ in range(6)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join(30)
+        finally:
+            if _orig_render is not None:
+                _pdfium.PdfPage.render = _orig_render
+        check(len(res) == 6 and all(r is not None and len(r) == 2 for r in res) and most[0] == 1,
+              f"  six previews drawing at once: each gets its 2 pages, one inside PDFium at a time (at most {most[0]})")
     items = [ql.Item("IMG_0001.HEIC", read=lambda: png((200, 30, 30)), to_file=to_file("IMG_0001.HEIC")),
              ql.Item("Notes.txt", read=lambda: "Shopping list\nbread".encode(), to_file=to_file("Notes.txt")),
-             ql.Item("Manual.pdf", read=lambda: b"%PDF-1.4 stand-in", to_file=to_file("Manual.pdf", b"%PDF-1.4")),
+             ql.Item("Manual.pdf", read=lambda: PDF, to_file=to_file("Manual.pdf", PDF)),
              ql.Item("clip.MOV", to_file=to_file("clip.MOV", b"\x00" * 1000), size=1000),
              ql.Item("memo.m4a", to_file=to_file("memo.m4a")),
              ql.Item("book.epub", to_file=to_file("book.epub")),
@@ -169,7 +226,7 @@ try:
           "→ moves to the next item: a text file is shown as text")
     v.move(1)
     wait(v, lambda: v.shown_kind not in ("loading",))
-    check(v.shown_kind in ("pdf", "play"), f"a PDF: drawn by macOS on a Mac, an Open button elsewhere ({v.shown_kind})")
+    check(v.shown_kind == "pdf", f"a PDF: its pages shown in the preview, on Mac and Windows alike ({v.shown_kind})")
     v.move(1)
     wait(v, lambda: v.shown_kind == "play")
     check(v.shown_kind == "play" and v.index == 3, "a video shows a Play button")

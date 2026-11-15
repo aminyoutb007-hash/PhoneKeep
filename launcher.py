@@ -567,6 +567,20 @@ def main() -> None:
         win.after(2500, lambda: (print(f"PKLAUNCH ok {phonekeep.full_version()}", flush=True), win.destroy()))
         win.mainloop()
         return
+    if args == ["--pk-pdf-check"]:
+        # Internal, used by the Windows installer build: a PDF's pages are drawn in memory in the packaged app
+        # (Q1: PDFium off the Mac). Prints "PKPDF ok <pages>", or "PKPDF none" if it can't draw them.
+        import io
+        from reportlab.pdfgen import canvas
+        import quicklook
+        b = io.BytesIO()
+        c = canvas.Canvas(b)
+        c.drawString(100, 700, "PhoneKeep")
+        c.showPage()
+        c.save()
+        pages = quicklook.pdf_pages(b.getvalue(), 300)
+        print(f"PKPDF ok {len(pages)}" if pages else "PKPDF none", flush=True)
+        return
     if args == ["--pk-lock-check"]:
         # Internal, used by the installer build: the app lock's system check loads in the packaged app.
         # Prints "PKLOCK <kind or none> <problem>"; a missing module is a build failure (13 Nov: Touch ID
