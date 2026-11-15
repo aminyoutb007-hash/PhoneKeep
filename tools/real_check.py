@@ -16,12 +16,14 @@ What it does, all read-only for the phone:
     offered that's a favourite, in an album, hidden or only in iCloud; 3 of them saved and checked by checksum
     (its cache and record go to the temporary folder too, not next to the real backups);
   * All files: previews a PDF from the backup; Voice Memos / Music: copies one to play;
-  * Save everything: notes and calls of the last 30 days, and checks the contents page.
+  * Save everything: notes and calls of the last 30 days, and checks the contents page; D9: the last 30 days
+    mentioning "invoice" saves exactly the matching messages, notes and files (worked out from the backup on its own).
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
 and PhoneKeep's own folder and settings aren't changed.
 """
 from __future__ import annotations
 
+import csv
 import datetime as dt
 import json
 import os
@@ -383,6 +385,81 @@ try:
     hub = dest / "index.html"
     check(hub.exists() and "<dt>Only</dt>" in hub.read_text(encoding="utf-8"),
           "Save everything (last 30 days) makes one folder whose contents page names the dates")
+
+    # -- D9: "Last 30 days, mentioning invoice" keeps only matching messages, notes and files ----------------------
+    # Saved into this check's own temporary folder (removed at the end). What should be kept is worked out here on
+    # its own, straight from the backup, and compared with what was saved; only pass/fail and counts are printed.
+    import sections as sx
+
+    def d9(word, kinds, days=30):
+        """Save everything for the last `days` days mentioning `word`; returns what should have been kept."""
+        lo = today - dt.timedelta(days=days - 1)
+        dest = WORK / f"everything-{word}"
+        win.last_save_all = None
+        win.save_everything({"sections": kinds, "dates": (lo, today), "search": word,
+                             "formats": {"web", "csv"}}, dest)
+        pump(app, lambda: win.last_save_all is not None or "Couldn't" in win.bar_text.cget("text"), 900)
+        saved = {}
+        try:
+            saved = json.loads((dest / "assets" / "sections.json").read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+        def day(when):
+            if isinstance(when, (int, float)):
+                return dt.datetime.fromtimestamp(when).date()
+            if isinstance(when, dt.datetime):
+                return when.date()
+            try:
+                return dt.date.fromisoformat(str(when)[:10]) if when else None
+            except ValueError:
+                return None
+
+        def inside(when):
+            d = day(when)
+            return d is not None and lo <= d <= today
+
+        def says(*texts):
+            return any(word in str(t).casefold() for t in texts if t)
+        ctx = sx.Ctx(win.data.reader, WORK / "d9-read", lambda m: None, False, {})
+        want = {}
+        try:
+            want["messages"] = sum(1 for c in sx.load_messages(ctx) for m in c["messages"] if inside(m.get("time"))
+                                   and (says(c.get("name")) or says(*(v for k, v in m.items() if isinstance(v, str)
+                                                                      and k not in ("time", "type", "media_rel", "media")))))
+        except wv.PhoneKeepError:
+            want["messages"] = 0
+        try:
+            want["notes"] = sum(1 for n in sx.load_notes(ctx) if inside(n["modified"])
+                                and says(n["title"], n["text"], n["folder"]))
+        except wv.PhoneKeepError:
+            want["notes"] = 0
+        if "files" in kinds:
+            want["files"] = sum(1 for dom, rel, fid in win.data.reader.db.execute(
+                "SELECT domain, relativePath, fileID FROM Files WHERE flags=1") if says(dom + "/" + rel)
+                and inside(win.data.reader.file_mtime(fid)))
+        got = {k: (saved.get(k) or {}).get("count", -1) for k in want}
+        hub = dest / "index.html"
+        check(hub.exists() and "mentioning" in hub.read_text(encoding="utf-8") and got == want,
+              f"Save everything, last {days} days mentioning '{word}': saves exactly the matching {', '.join(kinds)}"
+              f" (saved {got}, worked out from the backup {want})")
+        stray = [p for p in (dest / "All files").rglob("*") if p.is_file() and p.name != "README.txt"
+                 and word not in p.relative_to(dest / "All files").as_posix().casefold()]
+        check(not stray, f"  every saved file mentions '{word}' in its name or folder ({len(stray)} don't)")
+        every = dest / "Messages" / "CSV" / "_All chats.csv"
+        rows = list(csv.reader(every.open(encoding="utf-8-sig")))[1:] if every.exists() else []
+        off = sum(1 for r in rows if not (r and inside(r[1]) and says(*r)))
+        check(len(rows) == want["messages"] and not off,
+              f"  every saved message is from those {days} days and mentions it, or is in a chat whose name does"
+              f" ({off} of {len(rows)} don't)")
+        return want
+
+    found = d9("invoice", ["messages", "notes", "files"])
+    if not (found["messages"] and found["notes"]):
+        # too little recent to test those two: the same check with a common word over two years
+        more = d9("the", ["messages", "notes"], days=730)
+        if not (more["messages"] and more["notes"]):
+            note("too little in this backup to test the search on messages and notes")
 finally:
     try:
         win.close()
