@@ -110,6 +110,22 @@ for k in range(0, 101, 5):
     seen |= {i for i, c in enumerate(win.app_cells) if shown(c)}
 check(seen == set(range(20)), f"in the window's normal size every one of the 20 apps with its line can be seen "
       f"(scrolling the list): {len(seen)} of 20")                                         # noqa: F821
+# while app sizes arrive the screen is rebuilt every 2 s: the list stays where it was scrolled to
+if cv is not None:
+    cv.yview_moveto(0.5)
+    app.update()
+    was = cv.yview()[0]
+    overview_ui.storage_view(win, win.overview)
+    app.update()
+    now = win.apps_canvas.yview()[0]
+    check(was > 0.1 and abs(now - was) < 0.02, f"  a rebuild while sizes arrive keeps the list's place ({was:.2f} -> {now:.2f})")
+    win.apps_canvas.yview_moveto(0.0)
+    app.update()
+    overview_ui.storage_view(win, win.overview)
+    app.update()
+    check(win.apps_canvas.yview()[0] < 0.01, "  and a list at the top stays at the top")
+else:
+    check(False, "the apps list has its own scrolling area")
 check(asked["n"] == before, "showing the tips asks the phone nothing")                                      # noqa: F821
 import device as real_device
 check(not any(hasattr(real_device.LiveDevice, m) for m in ("offload_app", "uninstall", "remove_app", "delete_app")),  # noqa: F821
