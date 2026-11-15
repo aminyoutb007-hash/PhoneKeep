@@ -1,0 +1,120 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>PhoneKeep · Phone</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#F5F5F7}
+a{color:#0F766E}a:hover{color:#0B5A54}
+</style>
+</head><body>
+
+<div style="min-height: 800px; background: #F5F5F7; font-family: Inter, system-ui, sans-serif; color: #1D1D1F; display: flex; flex-direction: column">
+  <header style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 32px; background: #FFFFFF; border-bottom: 1px solid #E5E5EA; flex-wrap: wrap">
+    <div style="display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap">
+      <span style="font-size: 20px; font-weight: 700">Sam's iPhone</span>
+      <span style="font-size: 13px; color: #6E6E73">iOS 26.5 · cable</span>
+      <span style="font-size: 13px; color: #0B5A54; font-weight: 500">Encrypted · never sent online</span>
+    </div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap">
+      <button style="height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid #E5E5EA; background: #FFFFFF; font: 500 13px Inter, sans-serif; color: #1D1D1F">Refresh from iPhone</button>
+      <button style="height: 36px; padding: 0 14px; border-radius: 10px; border: 1px solid #E5E5EA; background: #FFFFFF; font: 500 13px Inter, sans-serif; color: #1D1D1F">Saved files</button>
+      <button style="height: 36px; padding: 0 14px; border-radius: 10px; border: none; background: #0F766E; color: #FFFFFF; font: 600 13px Inter, sans-serif">Save everything…</button>
+    </div>
+  </header>
+
+  <div style="flex: 1; display: flex; flex-wrap: wrap; gap: 24px; padding: 24px 32px; max-width: 1280px; width: 100%; box-sizing: border-box; margin: 0 auto">
+    <aside style="flex: 0 1 220px; display: flex; flex-direction: column; gap: 16px">
+      <div style="width: 150px; height: 304px; border-radius: 30px; background: #1D1D1F; padding: 7px; box-sizing: border-box; align-self: center">
+        <div style="width: 100%; height: 100%; border-radius: 24px; background: linear-gradient(160deg, #6FB7AE 0%, #2C5F7C 55%, #1B2A4A 100%)"></div>
+      </div>
+      <div style="background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 8px">
+        <label for="snap" style="font-size: 12px; font-weight: 600; color: #6E6E73; text-transform: uppercase; letter-spacing: 0.04em">Snapshot</label>
+        <select id="snap" style="height: 36px; border-radius: 8px; border: 1px solid #D2D2D7; padding: 0 8px; font: 14px Inter, sans-serif; background: #FFFFFF">
+          <option>Today 09:12 (latest)</option>
+          <option>Yesterday 21:04</option>
+          <option>12 Nov</option>
+        </select>
+        <span style="font-size: 12px; color: #6E6E73">8 snapshots · 41 GB on this Mac</span>
+      </div>
+    </aside>
+
+    <main style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+        <div style="background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 12px; font-weight: 600; color: #6E6E73; text-transform: uppercase; letter-spacing: 0.04em">This iPhone</span>
+          <span style="font-size: 17px; font-weight: 600">iPhone 15 Pro</span>
+          <span style="font-size: 13px; color: #6E6E73">256 GB · Natural Titanium</span>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 6px">
+          <span style="font-size: 12px; font-weight: 600; color: #6E6E73; text-transform: uppercase; letter-spacing: 0.04em">Battery</span>
+          <span style="font-size: 17px; font-weight: 600; color: #15803D">About 91% health</span>
+          <span style="font-size: 13px; color: #6E6E73">212 cycles · charging, 64%</span>
+        </div>
+        <div style="background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 8px">
+          <span style="font-size: 12px; font-weight: 600; color: #6E6E73; text-transform: uppercase; letter-spacing: 0.04em">Storage</span>
+          <span style="font-size: 17px; font-weight: 600">61 GB free</span>
+          <div style="height: 8px; border-radius: 999px; background: #E5E5EA; overflow: hidden; display: flex"><span style="width: 42%; background: #2563EB"></span><span style="width: 24%; background: #F59E0B"></span><span style="width: 10%; background: #8E8E93"></span></div>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap">
+        <h2 style="margin: 0; font-size: 20px; font-weight: 700">What's on this iPhone</h2>
+        <label for="q" style="display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #D2D2D7; background: #FFFFFF; min-width: 240px">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+          <input id="q" placeholder="Search everything" style="border: none; outline: none; font: 14px Inter, sans-serif; flex: 1; background: transparent">
+        </label>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px">
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #FDF1E4; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B45309" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><circle cx="9" cy="10" r="1.6"></circle><path d="M21 16l-5-5-8 8"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">Photos</span><span style="font-size: 12px; color: #6E6E73">24,683 items</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #E7F6EC; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">Messages</span><span style="font-size: 12px; color: #6E6E73">607 chats</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #E3F5EF; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path><path d="M9 10.5c0 2.5 2 4.5 4.5 4.5l1-1.4-1.6-.8-.7.6c-.8-.3-1.4-1-1.7-1.7l.6-.7-.8-1.6z" stroke-width="1.4"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">WhatsApp</span><span style="font-size: 12px; color: #6E6E73">69 chats</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #E8F5F2; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F766E" stroke-width="2" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"></rect><path d="M9 12l2 2 4-4"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">Check-up</span><span style="font-size: 12px; color: #B45309">1 needs attention</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #E7F6EC; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#15803D" stroke-width="2" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">Calls</span><span style="font-size: 12px; color: #6E6E73">2,306</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #F2F2F7; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3A3A3C" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">Contacts</span><span style="font-size: 12px; color: #6E6E73">1,171</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #FEF6DA; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A16207" stroke-width="2" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"></path><path d="M9 11h7M9 15h7"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">Notes</span><span style="font-size: 12px; color: #6E6E73">44</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #FDECEC; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B91C1C" stroke-width="2" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2"></rect><path d="M4 10h16M9 3v4M15 3v4"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">Calendar</span><span style="font-size: 12px; color: #6E6E73">534 events</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #F2F2F7; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3A3A3C" stroke-width="2" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">Voice Memos</span><span style="font-size: 12px; color: #6E6E73">74</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #EAF0FB; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1D4ED8" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M15.5 8.5l-2 5-5 2 2-5z"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">Safari</span><span style="font-size: 12px; color: #6E6E73">10,984 visits</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #EEEDFB; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4F46E5" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.5"></rect><rect x="14" y="4" width="6" height="6" rx="1.5"></rect><rect x="4" y="14" width="6" height="6" rx="1.5"></rect><rect x="14" y="14" width="6" height="6" rx="1.5"></rect></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">Apps</span><span style="font-size: 12px; color: #6E6E73">657</span></span>
+        </button>
+        <button style="display: flex; align-items: center; gap: 12px; background: #FFFFFF; border: 1px solid #E5E5EA; border-radius: 14px; padding: 14px; text-align: left; font-family: Inter, sans-serif">
+          <span style="width: 44px; height: 44px; border-radius: 11px; background: #F2F2F7; display: flex; align-items: center; justify-content: center; flex: none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3A3A3C" stroke-width="2" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></span>
+          <span style="display: flex; flex-direction: column"><span style="font-size: 15px; font-weight: 600; color: #1D1D1F">All files</span><span style="font-size: 12px; color: #6E6E73">127,999</span></span>
+        </button>
+      </div>
+      <p style="margin: 0; font-size: 13px; color: #6E6E73">Chats, calls and notes come from today's backup. Photos, music and app files are read live from the iPhone.</p>
+    </main>
+  </div>
+</div>
+</body></html>

@@ -29,6 +29,7 @@ Previews and nice touches come third. A feature that weakens either priority doe
 | [11-previews.md](11-previews.md) | Previews and nice touches |
 | [12-engineering.md](12-engineering.md) | Code map, architecture, tests, pull requests, build and release, what is out of scope |
 | [13-phone-health.md](13-phone-health.md) | Phone check-up (storage, battery, stability, security) and photo clean-up |
+| [14-layouts.md](14-layouts.md) | Direction A layouts for 5.2 (phone window, backup progress, Settings, first-run guide), from the approved mockups in [docs/design/direction-a/](../design/direction-a/README.md) |
 | [../release.md](../release.md) | The release checklist (copied into each release pull request) |
 
 ## How to work
