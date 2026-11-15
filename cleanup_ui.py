@@ -15,6 +15,7 @@ from typing import Optional
 import checkup_ui
 import cleanup as cl
 import quicklook
+import theme
 import ui
 from ui import BG, CARD, GREEN, INK, LINE, MUTED, RED, SELECT_BLUE, RoundButton, font
 
@@ -266,23 +267,23 @@ def card_view(win, st: State, key: str, page: int = 0):
         if img is not None:
             tile.create_image(TILE // 2, TILE // 2, image=img)
         else:
-            tile.create_rectangle(0, 0, TILE, TILE, fill="#e9edef", outline="")
+            tile.create_rectangle(0, 0, TILE, TILE, fill=theme.TILE_BG, outline="")
             tile.create_text(TILE // 2, TILE // 2, text="▶" if item.video else "🖼", font=font(24), fill=MUTED)
         if item.video:
-            tile.create_rectangle(4, TILE - 20, 30, TILE - 4, fill="#000000", outline="")
-            tile.create_text(17, TILE - 12, text="▶", fill="white", font=font(10))
+            tile.create_rectangle(4, TILE - 20, 30, TILE - 4, fill=theme.BADGE_BG, outline="")
+            tile.create_text(17, TILE - 12, text="▶", fill=theme.ON_DARK, font=font(10))
         if item.live_video:
-            tile.create_rectangle(4, 4, 36, 20, fill="#000000", outline="")
-            tile.create_text(20, 12, text="LIVE", fill="white", font=font(8, "bold"))
+            tile.create_rectangle(4, 4, 36, 20, fill=theme.BADGE_BG, outline="")
+            tile.create_text(20, 12, text="LIVE", fill=theme.ON_DARK, font=font(8, "bold"))
         if item.id in group.locked:
             label = "★ Favourite" if item.favorite else "In an album"
-            tile.create_rectangle(TILE - 82, TILE - 22, TILE - 4, TILE - 4, fill="#3a3a3c", outline="")
-            tile.create_text(TILE - 43, TILE - 13, text=label, fill="white", font=font(9, "bold"))
+            tile.create_rectangle(TILE - 82, TILE - 22, TILE - 4, TILE - 4, fill=theme.BADGE_GREY, outline="")
+            tile.create_text(TILE - 43, TILE - 13, text=label, fill=theme.ON_DARK, font=font(9, "bold"))
         elif item.id not in st.ticked and (item.id in group.keep or key in GROUPED):
             tile.create_rectangle(TILE - 50, TILE - 22, TILE - 4, TILE - 4, fill=GREEN, outline="")
-            tile.create_text(TILE - 27, TILE - 13, text="Keep", fill="white", font=font(10, "bold"))
+            tile.create_text(TILE - 27, TILE - 13, text="Keep", fill=theme.ON_DARK, font=font(10, "bold"))
         if item.id in st.saved_ids:
-            tile.create_rectangle(TILE - 58, 4, TILE - 4, 20, fill="#ffffff", outline="")
+            tile.create_rectangle(TILE - 58, 4, TILE - 4, 20, fill=theme.CARD, outline="")
             tile.create_text(TILE - 31, 12, text="Saved ✓", fill=GREEN, font=font(9, "bold"))
         if item.id in st.ticked:
             tile.create_rectangle(2, 2, TILE - 2, TILE - 2, outline=SELECT_BLUE, width=5)
@@ -298,7 +299,7 @@ def card_view(win, st: State, key: str, page: int = 0):
 
     def tile_for(parent, item, group):
         cell = tk.Frame(parent, bg=BG)
-        t = tk.Canvas(cell, width=TILE, height=TILE, bg="#e9edef", highlightthickness=0, cursor="hand2")
+        t = tk.Canvas(cell, width=TILE, height=TILE, bg=theme.TILE_BG, highlightthickness=0, cursor="hand2")
         t.pack()
         t.bind("<ButtonRelease-1>", lambda e: (t.focus_set(), toggle(item, group)))
         t.bind("<space>", lambda e: (cursor.update(item=item), preview(), "break")[2])

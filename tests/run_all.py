@@ -43,6 +43,7 @@ STEPS = [
     ("C1: photo clean-up: six cards, keepers, saving checked by checksum, 10,000 photos", "test_c1_cleanup.py", True),
     ("Build: the Mac build script puts build_label.py back with git", "test_build_label.py", False),
     ("Licence: GPL-3.0-or-later; the built app carries LICENSE and THIRD_PARTY_NOTICES.md", "test_licence.py", False),
+    ("Theme: Direction A colours from theme.py only; buttons and selected rows", "test_theme.py", False),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
