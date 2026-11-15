@@ -224,6 +224,10 @@ phone.STORAGE_AGAIN_S = 1                                                       
 pump(app, lambda: win.storage_state == "" and "78.0 GB free" in strip_text(win), 15, "after a while")           # noqa: F821
 check(calls["storage"] == 4 and "78.0 GB free" in strip_text(win),
       "with no sign of life it's asked again after a while anyway; when it answers the figures show")      # noqa: F821
+quiet_until = time.time() + 4                                                           # a minute is 1 s here
+pump(app, lambda: time.time() > quiet_until, 6, "answered: quiet")                       # noqa: F821
+check(calls["storage"] == 4 and win._storage_tick_id is None,
+      "once storage has answered, it isn't asked again (the regular check stops)")       # noqa: F821
 win.close()
 
 app.destroy()
