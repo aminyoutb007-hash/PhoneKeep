@@ -53,6 +53,10 @@ Click **Open iPhone** (or the phone itself) in the main window. A window opens w
 
 Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. Nothing is ever written to the phone.
 
+## New in 5.1.2
+
+- Windows no longer get merged into tabs on Mac, and the Storage screen no longer shows System as 0 KB.
+
 ## New in 5.1.1
 
 - A calmer new look: lighter windows and headers, one green accent, warnings in amber. No changes to how backups work.
