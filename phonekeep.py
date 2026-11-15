@@ -647,6 +647,29 @@ def keep_phone_picture(udid: Optional[str], src) -> Optional[Path]:
 WIFI_TIMEOUT = 30          # the whole overview over Wi-Fi; each query inside it gets a few seconds (5.1.3)
 
 
+STORAGE_RETRY = 15          # seconds for the second try at the storage question (5.1.3)
+
+
+def storage_values(udid: Optional[str] = None, limit: float = STORAGE_RETRY) -> Optional[dict]:
+    """5.1.3: the phone's disk-usage values on their own (read-only), or None if it didn't answer within `limit`
+    seconds. Asked again in the background when the overview's storage question timed out."""
+    try:
+        check_pmd3()
+        cmd = _launcher_cmd() + ["--pk-storage", "--limit", str(limit)] + (["--udid", udid] if udid else [])
+        env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
+        import timing
+        with timing.step("storage, second try (process, total)"):
+            r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
+                               timeout=limit + 15, **_NOWIN)
+        for line in (r.stdout or "").splitlines():
+            if line.startswith("PKDISK "):
+                v = json.loads(line[len("PKDISK "):])
+                return v if isinstance(v, dict) and v else None
+    except Exception:
+        pass
+    return None
+
+
 def device_overview(udid: Optional[str] = None, apps: bool = True, timeout: float = 180, wifi: bool = False):
     """V1-V3: a deviceinfo.Overview of the connected phone (read-only), or None if it couldn't be asked
     within `timeout` seconds. wifi: skip what only works over a cable (the battery's IORegistry details: the saved

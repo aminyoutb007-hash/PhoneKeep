@@ -134,6 +134,7 @@ calls = []
 class FakeLockdown:
     async def __aenter__(self): return self
     async def __aexit__(self, *a): return False
+    async def close(self): pass            # letting go of the connection (5.1.3: closed by hand after a time-out)
 
     async def get_value(self, domain=None, key=None):
         calls.append(("get_value", domain))

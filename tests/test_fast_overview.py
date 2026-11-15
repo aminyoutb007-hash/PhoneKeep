@@ -178,8 +178,9 @@ check(cable.battery.cycles == 99 and air is not None and air.battery.cycles == 9
 lsrc = (HERE.parent / "launcher.py").read_text(encoding="utf-8")
 i = lsrc.index("def _pk_overview")
 body = lsrc[i:lsrc.index("\ndef ", i + 10)]
-check("if wifi:" in body and body.index("if wifi:") < body.index("DiagnosticsService(lockdown)")
-      and "asyncio.wait_for(coro, each)" in body, "launcher over Wi-Fi: no IORegistry, each query with a short timeout")  # noqa: F821
+check("if wifi:" in body and body.index("if wifi:") < body.index("DiagnosticsService(ld)")
+      and "asyncio.wait_for(make(conn[\"lockdown\"]), limit)" in body,
+      "launcher over Wi-Fi: no IORegistry, each query with a short timeout")             # noqa: F821
 
 # the timing log: only when asked for, step names and seconds only
 log = W / "timing-test.log"                                                              # noqa: F821

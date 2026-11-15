@@ -29,6 +29,7 @@ from typing import Callable, Optional
 
 import checkup_ui
 import keychain
+import deviceinfo as di
 import overview_ui
 import phoneapps
 import quicklook
@@ -111,6 +112,8 @@ def unique_path(p: Path) -> Path:
 
 LIVE_KEYS = {"photos", "music", "books", "files"}     # the sections read live from the iPhone
 WATCH_MS = 3000                                       # how often to ask whether the iPhone is still there (5.1.3)
+STORAGE_TICK_MS = 3000          # 5.1.3: while the storage question has no answer, how often to look for a sign of life
+STORAGE_AGAIN_S = 60            # ... and ask again anyway after this long (iOS doesn't say when it's unlocked)
 
 
 class Runner:
@@ -328,6 +331,10 @@ class PhoneWindow(tk.Toplevel):
         self.phone_here = True          # 5.1.3: False while the iPhone is unplugged / out of reach
         self.where = None               # asks whether this iPhone (by its UDID) is reachable now; set once connected
         self.watch_runner = Runner(self)
+        self.storage_runner = Runner(self)  # 5.1.3: the second try at the storage question
+        self.storage_state = ""             # "" / "waiting" (asked again) / "failed" (no answer, "Try again")
+        self._storage_failed_at = 0.0
+        self._storage_tick_id = None
         self._connecting = False
         self._reload_when_connected = False
 
@@ -724,11 +731,74 @@ class PhoneWindow(tk.Toplevel):
                     ov.apps, ov.apps_updating = self._apps_list, self._apps_state == "loading"
                 else:
                     ov.apps, ov.apps_as_of = phoneapps.load_saved(self.udid)
+            if ov is not None and "disk" in ov.problems:
+                self.retry_storage(show=False)      # the rest shows now; storage is asked again on its own
+            else:
+                self.storage_state = ""
             if self.current is None:
                 self.show_home()
         kw = {"wifi": True} if self.wifi else {}
         self.info_runner.submit(lambda: wv.device_overview(self.udid, apps=False, **kw), ok,
                                 lambda e: ok(None))
+
+    def retry_storage(self, show: bool = True):
+        """5.1.3: the storage question had no answer (over Wi-Fi a locked or dozing iPhone can hold it back): ask it
+        once more on its own, in the background, with a longer limit. Read-only. Meanwhile the card says it's
+        waiting; if there's still no answer it says so, with "Try again"."""
+        if self.storage_state == "waiting" or self.overview is None or not self.udid:
+            return
+        self._storage_tick_cancel()
+        self.storage_state = "waiting"
+        if show:
+            self._storage_refresh()
+        udid, ov = self.udid, self.overview
+
+        def ok(disk):
+            if disk is None:
+                return failed(None)
+            di.with_disk(ov, disk)
+            if self.overview is ov:
+                self.storage_state = ""
+                self._storage_refresh()
+
+        def failed(_e):
+            if self.overview is not ov:             # a newer read of the phone took over meanwhile
+                return
+            self.storage_state = "failed"
+            self._storage_failed_at = time.time()
+            self._storage_refresh()
+            self._storage_tick_id = self.after(STORAGE_TICK_MS, self._storage_tick)
+        self.storage_runner.submit(lambda: wv.storage_values(udid), ok, failed)
+
+    def _storage_tick(self):
+        """While the storage question has no answer: ask again as soon as the iPhone answers anything else (it's
+        awake, or unlocked), or anyway after a minute."""
+        self._storage_tick_id = None
+        if self.storage_state != "failed":
+            return
+        answered = max([getattr(x, "answered_at", 0.0) or 0.0 for x in (self.live, self.photo_src)] + [0.0])
+        if self.phone_here and (answered > self._storage_failed_at
+                                or time.time() - self._storage_failed_at >= STORAGE_AGAIN_S):
+            self.retry_storage()
+        else:
+            self._storage_tick_id = self.after(STORAGE_TICK_MS, self._storage_tick)
+
+    def _storage_tick_cancel(self):
+        if self._storage_tick_id is not None:
+            try:
+                self.after_cancel(self._storage_tick_id)
+            except tk.TclError:
+                pass
+            self._storage_tick_id = None
+
+    def _storage_refresh(self):
+        try:
+            if self.current is None:
+                self.show_home()
+            elif self.current == "storage" and self.overview is not None:
+                overview_ui.storage_view(self, self.overview)
+        except tk.TclError:
+            pass
 
     def load_apps(self):
         """5.1.3: the app list, in the background: the names at once, then the sizes a few apps at a time, each
@@ -2075,7 +2145,8 @@ class PhoneWindow(tk.Toplevel):
         if self.refreshing and not messagebox.askyesno(
                 wv.APP_NAME, "A backup is still running. Close anyway? It will carry on next time.", parent=self):
             return
-        for r in (self.backup_runner, self.live_runner, self.info_runner, self.apps_runner, self.watch_runner):
+        for r in (self.backup_runner, self.live_runner, self.info_runner, self.apps_runner, self.watch_runner,
+                  self.storage_runner):
             r.stop()
         if quicklook.Viewer.current is not None:
             quicklook.Viewer.current.close()

@@ -155,6 +155,11 @@ try:
     import phoneapps
     check(len(phoneapps.load_saved(win.udid)[0]) == len(win.overview.apps),
           "the app list with sizes is saved for next time (in the temporary folder here)")
+    # 5.1.3: the storage question on its own (the second try when the overview's one timed out), read-only
+    t_st = time.time()
+    disk = wv.storage_values(win.udid)
+    check(disk and disk.get("TotalDataAvailable") is not None and win.storage_state == "" and win.overview.free is not None,
+          f"storage answers on its own within its limit ({time.time() - t_st:.1f} s), and the card isn't waiting")
     win.show_home()
 
     # -- home screen ----------------------------------------------------------------------------------------

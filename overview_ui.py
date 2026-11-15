@@ -15,6 +15,27 @@ from ui import BG, CARD, INK, LINE, MUTED, RoundButton, font
 GOOD, WARN, BAD = theme.GOOD, theme.CAUTION, theme.BAD
 
 
+STORAGE_WAITING = "Storage: waiting for the iPhone…"        # 5.1.3: the storage question is being asked again
+STORAGE_NO_ANSWER = "The iPhone didn't answer. It may be locked or asleep."
+
+
+def storage_unknown(win, parent, ov: di.Overview, bg=CARD, wrap=220) -> bool:
+    """5.1.3: when the iPhone didn't answer the storage question, say so (waiting, or no answer with "Try again")
+    in place of the figures. False when the figures are there."""
+    state = getattr(win, "storage_state", "")
+    if ov.free is not None or state not in ("waiting", "failed"):
+        return False
+    msg = STORAGE_WAITING if state == "waiting" else STORAGE_NO_ANSWER
+    win.storage_note = tk.Label(parent, text=msg, bg=bg, fg=MUTED, font=font(12), anchor="w", justify="left",
+                                wraplength=wrap)
+    win.storage_note.pack(fill="x", padx=14, pady=(0, 6))
+    win.storage_try = None
+    if state == "failed":
+        win.storage_try = RoundButton(parent, "Try again", win.retry_storage, "secondary", 110, 30, 12)
+        win.storage_try.pack(anchor="w", padx=14, pady=(0, 10))
+    return True
+
+
 def _health_colour(h: Optional[int]) -> str:
     if h is None:
         return MUTED
@@ -94,6 +115,11 @@ def cards(win, parent, ov: Optional[di.Overview], last_backup: str = "", problem
     _bind_all(bc, lambda: battery_view(win, ov))
 
     # V3: storage
+    if ov.free is None and getattr(win, "storage_state", "") in ("waiting", "failed"):
+        sc = _card(strip, "STORAGE")
+        sc.grid(row=0, column=2, sticky="nsew", padx=(8, 0))
+        storage_unknown(win, sc, ov)
+        return strip
     sc = _card(strip, "STORAGE", lambda: storage_view(win, ov))
     sc.grid(row=0, column=2, sticky="nsew", padx=(8, 0))
     tk.Label(sc, text=f"{di.human(ov.free)} free" if ov.free is not None else "—", bg=CARD, fg=INK,
@@ -191,6 +217,8 @@ def storage_view(win, ov: di.Overview):
     cats = di.categories(ov, getattr(win, "photos_bytes", None), getattr(win, "messages_bytes", None))
     c = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
     c.pack(fill="x")
+    if storage_unknown(win, c, ov, wrap=640):
+        return
     tk.Label(c, text=f"{di.human(ov.used)} used · {di.human(ov.free)} free", bg=CARD, fg=INK, font=font(17, "bold"),
              anchor="w").pack(fill="x", padx=18, pady=(16, 6))
     bar = storage_bar(c, ov, cats, width=640, height=16)
