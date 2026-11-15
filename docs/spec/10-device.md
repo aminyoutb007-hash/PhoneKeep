@@ -5,7 +5,7 @@
 **What the user sees and does:** under the phone picture in the phone window: model name ("iPhone 17 Pro Max"), colour, iOS version, capacity and free space (a bar), serial number (click to copy), battery health (V2), last backup and the lock badge.
 
 **Done when**
-- [ ] Every value matches the iPhone's Settings → General → About. *(14 Nov, owner's iPhone 14 Pro Max: model, iOS, capacity and serial match. Colour: the phone reports a code (DeviceEnclosureColor); codes are named once checked on a real phone, starting with this one.)*
+- [x] Every value matches the iPhone's Settings → General → About. *(14 Nov, owner's iPhone 14 Pro Max: model, iOS, capacity and serial match. Colour: the phone reports a code (DeviceEnclosureColor); codes are named once checked on a real phone, starting with this one. 15 Nov: the owner confirmed the colour the phone window shows is right.)*
 
 ## V2. Battery health
 
@@ -28,7 +28,7 @@ Clean-up suggestions and the storage forecast: H2 in [13-phone-health.md](13-pho
 
 **Done when**
 - [x] Total, used and free are within 1% of Settings → General → iPhone Storage. *(14 Nov, owner's iPhone: match.)*
-- [ ] Each category is shown with "about" and the 20 largest apps match the phone's list in order.
+- [x] Each category is shown with "about" and the 20 largest apps match the phone's list in order. *(15 Nov, the owner compared PhoneKeep's top 20 with Settings → General → iPhone Storage on their iPhone: same order.)*
 
 ## V6. Storage tips
 
@@ -40,7 +40,7 @@ Clean-up suggestions and the storage forecast: H2 in [13-phone-health.md](13-pho
 
 **Done when**
 - [x] Every one of the 20 largest apps shows its line; the common big apps show their in-app way first. *(15 Nov, `tests/test_storage_tips.py`: all 20 can be scrolled into view in the window's normal size.)*
-- [ ] The steps match the phone and the apps (checked on a real iPhone for the default line and the apps installed there).
+- [x] The steps match the phone and the apps (checked on a real iPhone for the default line and the apps installed there). *(15 Nov, the owner checked the steps on their iPhone: they match.)*
 
 ## V4. Move to a new iPhone
 

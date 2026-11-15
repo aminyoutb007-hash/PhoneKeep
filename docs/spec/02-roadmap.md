@@ -35,9 +35,9 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | S2 | App lock (Touch ID / password) | Not available | Done | [04-security.md](04-security.md#s2-app-lock) |
 | P1 | Photos: albums, preview, HEIC to JPG | By month, live, originals | Partial (usability task 2 to do) | [07-photos-media.md](07-photos-media.md#p1-photos) |
 | D9 | Export everything with one date range and search | Everything preset; dates for chats only | Done | [08-personal-data.md](08-personal-data.md#d9-export-everything) |
-| V1 | Device overview | Name, iOS, connection | Partial (colour to do) | [10-device.md](10-device.md#v1-device-overview) |
+| V1 | Device overview | Name, iOS, connection | Done | [10-device.md](10-device.md#v1-device-overview) |
 | V2 | Battery health | Not available | Done | [10-device.md](10-device.md#v2-battery-health) |
-| V3 | Storage usage | Not available | Partial (app order to check) | [10-device.md](10-device.md#v3-storage-usage) |
+| V3 | Storage usage | Not available | Done | [10-device.md](10-device.md#v3-storage-usage) |
 | Q1 | Quick previews (Space key) everywhere | Partly (double-click opens) | Partial (Windows check deferred) | [11-previews.md](11-previews.md#q1-quick-preview-everywhere) |
 | B8 | Choose which iPhone when several are reachable (added 13 Nov, owner) | Cable wins, else the first on Wi-Fi, without saying so; one phone at a time | Partial (real check: the helper backing up two ticked phones) | [03-backup.md](03-backup.md#b8-choose-which-iphone-when-several-are-reachable) |
 
@@ -52,7 +52,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | L2 | Backup progress screen in the Direction A layout | Progress in a banner | To build | [14-layouts.md](14-layouts.md#l2-backup-progress-screen) |
 | L3 | Settings in the Direction A layout (left list, cards) | One long page | To build | [14-layouts.md](14-layouts.md#l3-settings-layout) |
 | E1 (refresh) | First-run guide in the Direction A layout, with the "Use over Wi-Fi" step (off by default) | Five steps in the main window | To build (refresh; E1 itself is Done) | [14-layouts.md](14-layouts.md#e1-refresh-first-run-guide-layout) |
-| V6 | Storage tips: under Largest apps, how to free each app's space (owner, 15 Nov) | Not available | Partial (the owner checks the in-app steps on the phone) | [10-device.md](10-device.md#v6-storage-tips) |
+| V6 | Storage tips: under Largest apps, how to free each app's space (owner, 15 Nov) | Not available | Done | [10-device.md](10-device.md#v6-storage-tips) |
 | S5 | Spyware check (part of H5; out of 5.1 on 14 Nov, owner: revisit after 5.1, with the MVT licence decision) | Not available | To build | [04-security.md](04-security.md#s5-spyware-check) |
 
 ## P2: should have
