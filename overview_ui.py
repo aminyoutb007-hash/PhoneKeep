@@ -173,10 +173,21 @@ TIPS = {
 }
 
 
+def apps_note(ov: di.Overview) -> str:
+    """5.1.3: where the app sizes come from while they're being read: "App sizes from 14 Nov 2026 · updating sizes…"."""
+    if ov.apps_updating:
+        if not ov.apps:
+            return "reading the app list…"
+        return (f"App sizes from {ov.apps_as_of} · updating sizes…" if ov.apps_as_of else "updating sizes…")
+    return f"App sizes from {ov.apps_as_of}" if ov.apps_as_of else ""
+
+
 def storage_view(win, ov: di.Overview):
     win.current = "storage"
     win._clear()
     _header(win, "Storage", f"{ov.model} · {ov.capacity_label()}")
+    if callable(getattr(win, "load_apps", None)):
+        win.load_apps()                     # 5.1.3: the app list, in the background
     cats = di.categories(ov, getattr(win, "photos_bytes", None), getattr(win, "messages_bytes", None))
     c = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
     c.pack(fill="x")
@@ -210,8 +221,14 @@ def storage_view(win, ov: di.Overview):
              bg=CARD, fg=MUTED, font=font(11), anchor="w", wraplength=640, justify="left").pack(fill="x", padx=18, pady=(6, 14))
 
     apps = ov.largest_apps(20)
+    note = apps_note(ov)
+    if apps or note:
+        head = tk.Frame(win.content, bg=BG)
+        head.pack(fill="x", pady=(14, 4))
+        tk.Label(head, text="Largest apps", bg=BG, fg=INK, font=font(15, "bold"), anchor="w").pack(side="left")
+        win.apps_note = tk.Label(head, text=note, bg=BG, fg=MUTED, font=font(11), anchor="w")
+        win.apps_note.pack(side="left", padx=(10, 0))
     if apps:
-        tk.Label(win.content, text="Largest apps", bg=BG, fg=INK, font=font(15, "bold"), anchor="w").pack(fill="x", pady=(14, 4))
         lst = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
         lst.pack(fill="x")
         top = apps[0].total or 1
@@ -225,5 +242,6 @@ def storage_view(win, ov: di.Overview):
             cv = tk.Canvas(r, width=90, height=8, bg=CARD, highlightthickness=0)
             cv.create_rectangle(0, 0, max(2, 90 * a.total / top), 8, fill=di.CATEGORY_COLOURS["Apps"], outline="")
             cv.pack(side="left", padx=8)
-            tk.Label(r, text=di.human(a.total), bg=CARD, fg=MUTED, font=font(11), anchor="w").pack(side="left")
+            tk.Label(r, text=di.human(a.total) if a.sized or a.total else "…", bg=CARD, fg=MUTED, font=font(11),
+                     anchor="w").pack(side="left")
             win.app_rows.append(a.name)

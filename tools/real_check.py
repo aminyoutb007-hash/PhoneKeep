@@ -138,6 +138,25 @@ win = phone.PhoneWindow(app, dev, dev["UniqueDeviceID"])
 win.crashes_read = True     # the check-up reads crash reports into the phone's real folder: the H4 step reads them
                             # into the temporary folder instead
 try:
+    # -- 5.1.3: filled in fast (all but the app list), and the app list in two passes ---------------------------
+    t_open = time.time()
+    pump(app, lambda: win.overview is not None and win.wall_img is not None, 60)
+    filled = time.time() - t_open
+    check(win.overview is not None and win.wall_img is not None and filled < 5,
+          f"the window fills in (details, battery, storage, wallpaper) without the app list ({filled:.1f} s)")
+    import overview_ui
+    t_apps = time.time()
+    overview_ui.storage_view(win, win.overview)
+    pump(app, lambda: win._apps_list is not None or not win._apps_state, 30)
+    names_s = time.time() - t_apps
+    pump(app, lambda: win._apps_state != "loading", 300)
+    check(win._apps_list and names_s < 3 and win._apps_state == "done" and all(x.sized for x in win.overview.apps),
+          f"Storage: the app names first ({names_s:.1f} s), then every size ({time.time() - t_apps:.0f} s)")
+    import phoneapps
+    check(len(phoneapps.load_saved(win.udid)[0]) == len(win.overview.apps),
+          "the app list with sizes is saved for next time (in the temporary folder here)")
+    win.show_home()
+
     # -- home screen ----------------------------------------------------------------------------------------
     backup_apps = [k for k, *_r, where in phone.APPS if where == "backup"]
     ok = pump(app, lambda: win.data is not None and all(k in win.counts for k in backup_apps), 300)
@@ -166,9 +185,10 @@ try:
         checkup_ui.details(win, "storage")
         pump(app, lambda: getattr(win, "storage_suggestions", None) is not None, 600)
         sg = getattr(win, "storage_suggestions", None)
-        check(sg is not None and all(s.size >= 500 * 1000 ** 2 and s.steps.startswith("On the iPhone: ") for s in sg)
+        check(sg is not None and all(s.size >= 500 * 1000 ** 2                 # C1's own say "Review them in Photo clean-up"
+                                     and s.steps.startswith(("On the iPhone: ", "Review them in Photo clean-up")) for s in sg)
               and [s.size for s in sg] == sorted((s.size for s in sg), reverse=True),
-              "Storage details: suggestions largest first, each 500 MB or more with steps on the phone")
+              "Storage details: suggestions largest first, each 500 MB or more with steps on the phone or in Photo clean-up")
         note(f"{len(sg or [])} suggestions: " + ", ".join(s.key for s in sg or [])
              + ("; a forecast is shown" if getattr(win, "storage_forecast", None) else "; no forecast (needs 4+ backups)"))
         # H3: the Battery details, with one point per recorded backup and tips for this model

@@ -464,6 +464,8 @@ def storage_suggestions(win, r: checkup.Report):
     holder = tk.Label(sec, text="Working out what takes the space…", bg=CARD, fg=MUTED, font=font(12), anchor="w")
     holder.pack(fill="x", padx=18, pady=(0, 14))
     win.storage_suggestions = None
+    if callable(getattr(win, "load_apps", None)):
+        win.load_apps()                     # 5.1.3: the app list, in the background; shown again when it's in
     data, live, ov = getattr(win, "data", None), getattr(win, "live", None), getattr(win, "overview", None)
     day = ""
     try:

@@ -142,7 +142,9 @@ def check_pmd3() -> None:
 def list_devices() -> list[dict]:
     """Return connected iPhones/iPads as dicts (DeviceName, ProductVersion, UniqueDeviceID...)."""
     check_pmd3()
-    r = _pmd3(["usbmux", "list"])
+    import timing
+    with timing.step("usbmux list (process)"):
+        r = _pmd3(["usbmux", "list"])
     if r.returncode != 0:
         raise PhoneKeepError.from_problem(r.stdout + r.stderr)
     out = r.stdout.strip()
@@ -596,14 +598,16 @@ def phone_used_bytes(udid: Optional[str] = None) -> Optional[int]:
     return None
 
 
-def battery_state(udid: Optional[str] = None) -> Optional[dict]:
-    """{"charging": bool, "level": int} from the phone, or None if it couldn't be asked."""
+def battery_state(udid: Optional[str] = None, timeout: float = 60) -> Optional[dict]:
+    """{"charging": bool, "level": int} from the phone, or None if it couldn't be asked within `timeout` seconds."""
     try:
         check_pmd3()
         cmd = _launcher_cmd() + ["--pk-battery"] + (["--udid", udid] if udid else [])
         env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
-        r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
-                           timeout=60, **_NOWIN)
+        import timing
+        with timing.step("battery (process, total)"):
+            r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
+                               timeout=timeout, **_NOWIN)
         for line in (r.stdout or "").splitlines():
             if line.startswith("PKBATTERY "):
                 kv = dict(x.split("=") for x in line.split()[1:])
@@ -613,18 +617,48 @@ def battery_state(udid: Optional[str] = None) -> Optional[dict]:
     return None
 
 
-def device_overview(udid: Optional[str] = None, apps: bool = True, timeout: float = 180):
+def phone_cache(udid: Optional[str]) -> Path:
+    """PhoneKeep's own folder for one phone's saved copies (wallpaper, app list, battery details), by its UDID."""
+    home = Path(os.environ.get("PHONEKEEP_HOME") or DEFAULT_HOME)
+    return home / "cache" / "phones" / re.sub(r"[^0-9A-Za-z-]", "", udid or "x")
+
+
+WIFI_TIMEOUT = 30          # the whole overview over Wi-Fi; each query inside it gets a few seconds (5.1.3)
+
+
+def device_overview(udid: Optional[str] = None, apps: bool = True, timeout: float = 180, wifi: bool = False):
     """V1-V3: a deviceinfo.Overview of the connected phone (read-only), or None if it couldn't be asked
-    within `timeout` seconds."""
+    within `timeout` seconds. wifi: skip what only works over a cable (the battery's IORegistry details: the saved
+    copy from the last cable connection is used) and give each query a short timeout."""
     import deviceinfo
     try:
         check_pmd3()
-        cmd = _launcher_cmd() + ["--pk-overview"] + (["--udid", udid] if udid else []) + ([] if apps else ["--no-apps"])
+        cmd = (_launcher_cmd() + ["--pk-overview"] + (["--udid", udid] if udid else []) + ([] if apps else ["--no-apps"])
+               + (["--wifi"] if wifi else []))
+        if wifi:
+            timeout = min(timeout, WIFI_TIMEOUT)
         env = dict(os.environ, NO_COLOR="1", PYTHONIOENCODING="utf-8")
-        r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
-                           timeout=timeout, **_NOWIN)
+        import timing
+        with timing.step("overview (process, total)"):
+            r = subprocess.run(cmd, capture_output=True, text=True, env=env, encoding="utf-8", errors="replace",
+                               timeout=timeout, **_NOWIN)
         raw = deviceinfo.parse_output(r.stdout)
-        return deviceinfo.from_raw(raw) if raw is not None else None
+        if raw is None:
+            return None
+        saved = phone_cache(udid) / "battery-details.json"
+        if raw.get("battery_io") and udid:
+            try:
+                saved.parent.mkdir(parents=True, exist_ok=True)
+                saved.write_text(json.dumps(raw["battery_io"]), encoding="utf-8")
+            except OSError:
+                pass
+        elif wifi and saved.exists():                    # over Wi-Fi: the battery details from the last cable time
+            try:
+                raw["battery_io"] = json.loads(saved.read_text(encoding="utf-8"))
+                raw.get("problems", {}).pop("battery_io", None)
+            except (OSError, ValueError):
+                pass
+        return deviceinfo.from_raw(raw)
     except Exception:
         return None
 

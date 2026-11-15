@@ -68,6 +68,7 @@ class AppSize:
     name: str
     app_bytes: int
     data_bytes: int
+    sized: bool = True          # False while its size is still being asked for (5.1.3)
 
     @property
     def total(self) -> int:
@@ -88,6 +89,8 @@ class Overview:
     battery: Battery = field(default_factory=Battery)
     apps: list[AppSize] = field(default_factory=list)
     problems: dict[str, str] = field(default_factory=dict)   # section -> why it couldn't be read
+    apps_as_of: str = ""        # the app list is the saved copy of this day ("" = read now) (5.1.3)
+    apps_updating: bool = False # the sizes are being asked for now
 
     @property
     def used(self) -> Optional[int]:

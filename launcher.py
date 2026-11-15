@@ -323,9 +323,16 @@ def _pk_battery(args: list) -> None:
         print(f"PKAPI {e}", flush=True)
         sys.exit(3)
 
+    import time as _t
+    import timing
+
     async def run():
-        async with await create_using_usbmux(serial=udid) as lockdown:
-            v = await lockdown.get_value(domain="com.apple.mobile.battery")
+        t = _t.perf_counter()
+        lockdown = await create_using_usbmux(serial=udid)
+        timing.log("battery: lockdown connect", _t.perf_counter() - t)
+        async with lockdown:
+            with timing.step("battery: battery domain"):
+                v = await lockdown.get_value(domain="com.apple.mobile.battery")
             v = v or {}
             print(f"PKBATTERY charging={1 if v.get('BatteryIsCharging') else 0} level={int(v.get('BatteryCurrentCapacity', -1))}", flush=True)
     try:
@@ -376,28 +383,46 @@ def _pk_overview(args: list) -> None:
     keep_io = ("CycleCount", "DesignCapacity", "NominalChargeCapacity", "AppleRawMaxCapacity", "MaximumCapacityPercent",
                "Temperature", "CurrentCapacity", "IsCharging")
 
+    import time as _t
+    import timing
+    wifi = "--wifi" in args
+    each = 6 if wifi else None                       # Wi-Fi: one slow answer can't hold up the rest (5.1.3)
+
+    def q(coro):
+        return asyncio.wait_for(coro, each) if each else coro
+
     async def run():
         out = {"problems": {}}
-        async with await create_using_usbmux(serial=udid) as lockdown:
-            allv = (await lockdown.get_value()) or {}
+        t = _t.perf_counter()
+        lockdown = await (asyncio.wait_for(create_using_usbmux(serial=udid), 3 * each) if each
+                          else create_using_usbmux(serial=udid))
+        timing.log("overview: lockdown connect", _t.perf_counter() - t)
+        async with lockdown:
+            with timing.step("overview: all lockdown values"):
+                allv = (await q(lockdown.get_value())) or {}
             out["info"] = {k: allv.get(k) for k in keep_info if allv.get(k) is not None}
             for k in ("DeviceEnclosureColor", "ModelNumber"):       # not always in the full list: ask by name
                 if k not in out["info"]:
                     try:
-                        v = await lockdown.get_value(key=k)
+                        with timing.step(f"overview: lockdown value {k}"):
+                            v = await q(lockdown.get_value(key=k))
                         if v is not None:
                             out["info"][k] = v
                     except Exception:
                         pass
             for key, domain in (("disk", "com.apple.disk_usage"), ("battery", "com.apple.mobile.battery")):
                 try:
-                    out[key] = (await lockdown.get_value(domain=domain)) or {}
+                    with timing.step(f"overview: {key} domain"):
+                        out[key] = (await q(lockdown.get_value(domain=domain))) or {}
                 except Exception as e:
                     out["problems"][key] = f"{type(e).__name__}: {e}"
             try:
+                if wifi:                             # only over a cable; the saved copy is used instead
+                    raise RuntimeError("over Wi-Fi: connect by cable for the battery's details")
                 from pymobiledevice3.services.diagnostics import DiagnosticsService
-                async with DiagnosticsService(lockdown) as diag:
-                    io = (await diag.ioregistry(ioclass="AppleSmartBattery")) or {}
+                with timing.step("overview: battery ioregistry (diagnostics)"):
+                    async with DiagnosticsService(lockdown) as diag:
+                        io = (await diag.ioregistry(ioclass="AppleSmartBattery")) or {}
                 bd = io.get("BatteryData") if isinstance(io.get("BatteryData"), dict) else {}
                 out["battery_io"] = {k: io[k] for k in keep_io if k in io}
                 out["battery_io"]["BatteryData"] = {k: bd[k] for k in keep_io if k in bd}
@@ -406,8 +431,9 @@ def _pk_overview(args: list) -> None:
             if "--no-apps" not in args:
                 try:
                     from pymobiledevice3.services.installation_proxy import InstallationProxyService
-                    async with InstallationProxyService(lockdown) as ip:
-                        apps = await ip.get_apps(application_type="User", calculate_sizes=True)
+                    with timing.step("overview: app list with sizes"):
+                        async with InstallationProxyService(lockdown) as ip:
+                            apps = await ip.get_apps(application_type="User", calculate_sizes=True)
                     out["apps"] = {b: {k: a.get(k) for k in ("CFBundleDisplayName", "CFBundleName", "StaticDiskUsage",
                                                              "DynamicDiskUsage")} for b, a in (apps or {}).items()}
                 except Exception as e:
