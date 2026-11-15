@@ -81,17 +81,21 @@ how = "USB" if dev.get("ConnectionType") == "USB" else "Wi-Fi"
 udid = dev.get("UniqueDeviceID") or dev.get("Identifier")
 print(f"Timing the iPhone over {how}. This takes up to a few minutes.", flush=True)
 
-# the main window's phone card: its wallpaper and battery (App._read_phone_extra)
+# the main window's phone card: its wallpaper and battery (App._read_phone_extra); over Wi-Fi the app uses the
+# saved wallpaper and asks the phone for the battery only, with a short timeout
 import device as devmod                                     # noqa: E402
-try:
-    live = devmod.LiveDevice(udid)
+if how == "USB":
     try:
-        live.wallpaper("lockscreen") or live.wallpaper("homescreen")
-    finally:
-        live.close()
-except Exception:
-    pass
-wv.battery_state(udid)
+        live = devmod.LiveDevice(udid)
+        try:
+            live.wallpaper("lockscreen") or live.wallpaper("homescreen")
+        finally:
+            live.close()
+    except Exception:
+        pass
+    wv.battery_state(udid)
+else:
+    wv.battery_state(udid, timeout=wv.WIFI_TIMEOUT)
 mark("main window: phone card filled")
 
 # the phone window
@@ -102,10 +106,25 @@ win.crashes_read = True
 win.withdraw()
 pump(app, lambda: win.live is not None or win.live_error, 120)
 mark("phone window: connected")
-pump(app, lambda: win.wall_img is not None, 90)
-mark("phone window: wallpaper shown" if win.wall_img is not None else "phone window: no wallpaper (gave up)")
-pump(app, lambda: win.overview is not None or win.overview_problem, 300)
-mark("phone window: battery and storage shown" if win.overview is not None else "phone window: overview failed")
+# the wallpaper (over a cable only: over Wi-Fi it isn't asked for) and the overview arrive independently; each is
+# marked when it happens
+want_wall = how == "USB"
+seen = set()
+
+
+def watch():
+    if want_wall and "wall" not in seen and win.wall_img is not None:
+        seen.add("wall")
+        mark("phone window: wallpaper shown")
+    if "ov" not in seen and (win.overview is not None or win.overview_problem):
+        seen.add("ov")
+        mark("phone window: battery and storage shown" if win.overview is not None else "phone window: overview failed")
+    return "ov" in seen and ("wall" in seen or not want_wall)
+
+
+pump(app, watch, 300)
+if want_wall and "wall" not in seen:
+    mark("phone window: no wallpaper (gave up)")
 mark("phone window: filled (all but the app list)")
 # the app list, as when Storage is opened: names first, then the sizes
 if win.overview is not None:
