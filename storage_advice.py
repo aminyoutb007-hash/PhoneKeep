@@ -41,6 +41,35 @@ STEPS = {
 }
 
 
+# V6 (5.2): under Storage → Largest apps, how to free space for each app. Read-only: PhoneKeep never deletes or offloads
+# an app itself; these are the steps on the phone. The in-app ways are for common big apps (by their App Store bundle
+# ID), worded the way the apps name their own menus.
+IN_APP = {
+    "com.google.ios.youtube": "YouTube → You → Downloads: remove the videos you've watched.",
+    "com.tencent.xin": "WeChat → Me → Settings → General → Storage: clear the cache.",
+    "com.spotify.client": "Spotify → Settings → Storage: clear the cache, or remove downloads you don't need.",
+    "net.whatsapp.WhatsApp": "WhatsApp → Settings → Storage and Data → Manage Storage.",
+    "net.whatsapp.WhatsAppSMB": "WhatsApp Business → Settings → Storage and Data → Manage Storage.",
+    "ph.telegra.Telegraph": "Telegram → Settings → Data and Storage → Storage Usage: clear the cache.",
+    "com.netflix.Netflix": "Netflix → My Netflix → Downloads: delete what you've watched.",
+    "com.amazon.aiv.AIVApp": "Prime Video → Downloads: delete what you've watched.",
+    "com.disney.disneyplus": "Disney+ → Downloads: delete what you've watched.",
+    "com.zhiliaoapp.musically": "TikTok → Profile → ☰ → Settings and privacy → Free up space.",
+    "com.google.Maps": "Google Maps → your picture → Offline maps: delete maps you don't need.",
+}
+
+
+def app_tip(bundle: str, name: str) -> list[str]:
+    """How to free the space this app takes, as one or two lines: the app's own way first (for common big apps),
+    then offloading it on the iPhone. Offloading frees the app itself and keeps its documents and data, so the line
+    says so: for an app full of chats or downloads it frees little."""
+    offload = (f"Settings → General → iPhone Storage → {name or 'the app'} → Offload App "
+               "(frees the app, keeps its documents and data)")
+    if bundle in IN_APP:
+        return [f"In the app: {IN_APP[bundle]}", f"Or offload it on the iPhone: {offload}"]
+    return [f"Offload on the iPhone: {offload}"]
+
+
 @dataclass
 class Suggestion:
     key: str
