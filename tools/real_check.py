@@ -389,77 +389,109 @@ try:
     # -- D9: "Last 30 days, mentioning invoice" keeps only matching messages, notes and files ----------------------
     # Saved into this check's own temporary folder (removed at the end). What should be kept is worked out here on
     # its own, straight from the backup, and compared with what was saved; only pass/fail and counts are printed.
+    # A kind counts as tested only when, in that run, the word matches items inside the 30 days AND outside them
+    # (so the range is shown to cut) and items inside the 30 days don't mention it (so the search is shown to cut).
     import sections as sx
+    ctx = sx.Ctx(win.data.reader, WORK / "d9-read", lambda m: None, False, {})
 
-    def d9(word, kinds, days=30):
-        """Save everything for the last `days` days mentioning `word`; returns what should have been kept."""
-        lo = today - dt.timedelta(days=days - 1)
-        dest = WORK / f"everything-{word}"
+    def day(when):
+        if isinstance(when, (int, float)):
+            return dt.datetime.fromtimestamp(when).date()
+        if isinstance(when, dt.datetime):
+            return when.date()
+        try:
+            return dt.date.fromisoformat(str(when)[:10]) if when else None
+        except ValueError:
+            return None
+    items = {}                                     # kind -> [(day, [texts the search looks at])]
+    try:
+        items["messages"] = [(day(m.get("time")), [c.get("name")] + [v for k, v in m.items() if isinstance(v, str)
+                              and k not in ("time", "type", "media_rel", "media")])
+                             for c in sx.load_messages(ctx) for m in c["messages"]]
+    except wv.PhoneKeepError:
+        items["messages"] = []
+    try:
+        items["notes"] = [(day(n["modified"]), [n["title"], n["text"], n["folder"]]) for n in sx.load_notes(ctx)]
+    except wv.PhoneKeepError:
+        items["notes"] = []
+    items["files"] = [(day(win.data.reader.file_mtime(fid)), [dom + "/" + rel]) for dom, rel, fid in
+                      win.data.reader.db.execute("SELECT domain, relativePath, fileID FROM Files WHERE flags=1")]
+
+    def tally(kind, word, lo, hi):
+        """(kept, matching outside the dates, not matching inside the dates)"""
+        kept = outside = other = 0
+        for d, texts in items[kind]:
+            hit = any(word in str(t).casefold() for t in texts if t)
+            inside = d is not None and lo <= d <= hi
+            kept += hit and inside
+            outside += hit and not inside
+            other += inside and not hit
+        return kept, outside, other
+    tested = set()
+
+    def d9(word, kinds, lo, hi):
+        dest = WORK / f"everything-{len(tested)}-{word}"
         win.last_save_all = None
-        win.save_everything({"sections": kinds, "dates": (lo, today), "search": word,
-                             "formats": {"web", "csv"}}, dest)
+        win.save_everything({"sections": kinds, "dates": (lo, hi), "search": word, "formats": {"web", "csv"}}, dest)
         pump(app, lambda: win.last_save_all is not None or "Couldn't" in win.bar_text.cget("text"), 900)
         saved = {}
         try:
             saved = json.loads((dest / "assets" / "sections.json").read_text(encoding="utf-8"))
         except Exception:
             pass
-
-        def day(when):
-            if isinstance(when, (int, float)):
-                return dt.datetime.fromtimestamp(when).date()
-            if isinstance(when, dt.datetime):
-                return when.date()
-            try:
-                return dt.date.fromisoformat(str(when)[:10]) if when else None
-            except ValueError:
-                return None
-
-        def inside(when):
-            d = day(when)
-            return d is not None and lo <= d <= today
-
-        def says(*texts):
-            return any(word in str(t).casefold() for t in texts if t)
-        ctx = sx.Ctx(win.data.reader, WORK / "d9-read", lambda m: None, False, {})
-        want = {}
-        try:
-            want["messages"] = sum(1 for c in sx.load_messages(ctx) for m in c["messages"] if inside(m.get("time"))
-                                   and (says(c.get("name")) or says(*(v for k, v in m.items() if isinstance(v, str)
-                                                                      and k not in ("time", "type", "media_rel", "media")))))
-        except wv.PhoneKeepError:
-            want["messages"] = 0
-        try:
-            want["notes"] = sum(1 for n in sx.load_notes(ctx) if inside(n["modified"])
-                                and says(n["title"], n["text"], n["folder"]))
-        except wv.PhoneKeepError:
-            want["notes"] = 0
-        if "files" in kinds:
-            want["files"] = sum(1 for dom, rel, fid in win.data.reader.db.execute(
-                "SELECT domain, relativePath, fileID FROM Files WHERE flags=1") if says(dom + "/" + rel)
-                and inside(win.data.reader.file_mtime(fid)))
-        got = {k: (saved.get(k) or {}).get("count", -1) for k in want}
+        t = {k: tally(k, word, lo, hi) for k in kinds}
+        want = {k: t[k][0] for k in kinds}
+        got = {k: (saved.get(k) or {}).get("count", -1) for k in kinds}
         hub = dest / "index.html"
         check(hub.exists() and "mentioning" in hub.read_text(encoding="utf-8") and got == want,
-              f"Save everything, last {days} days mentioning '{word}': saves exactly the matching {', '.join(kinds)}"
+              f"Save everything, {lo} to {hi} mentioning '{word}': saves exactly the matching {', '.join(kinds)}"
               f" (saved {got}, worked out from the backup {want})")
-        stray = [p for p in (dest / "All files").rglob("*") if p.is_file() and p.name != "README.txt"
-                 and word not in p.relative_to(dest / "All files").as_posix().casefold()]
-        check(not stray, f"  every saved file mentions '{word}' in its name or folder ({len(stray)} don't)")
-        every = dest / "Messages" / "CSV" / "_All chats.csv"
-        rows = list(csv.reader(every.open(encoding="utf-8-sig")))[1:] if every.exists() else []
-        off = sum(1 for r in rows if not (r and inside(r[1]) and says(*r)))
-        check(len(rows) == want["messages"] and not off,
-              f"  every saved message is from those {days} days and mentions it, or is in a chat whose name does"
-              f" ({off} of {len(rows)} don't)")
-        return want
+        if "files" in kinds:
+            stray = [p for p in (dest / "All files").rglob("*") if p.is_file() and p.name != "README.txt"
+                     and word not in p.relative_to(dest / "All files").as_posix().casefold()]
+            check(not stray, f"  every saved file mentions '{word}' in its name or folder ({len(stray)} don't)")
+        if "messages" in kinds:
+            every = dest / "Messages" / "CSV" / "_All chats.csv"
+            rows = []
+            if every.exists():
+                with every.open(encoding="utf-8-sig") as f:
+                    rows = list(csv.reader(f))[1:]
+            off = sum(1 for r in rows if not (len(r) > 4 and (d := day(r[1])) and lo <= d <= hi
+                                              and any(word in x.casefold() for x in (r[0], r[3], r[4]))))
+            check(len(rows) == want["messages"] and not off,
+                  f"  every saved message is from those dates and mentions it, or is in a chat whose name does"
+                  f" ({off} of {len(rows)} don't)")
+        for k in kinds:
+            if all(t[k]) and got == want:
+                tested.add(k)
+            note(f"  {k}: kept {t[k][0]}, left out by the dates {t[k][1]}, left out by the word {t[k][2]}")
 
-    found = d9("invoice", ["messages", "notes", "files"])
-    if not (found["messages"] and found["notes"]):
-        # too little recent to test those two: the same check with a common word over two years
-        more = d9("the", ["messages", "notes"], days=730)
-        if not (more["messages"] and more["notes"]):
-            note("too little in this backup to test the search on messages and notes")
+    d9("invoice", ["messages", "notes", "files"], today - dt.timedelta(days=29), today)
+    # a kind the literal run couldn't test (too little recent): the 30 days with the most of that kind in the
+    # backup, with the first common word that matches inside and outside those days (and not everything inside)
+    words = {"messages": ("the", "and", "you", "de", "la", "a"), "notes": ("the", "and", "de", "la", "a"),
+             "files": ("invoice", "receipt", "photo", "document", "media", "cache")}
+    for kind in ("messages", "notes", "files"):
+        if kind in tested:
+            continue
+        dates = sorted(d for d, _t in items[kind] if d)
+        if not dates:
+            note(f"D9: no dated {kind} in this backup to test with")
+            continue
+        first, busiest = 0, (0, dates[0])            # (how many, last day) of the fullest 30 days
+        for i, d in enumerate(dates):
+            while dates[first] < d - dt.timedelta(days=29):
+                first += 1
+            busiest = max(busiest, (i - first + 1, d))
+        hi = busiest[1]
+        lo = hi - dt.timedelta(days=29)
+        word = next((w for w in words[kind] if all(tally(kind, w, lo, hi)) and tally(kind, w, lo, hi)[0] <= 300), None)
+        if word is None:
+            note(f"D9: no common word cuts both ways in the fullest 30 days of {kind}; not tested on real data")
+            continue
+        d9(word, [kind], lo, hi)
+    check(tested == {"messages", "notes", "files"},
+          f"D9 on real data: the dates and the word both left things out, for {', '.join(sorted(tested)) or 'nothing'}")
 finally:
     try:
         win.close()
