@@ -35,6 +35,7 @@ import saveall_ui
 import phonekeep as wv
 import snapshots as sn
 import sections as sx
+import theme
 import ui
 from ui import BG, CARD, GREEN, GREEN_SOFT, INK, LINE, MUTED, RED, RoundButton, card, font
 
@@ -45,23 +46,23 @@ except Exception:  # Pillow missing: no wallpaper picture
 
 # key, label, icon, tile colour, where the data lives
 APPS = [
-    ("photos", "Photos", "🌻", "#fff4e0", "live"),
-    ("messages", "Messages", "💬", "#34c759", "backup"),
-    ("whatsapp", "WhatsApp", "💬", "#25d366", "backup"),
-    ("whatsappbusiness", "WhatsApp Business", "💼", "#0f7c6c", "backup"),
-    ("calls", "Call History", "📞", "#30d158", "backup"),
-    ("contacts", "Contacts", "👤", "#9a9aa0", "backup"),
-    ("voicemail", "Voicemail", "📼", "#0a84ff", "backup"),
-    ("notes", "Notes", "📝", "#ffd60a", "backup"),
-    ("calendar", "Calendar", "📅", "#ffffff", "backup"),
-    ("voicememos", "Voice Memos", "🎙", "#3a3a3c", "backup"),
-    ("safari", "Safari", "🧭", "#0a84ff", "backup"),
-    ("music", "Music", "🎵", "#fa2d48", "live"),
-    ("books", "Books", "📚", "#ff9500", "live"),
-    ("files", "App Files", "📁", "#1e90ff", "live"),
-    ("apps", "Apps", "📱", "#5e5ce6", "backup"),
-    ("allfiles", "All files", "🗂", "#8e8e93", "backup"),
-    ("checkup", "Check-up", "🩺", "#34c759", "checkup"),      # H1: from the phone, or as of the last backup
+    ("photos", "Photos", "🌻", theme.APP_TILE["photos"], "live"),
+    ("messages", "Messages", "💬", theme.APP_TILE["messages"], "backup"),
+    ("whatsapp", "WhatsApp", "💬", theme.APP_TILE["whatsapp"], "backup"),
+    ("whatsappbusiness", "WhatsApp Business", "💼", theme.APP_TILE["whatsappbusiness"], "backup"),
+    ("calls", "Call History", "📞", theme.APP_TILE["calls"], "backup"),
+    ("contacts", "Contacts", "👤", theme.APP_TILE["contacts"], "backup"),
+    ("voicemail", "Voicemail", "📼", theme.APP_TILE["voicemail"], "backup"),
+    ("notes", "Notes", "📝", theme.APP_TILE["notes"], "backup"),
+    ("calendar", "Calendar", "📅", theme.APP_TILE["calendar"], "backup"),
+    ("voicememos", "Voice Memos", "🎙", theme.APP_TILE["voicememos"], "backup"),
+    ("safari", "Safari", "🧭", theme.APP_TILE["safari"], "backup"),
+    ("music", "Music", "🎵", theme.APP_TILE["music"], "live"),
+    ("books", "Books", "📚", theme.APP_TILE["books"], "live"),
+    ("files", "App Files", "📁", theme.APP_TILE["files"], "live"),
+    ("apps", "Apps", "📱", theme.APP_TILE["apps"], "backup"),
+    ("allfiles", "All files", "🗂", theme.APP_TILE["allfiles"], "backup"),
+    ("checkup", "Check-up", "🩺", theme.APP_TILE["checkup"], "checkup"),      # H1: from the phone, or as of the last backup
 ]
 LABEL = {k: l for k, l, *_ in APPS}
 ICON_DIR = ui.ICON_DIR
@@ -331,16 +332,16 @@ class PhoneWindow(tk.Toplevel):
                                                       reveal(self.out_root)), "ghost", 150, 34, 12).pack(side="right", padx=(6, 16))
         self.refresh_btn = RoundButton(head, "⟳  Refresh from iPhone", self.refresh, "ghost", 210, 34, 12)
         self.refresh_btn.pack(side="right")
-        tk.Label(head, text=self.name, bg=GREEN, fg="white", font=font(19, "bold")).pack(side="left", padx=(20, 10), pady=12)
+        tk.Label(head, text=self.name, bg=GREEN, fg=theme.ON_ACCENT, font=font(19, "bold")).pack(side="left", padx=(20, 10), pady=12)
         how = "USB cable" if self.device.get("ConnectionType") == "USB" else "Wi-Fi"
         if self.opened_backup is not None and not self.live_wanted:
             info = wv.backup_info(self.opened_backup)
             sub_text = f"backup of {info.get('date') or '?'} · iOS {info.get('ios') or '?'} · no iPhone connected"
         else:
             sub_text = f"iOS {self.device.get('ProductVersion', '?')} · connected by {how}"
-        self.sub = tk.Label(head, text=sub_text, bg=GREEN, fg="#d7efe9", font=font(12))
+        self.sub = tk.Label(head, text=sub_text, bg=GREEN, fg=theme.ON_ACCENT_2, font=font(12))
         self.sub.pack(side="left", pady=12)
-        self.lock_badge = tk.Label(head, text="", bg=GREEN, fg="#d7efe9", font=font(12, "bold"))
+        self.lock_badge = tk.Label(head, text="", bg=GREEN, fg=theme.ON_ACCENT_2, font=font(12, "bold"))
         self.lock_badge.pack(side="left", padx=(14, 0), pady=12)
 
         self.bar_frame = tk.Frame(self, bg=GREEN_SOFT)
@@ -362,7 +363,7 @@ class PhoneWindow(tk.Toplevel):
         # B3: the timeline of snapshots. Click one to see the phone as it was then; right-click for more.
         self.timeline = tk.Frame(left, bg=BG)
         self.timeline.pack(fill="x", pady=(10, 0))
-        self.viewing = tk.Label(left, text="", bg="#fff4e0", fg="#b06000", font=font(11, "bold"))
+        self.viewing = tk.Label(left, text="", bg=theme.WARN_BG, fg=theme.WARN_TEXT, font=font(11, "bold"))
         self._build_timeline()
         self._update_src_line()
 
@@ -470,20 +471,20 @@ class PhoneWindow(tk.Toplevel):
             pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2,
                    x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
             return c.create_polygon(pts, smooth=True, fill=fill, outline=outline)
-        rr(4, 4, W - 4, H - 4, 44, "#1c1c1e")
-        rr(12, 12, W - 12, H - 12, 36, "#2f6f63")
+        rr(4, 4, W - 4, H - 4, 44, theme.PHONE_BODY)
+        rr(12, 12, W - 12, H - 12, 36, theme.PHONE_SCREEN)
         if self.wall_img is not None:
             # the phone's own picture already shows its time, date and island: nothing drawn over it (13 Nov)
             c.create_image(W // 2, H // 2, image=self.wall_img)
             return
         c.create_text(W // 2, H // 2 + 40, text="Your wallpaper\nshows here when the\niPhone is connected",
-                      fill="#d7efe9", font=font(11), justify="center")
-        rr(W // 2 - 44, 22, W // 2 + 44, 46, 12, "#000000")             # Dynamic Island
+                      fill=theme.PHONE_SCREEN_TEXT, font=font(11), justify="center")
+        rr(W // 2 - 44, 22, W // 2 + 44, 46, 12, theme.PHONE_ISLAND)             # Dynamic Island
         now = dt.datetime.now().strftime("%H:%M")
-        c.create_text(46, 34, text=now, fill="white", font=font(12, "bold"))
-        c.create_text(W // 2, H // 2 - 70, text=now, fill="white", font=font(44, "bold"))
-        c.create_text(W // 2, H // 2 - 120, text=dt.datetime.now().strftime("%A %d %B"), fill="white", font=font(13))
-        rr(W // 2 - 50, H - 30, W // 2 + 50, H - 25, 2, "#ffffff")       # home bar
+        c.create_text(46, 34, text=now, fill=theme.ON_DARK, font=font(12, "bold"))
+        c.create_text(W // 2, H // 2 - 70, text=now, fill=theme.ON_DARK, font=font(44, "bold"))
+        c.create_text(W // 2, H // 2 - 120, text=dt.datetime.now().strftime("%A %d %B"), fill=theme.ON_DARK, font=font(13))
+        rr(W // 2 - 50, H - 30, W // 2 + 50, H - 25, 2, theme.PHONE_HOME_BAR)       # home bar
 
     def _set_wallpaper(self, path):
         if not path or Image is None:
@@ -522,7 +523,7 @@ class PhoneWindow(tk.Toplevel):
                 self.banner("Backing up changes from the iPhone… keep it unlocked and nearby.")
                 self.bar_text.configure(font=font(13))
                 return
-            self.banner("📱  " + text, color="#fff4e0")
+            self.banner("📱  " + text, color=theme.WARN_BG)
             self.bar_text.configure(font=font(16, "bold"))
             self.deiconify()
             self.lift()
@@ -562,7 +563,7 @@ class PhoneWindow(tk.Toplevel):
             self.bar_frame.pack_forget()
             return
         self.bar_frame.configure(bg=color)
-        self.bar_text.configure(text=text, bg=color)
+        self.bar_text.configure(text=text, bg=color, fg=theme.WARN_TEXT if color == theme.WARN_BG else INK)
         if self.bar_btn is not None:
             self.bar_btn.destroy()
             self.bar_btn = None
@@ -677,7 +678,7 @@ class PhoneWindow(tk.Toplevel):
                     self._open_backup(ask=True)
                     return
             self.data_error = msg
-            self.banner(msg, color="#fdecea")
+            self.banner(msg, color=theme.ERROR_BG)
             self._update_src_line()
         self.backup_runner.submit(lambda: BackupData(self.backup_path, password), ok, err)
 
@@ -735,7 +736,7 @@ class PhoneWindow(tk.Toplevel):
             else:
                 pts = [8 + 22, 8, 84 - 22, 8, 84, 8, 84, 8 + 22, 84, 84 - 22, 84, 84, 84 - 22, 84,
                        8 + 22, 84, 8, 84, 8, 84 - 22, 8, 8 + 22, 8, 8]
-                cv.create_polygon(pts, smooth=True, fill=colour, outline=LINE if colour == "#ffffff" else "")
+                cv.create_polygon(pts, smooth=True, fill=colour, outline=LINE if colour.lower() == theme.CARD.lower() else "")
                 cv.create_text(46, 46, text=icon, font=font(34))
             tk.Label(t, text=label, bg=BG, fg=INK, font=font(12, "bold"), wraplength=120).pack()
             cl = tk.Label(t, text="", bg=BG, fg=MUTED, font=font(11))
@@ -916,7 +917,7 @@ class PhoneWindow(tk.Toplevel):
     def run_save(self, label: str, fn, folder: Path, what: str = "file", runner=None):
         self.banner(f"Saving {label}…")
         (runner or self.backup_runner).submit(fn, lambda paths: self.saved(paths, folder, what),
-                                              lambda e: self.banner(f"Couldn't save: {describe_error(e)}", color="#fdecea"))
+                                              lambda e: self.banner(f"Couldn't save: {describe_error(e)}", color=theme.ERROR_BG))
 
     def save_everything(self, choice: Optional[dict] = None, folder: Optional[Path] = None):
         """D9: the Save everything sheet, then one export of every ticked kind into one new folder.
@@ -959,7 +960,7 @@ class PhoneWindow(tk.Toplevel):
 
         def err(e):
             state["finished"] = True
-            self.banner(f"Couldn't save everything: {describe_error(e)}", color="#fdecea")
+            self.banner(f"Couldn't save everything: {describe_error(e)}", color=theme.ERROR_BG)
         self.banner("Saving everything…")
         self.backup_runner.submit(go, ok, err)
 
@@ -1000,7 +1001,7 @@ class PhoneWindow(tk.Toplevel):
 
         def err(e):
             state["finished"] = True
-            self.banner(f"Couldn't export: {describe_error(e)}", color="#fdecea")
+            self.banner(f"Couldn't export: {describe_error(e)}", color=theme.ERROR_BG)
         self.banner(f"Exporting {LABEL[key]}… working out time left…")
         self.backup_runner.submit(go, ok, err)
 
@@ -1058,7 +1059,7 @@ class PhoneWindow(tk.Toplevel):
             def then(_index):
                 made = sorted(p for p in build.glob("*.pdf") if p.stat().st_mtime >= started)
                 if not made:
-                    self.banner("Couldn't make the PDF.", color="#fdecea")
+                    self.banner("Couldn't make the PDF.", color=theme.ERROR_BG)
                     return
                 saved = []
                 for f in made:
@@ -1089,13 +1090,13 @@ class PhoneWindow(tk.Toplevel):
                 pdfs = sorted((p for p in build.glob("*.pdf") if p.stat().st_mtime >= started),
                               key=lambda p: p.stat().st_mtime, reverse=True)
                 if not pdfs:
-                    self.banner("Couldn't make the PDF to print.", color="#fdecea")
+                    self.banner("Couldn't make the PDF to print.", color=theme.ERROR_BG)
                     return
                 try:
                     said = chat_pdf.print_pdf(pdfs[0])
                     self.banner(said, ("Show the PDF", lambda: reveal(pdfs[0])))
                 except Exception as e:
-                    self.banner(f"Couldn't print: {describe_error(e)}", color="#fdecea")
+                    self.banner(f"Couldn't print: {describe_error(e)}", color=theme.ERROR_BG)
             self.export_section(key, {"pdf"}, chooser=lambda lists, pv: sel, dates=dates, pdf_combined=True,
                                 then=then)
         RoundButton(panel.foot, "Save as web page", lambda: export({"web"}), "secondary", 170, 38, 12).pack(side="right")
@@ -1144,7 +1145,7 @@ class PhoneWindow(tk.Toplevel):
             self.banner(f"Opening {item.name}…")
             self.live_runner.submit(lambda: src.copy(item.id, dest) and dest,
                                     lambda p: (self.banner(""), open_file(p)) if p else None,
-                                    lambda e: self.banner(f"Couldn't open it: {describe_error(e)}", color="#fdecea"))
+                                    lambda e: self.banner(f"Couldn't open it: {describe_error(e)}", color=theme.ERROR_BG))
         def preview(shown, idx):
             def thumb(i):
                 t = src.thumbnail(i)
@@ -1518,7 +1519,7 @@ class PhoneWindow(tk.Toplevel):
         title.pack(fill="x", padx=14, pady=(10, 0))
         meta = tk.Label(rf, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w")
         meta.pack(fill="x", padx=14)
-        txt = tk.Text(rf, wrap="word", relief="flat", font=font(13), padx=12, pady=8, bg="#fffdf3",
+        txt = tk.Text(rf, wrap="word", relief="flat", font=font(13), padx=12, pady=8, bg=theme.NOTE_BG,
                       fg=INK, insertbackground=INK, highlightthickness=0)
         txt.pack(fill="both", expand=True, padx=2, pady=6)
         pane.add(rf, minsize=320)
@@ -1592,8 +1593,8 @@ class PhoneWindow(tk.Toplevel):
             runner = self.live_runner if key in ("music", "books") else self.backup_runner
             self.banner(f"Opening {name}…")
             runner.submit(lambda: copy(dest) and dest, lambda p: (self.banner(""), open_file(p)) if p else
-                          self.banner("That file isn't available.", color="#fdecea"),
-                          lambda e: self.banner(f"Couldn't open it: {describe_error(e)}", color="#fdecea"))
+                          self.banner("That file isn't available.", color=theme.ERROR_BG),
+                          lambda e: self.banner(f"Couldn't open it: {describe_error(e)}", color=theme.ERROR_BG))
 
         def save(sel):
             if not sel:
@@ -1760,7 +1761,7 @@ class PhoneWindow(tk.Toplevel):
                 self.banner(f"Opening {e.name}…")
                 self.live_runner.submit(lambda: self.live.app_pull(state["app"], e.path, tmp) and tmp / e.name,
                                         lambda p: (self.banner(""), open_file(p)) if p else None,
-                                        lambda err: self.banner(f"Couldn't open it: {describe_error(err)}", color="#fdecea"))
+                                        lambda err: self.banner(f"Couldn't open it: {describe_error(err)}", color=theme.ERROR_BG))
         alist.bind("<<TreeviewSelect>>", lambda e: alist.selection() and load(alist.selection()[0], "Documents"))
         files.bind("<Double-1>", dbl)
 
@@ -1863,7 +1864,7 @@ class PhoneWindow(tk.Toplevel):
             except tk.TclError:
                 return
             if err:
-                self.banner(f"Backup didn't finish: {err}", ("Try again", self.refresh), color="#fdecea")
+                self.banner(f"Backup didn't finish: {err}", ("Try again", self.refresh), color=theme.ERROR_BG)
                 return
             self.banner("✓ Up to date. Reloading…")
             self.snapshot = None

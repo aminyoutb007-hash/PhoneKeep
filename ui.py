@@ -16,6 +16,8 @@ import tkinter.font as tkfont
 from tkinter import messagebox, ttk
 from typing import Callable, Optional
 
+import theme
+
 try:
     from PIL import Image, ImageTk
 except Exception:  # previews need Pillow; everything else works without it
@@ -24,29 +26,30 @@ except Exception:  # previews need Pillow; everything else works without it
 # ---------------------------------------------------------------------------
 # Theme
 # ---------------------------------------------------------------------------
-GREEN = "#008069"
-GREEN_DARK = "#006a57"
-SELECT_BLUE = "#0a84ff"          # selected photos (the system's blue)
-GREEN_SOFT = "#e7f6f2"
-BG = "#f0f2f5"
-CARD = "#ffffff"
-INK = "#111b21"
-MUTED = "#667781"
-LINE = "#e2e6e9"
-ME = "#d9fdd3"
-RED = "#c5221f"
-AMBER = "#b06000"
+# The colours come from theme.py (Direction A); these are the names the windows have always used.
+GREEN = theme.ACCENT
+GREEN_DARK = theme.ACCENT_HOVER
+SELECT_BLUE = theme.LINK          # selected photos (the system's blue)
+GREEN_SOFT = theme.ACCENT_PALE
+BG = theme.BG
+CARD = theme.CARD
+INK = theme.TEXT
+MUTED = theme.TEXT_2
+LINE = theme.BORDER
+ME = theme.ME
+RED = theme.RED
+AMBER = theme.WARN_TEXT
 
 FONT_FAMILY = None
 
 
-def font(size: int = 13, weight: str = "normal"):
+def font(size: int = theme.BODY_SIZE, weight: str = "normal"):
     global FONT_FAMILY
     if FONT_FAMILY is None:
         try:
-            FONT_FAMILY = tkfont.nametofont("TkDefaultFont").actual("family")
+            FONT_FAMILY = theme.font_family(tkfont.nametofont("TkDefaultFont").actual("family"))
         except Exception:
-            FONT_FAMILY = "Helvetica"
+            FONT_FAMILY = theme.font_family("Helvetica")
     if sys.platform != "darwin":
         size = max(9, size - 3)  # Windows/Linux points render larger than macOS
     return (FONT_FAMILY, size, weight)
@@ -59,8 +62,11 @@ def setup_styles(root: tk.Misc) -> None:
             st.theme_use("clam")
         except tk.TclError:
             pass
-    st.configure("Treeview", rowheight=28, font=font(13))
+    st.configure("Treeview", rowheight=28, font=font(13), background=theme.CARD, fieldbackground=theme.CARD,
+                 foreground=theme.TEXT)
     st.configure("Treeview.Heading", font=font(12, "bold"))
+    # the selected row in sidebars and lists: the pale accent, with the text unchanged
+    st.map("Treeview", background=[("selected", theme.ACCENT_PALE)], foreground=[("selected", theme.TEXT)])
 
 
 
@@ -72,10 +78,10 @@ class RoundButton(tk.Canvas):
     """A pill-shaped button: kind = primary | secondary | ghost | light."""
 
     COLORS = {
-        "primary": (GREEN, GREEN_DARK, "#ffffff", "#9fd3c7"),
-        "secondary": ("#ffffff", "#eef1f3", INK, "#f4f5f6"),
-        "ghost": (GREEN, GREEN_DARK, "#ffffff", GREEN),
-        "light": (GREEN_SOFT, "#d6efe8", GREEN_DARK, "#f0f7f5"),
+        "primary": (theme.ACCENT, theme.ACCENT_HOVER, theme.ON_ACCENT, theme.ACCENT_DISABLED),
+        "secondary": (theme.CARD, theme.SECONDARY_HOVER, theme.TEXT, theme.SECONDARY_DISABLED),
+        "ghost": (theme.ACCENT, theme.ACCENT_HOVER, theme.ON_ACCENT, theme.ACCENT),
+        "light": (theme.ACCENT_PALE, theme.ACCENT_PALE_HOVER, theme.ACCENT_HOVER, theme.ACCENT_PALE),
     }
 
     def __init__(self, parent, text: str, command: Callable = None, kind: str = "primary",
@@ -125,7 +131,7 @@ class RoundButton(tk.Canvas):
         if self.kind == "secondary":
             self.create_line(r, 1, w - r, 1, fill=LINE)
             self.create_line(r, h - 1, w - r, h - 1, fill=LINE)
-        tc = fg if self.enabled else ("#ffffff" if self.kind == "primary" else MUTED)
+        tc = fg if self.enabled else (theme.ON_ACCENT if self.kind == "primary" else MUTED)
         self.create_text(w // 2, h // 2, text=self.text, fill=tc,
                          font=font(self.size, "bold" if self.kind == "primary" else "normal"))
 
@@ -238,7 +244,7 @@ class PhoneCard(tk.Canvas):
         fw = max(1, int((w - 4) * max(0, min(100, level)) / 100))
         self.create_rectangle(x + 2, cy - h // 2 + 2, x + 2 + fw, cy + h // 2 - 2, fill=colour, outline=colour)
         if charging:
-            self.create_text(x + w // 2 + 1, cy, text="⚡", fill="#ffffff", font=font(7, "bold"))
+            self.create_text(x + w // 2 + 1, cy, text="⚡", fill=theme.ON_ACCENT, font=font(7, "bold"))
         return w + 4
 
     def _status_row(self, cx, cy):
@@ -262,20 +268,20 @@ class PhoneCard(tk.Canvas):
         W, PW, PH = self.W, self.PW, self.PH
         H = int(self.cget("height"))
         if self.chosen or self.hover:
-            self._rr(3, 3, W - 3, H - 3, 18, fill=GREEN_SOFT if self.chosen else "#f6f8f9",
+            self._rr(3, 3, W - 3, H - 3, 18, fill=GREEN_SOFT if self.chosen else theme.SUBTLE,
                      outline=GREEN if self.chosen else LINE, width=2 if self.chosen else 1)
         x0, y0 = (W - PW) // 2, 12
-        self._rr(x0, y0, x0 + PW, y0 + PH, 20, fill="#1c1c1e")                      # the phone
+        self._rr(x0, y0, x0 + PW, y0 + PH, 20, fill=theme.PHONE_BODY)                      # the phone
         if self.wall is not None:
             # the phone's own picture already has its clock, island and home bar: draw nothing over it
             # (owner, 13 Nov: "two clocks")
             self.create_image(W // 2, y0 + PH // 2, image=self.wall)
         else:
-            self._rr(x0 + 5, y0 + 5, x0 + PW - 5, y0 + PH - 5, 18, fill="#2f6f63")
-            self._rr(W // 2 - 17, y0 + 9, W // 2 + 17, y0 + 19, 5, fill="#000000")   # Dynamic Island
+            self._rr(x0 + 5, y0 + 5, x0 + PW - 5, y0 + PH - 5, 18, fill=theme.PHONE_SCREEN)
+            self._rr(W // 2 - 17, y0 + 9, W // 2 + 17, y0 + 19, 5, fill=theme.PHONE_ISLAND)   # Dynamic Island
             now = dt.datetime.now().strftime("%H:%M")
-            self.create_text(W // 2, y0 + 50, text=now, fill="white", font=font(19, "bold"))
-            self._rr(W // 2 - 26, y0 + PH - 14, W // 2 + 26, y0 + PH - 11, 1, fill="#ffffff")  # home bar
+            self.create_text(W // 2, y0 + 50, text=now, fill=theme.ON_DARK, font=font(19, "bold"))
+            self._rr(W // 2 - 26, y0 + PH - 14, W // 2 + 26, y0 + PH - 11, 1, fill=theme.PHONE_HOME_BAR)  # home bar
         # text lines stacked by their real height, so a larger system font never makes them overlap
         # (owner's Mac, 13 Nov: "looks crowded")
         y = y0 + PH + 12
@@ -290,7 +296,7 @@ class PhoneCard(tk.Canvas):
             self.after_idle(self._draw)
         if self.chosen:
             self.create_oval(W - 32, 10, W - 12, 30, fill=GREEN, outline=GREEN)
-            self.create_text(W - 22, 20, text="✓", fill="#ffffff", font=font(11, "bold"))
+            self.create_text(W - 22, 20, text="✓", fill=theme.ON_ACCENT, font=font(11, "bold"))
 
 
 class ChoiceCard(tk.Canvas):
@@ -324,8 +330,8 @@ class ChoiceCard(tk.Canvas):
     def _draw(self):
         self.delete("all")
         w, h = max(self.winfo_width(), 120), self.H
-        fill = GREEN_SOFT if self.chosen else "#ffffff"
-        line = GREEN if self.chosen else ("#b9c3c9" if self.hover else LINE)
+        fill = GREEN_SOFT if self.chosen else theme.CARD
+        line = GREEN if self.chosen else (theme.BORDER_HOVER if self.hover else LINE)
         self._round(2, 2, w - 2, h - 2, 16, fill=fill, outline=line, width=2 if self.chosen else 1)
         if self.icon is not None:
             self.create_image(w // 2, 38, image=self.icon)
@@ -333,7 +339,7 @@ class ChoiceCard(tk.Canvas):
         self.create_text(w // 2, 108, text=self.sub, fill=MUTED, font=font(11), width=w - 24, justify="center")
         if self.chosen:
             self.create_oval(w - 30, 10, w - 10, 30, fill=GREEN, outline=GREEN)
-            self.create_text(w - 20, 20, text="✓", fill="#ffffff", font=font(11, "bold"))
+            self.create_text(w - 20, 20, text="✓", fill=theme.ON_ACCENT, font=font(11, "bold"))
 
 
 class Chip(tk.Canvas):
@@ -359,7 +365,7 @@ class Chip(tk.Canvas):
     def _draw(self):
         self.delete("all")
         on = self.var.get()
-        fill, fg, outline = (GREEN, "#ffffff", GREEN) if on else ("#ffffff", INK, "#c9d1d6")
+        fill, fg, outline = (GREEN, theme.ON_ACCENT, GREEN) if on else (theme.CARD, INK, theme.SWITCH_OFF)
         r, w, h = self.h // 2, self.w, self.h
         self.create_oval(1, 1, 2 * r - 1, h - 1, fill=fill, outline=outline)
         self.create_oval(w - 2 * r + 1, 1, w - 1, h - 1, fill=fill, outline=outline)
@@ -431,11 +437,11 @@ class BgWorker:
 
 def draw_cloud(c: tk.Canvas, x: int, y: int) -> None:
     """A small drawn iCloud badge (a dark disc with a white cloud), centred on (x, y)."""
-    c.create_oval(x - 13, y - 11, x + 13, y + 11, fill="#3a3a3c", outline="")
-    c.create_oval(x - 9, y - 1, x - 1, y + 6, fill="white", outline="")
-    c.create_oval(x - 5, y - 6, x + 5, y + 4, fill="white", outline="")
-    c.create_oval(x + 1, y - 3, x + 9, y + 6, fill="white", outline="")
-    c.create_rectangle(x - 5, y + 1, x + 5, y + 6, fill="white", outline="")
+    c.create_oval(x - 13, y - 11, x + 13, y + 11, fill=theme.BADGE_GREY, outline="")
+    c.create_oval(x - 9, y - 1, x - 1, y + 6, fill=theme.ON_DARK, outline="")
+    c.create_oval(x - 5, y - 6, x + 5, y + 4, fill=theme.ON_DARK, outline="")
+    c.create_oval(x + 1, y - 3, x + 9, y + 6, fill=theme.ON_DARK, outline="")
+    c.create_rectangle(x - 5, y + 1, x + 5, y + 6, fill=theme.ON_DARK, outline="")
 
 
 def load_photo(path, max_px: int, square: bool = False, faded: bool = False) -> Optional["ImageTk.PhotoImage"]:
@@ -594,18 +600,18 @@ class ChatPanel(tk.Frame):
         self.pv_sub = tk.Label(right, text="Click a chat on the left to see its latest messages.",
                                bg=CARD, fg=MUTED, font=font(11), anchor="w")
         self.pv_sub.pack(fill="x", padx=14, pady=(0, 6))
-        tf = tk.Frame(right, bg="#efeae2")
+        tf = tk.Frame(right, bg=theme.CHAT_BG)
         tf.pack(fill="both", expand=True)
         # fg must be set: in macOS dark mode Tk's default text colour is white, which vanished on the light
         # bubbles (owner, 12 Nov: "all messages look empty")
-        self.text = tk.Text(tf, bg="#efeae2", fg=INK, insertbackground=INK, selectforeground=INK,
+        self.text = tk.Text(tf, bg=theme.CHAT_BG, fg=INK, insertbackground=INK, selectforeground=INK,
                             relief="flat", wrap="word", font=font(13), padx=10, pady=8,
                             cursor="arrow", highlightthickness=0)
         tsb = ttk.Scrollbar(tf, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=tsb.set, state="disabled")
         self.text.pack(side="left", fill="both", expand=True)
         tsb.pack(side="right", fill="y")
-        self.text.tag_configure("them", foreground=INK, lmargin1=6, lmargin2=6, rmargin=70, background="#ffffff",
+        self.text.tag_configure("them", foreground=INK, lmargin1=6, lmargin2=6, rmargin=70, background=theme.CARD,
                                 spacing1=6, spacing3=2)
         self.text.tag_configure("me", foreground=INK, lmargin1=70, lmargin2=70, rmargin=6, background=ME,
                                 spacing1=6, spacing3=2)
@@ -614,7 +620,7 @@ class ChatPanel(tk.Frame):
         self.text.tag_configure("day", justify="center", foreground=MUTED, font=font(11, "bold"),
                                 spacing1=12, spacing3=4)
         self.text.tag_configure("sys", justify="center", foreground=AMBER, font=font(11), spacing1=6)
-        self.text.tag_configure("hit", background="#ffe58f", foreground=INK)
+        self.text.tag_configure("hit", background=theme.HIT, foreground=INK)
         self.text.tag_raise("hit")
         body.add(right, minsize=300)
 
@@ -983,9 +989,9 @@ class ChatPicker(tk.Toplevel):
         self.result = None
         head = tk.Frame(self, bg=GREEN)
         head.pack(fill="x")
-        tk.Label(head, text="Choose the chats to export", bg=GREEN, fg="white",
+        tk.Label(head, text="Choose the chats to export", bg=GREEN, fg=theme.ON_ACCENT,
                  font=font(17, "bold")).pack(side="left", padx=18, pady=12)
-        tk.Label(head, text="Click a chat to preview it · tick the box to keep it", bg=GREEN, fg="#d7efe9",
+        tk.Label(head, text="Click a chat to preview it · tick the box to keep it", bg=GREEN, fg=theme.ON_ACCENT_2,
                  font=font(12)).pack(side="left", pady=12)
         self.panel = ChatPanel(self, lists, preview)
         self.panel.pack(fill="both", expand=True)
@@ -1300,7 +1306,7 @@ class PhotoPanel(tk.Frame):
 
     def _tile(self, item):
         t = getattr(self, "tile", self.TILE)
-        c = tk.Canvas(self.gridf, width=t, height=t, bg="#e9edef", highlightthickness=0, cursor="hand2")
+        c = tk.Canvas(self.gridf, width=t, height=t, bg=theme.TILE_BG, highlightthickness=0, cursor="hand2")
         c.bind("<ButtonRelease-1>", lambda e, i=item: (self._point_at(i, e.widget), self._toggle(i)))
         c.bind("<space>", lambda e: (self.preview_current(), "break")[1])
         if self.on_open:
@@ -1335,11 +1341,11 @@ class PhotoPanel(tk.Frame):
             c.create_text(T // 2, T // 2 - 8, text="🎬" if item.video else "🖼", font=font(26))
             c.create_text(T // 2, T - 34 if item.video else T - 18, text=item.name[:16], fill=MUTED, font=font(9))
         if item.video:
-            c.create_rectangle(4, T - 20, 30, T - 4, fill="#000000", outline="")
-            c.create_text(17, T - 12, text="▶", fill="white", font=font(10))
+            c.create_rectangle(4, T - 20, 30, T - 4, fill=theme.BADGE_BG, outline="")
+            c.create_text(17, T - 12, text="▶", fill=theme.ON_DARK, font=font(10))
         if item.live_video:
-            c.create_rectangle(4, 4, 36, 20, fill="#000000", outline="")
-            c.create_text(20, 12, text="LIVE", fill="white", font=font(8, "bold"))
+            c.create_rectangle(4, 4, 36, 20, fill=theme.BADGE_BG, outline="")
+            c.create_text(20, 12, text="LIVE", fill=theme.ON_DARK, font=font(8, "bold"))
         if cloud:                                     # washed out, with a cloud: the full photo is only in iCloud
             draw_cloud(c, T - 18, 16)
         # selected: a blue frame, nothing else (owner, 13 Nov: no tick circle)
@@ -1441,10 +1447,10 @@ class PhotoPicker(tk.Toplevel):
         self.result = None
         head = tk.Frame(self, bg=GREEN)
         head.pack(fill="x")
-        tk.Label(head, text="Choose the photos & videos to keep", bg=GREEN, fg="white",
+        tk.Label(head, text="Choose the photos & videos to keep", bg=GREEN, fg=theme.ON_ACCENT,
                  font=font(17, "bold")).pack(side="left", padx=18, pady=12)
         tk.Label(head, text=f"from {source.label} · click a photo to select or unselect it", bg=GREEN,
-                 fg="#d7efe9", font=font(12)).pack(side="left", pady=12)
+                 fg=theme.ON_ACCENT_2, font=font(12)).pack(side="left", pady=12)
         self.panel = PhotoPanel(self, source, items, unlock=unlock)
         self.panel.pack(fill="both", expand=True)
         RoundButton(self.panel.foot, "Continue", self._ok, "primary", 160, 40).pack(side="right")
@@ -1695,7 +1701,7 @@ class DetailsDialog(tk.Toplevel):
         box.pack(fill="both", expand=True, padx=20)
         bar = ttk.Scrollbar(box, orient="vertical")
         self.text = tk.Text(box, wrap="word", font=("Menlo", 11) if sys.platform == "darwin" else ("Consolas", 10),
-                            bg="#f7f8fa", fg=INK, relief="flat", padx=10, pady=8, yscrollcommand=bar.set,
+                            bg=theme.SUBTLE, fg=INK, relief="flat", padx=10, pady=8, yscrollcommand=bar.set,
                             highlightthickness=1, highlightbackground=LINE)
         bar.configure(command=self.text.yview)
         bar.pack(side="right", fill="y")

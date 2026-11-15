@@ -8,10 +8,11 @@ from tkinter import filedialog
 from typing import Optional
 
 import deviceinfo as di
+import theme
 import ui
 from ui import BG, CARD, INK, LINE, MUTED, RoundButton, font
 
-GOOD, WARN, BAD = "#1f9d55", "#c77700", "#c0392b"
+GOOD, WARN, BAD = theme.GOOD, theme.CAUTION, theme.BAD
 
 
 def _health_colour(h: Optional[int]) -> str:
@@ -45,7 +46,7 @@ def storage_bar(parent, ov: di.Overview, cats=None, width=300, height=12, bg=CAR
             if name == "Free":
                 continue
             w = width * n / ov.total
-            c.create_rectangle(x, 0, x + w, height, fill=di.CATEGORY_COLOURS.get(name, "#4f7cff"), outline="", tags=(name,))
+            c.create_rectangle(x, 0, x + w, height, fill=di.CATEGORY_COLOURS.get(name, theme.STORAGE["Apps"]), outline="", tags=(name,))
             x += w
     return c
 

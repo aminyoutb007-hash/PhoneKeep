@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import models
+import theme
 
 GB = 1000 ** 3   # Apple counts storage in powers of 1000 (a "256 GB" phone)
 
@@ -193,8 +194,7 @@ def parse_output(stdout: str) -> Optional[dict]:
 
 
 # -- V3: storage, split into rough categories -----------------------------------------------------------------
-CATEGORY_COLOURS = {"Apps": "#4f7cff", "Photos": "#f2a93b", "Messages": "#34c759", "System": "#8e8e93",
-                    "Other": "#c7c7cc", "Free": "#ececf0"}
+CATEGORY_COLOURS = theme.STORAGE      # the storage bar (theme.py)
 
 
 def categories(ov: Overview, photos_bytes: Optional[int] = None, messages_bytes: Optional[int] = None) -> list[tuple[str, int, bool]]:

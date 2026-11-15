@@ -23,6 +23,7 @@ import keychain
 import phone_write
 import phonekeep as wv
 import sections as sx
+import theme
 import ui
 from ui import AMBER, BG, CARD, GREEN, GREEN_SOFT, INK, LINE, MUTED, RED, font
 
@@ -145,10 +146,10 @@ class PhoneIcon(tk.Canvas):
             return
         self.state = state
         self.delete("all")
-        body = {"ok": GREEN, "searching": "#9aa5ab", "none": "#c3cbcf"}[state]
+        body = theme.PHONE_ICON[state]
         self._rr(6, 4, 58, 100, 12, body)
-        self._rr(11, 12, 53, 88, 6, "#ffffff" if state != "ok" else "#e7f6f2")
-        self.create_rectangle(26, 7, 38, 9, fill="#ffffff", outline="")
+        self._rr(11, 12, 53, 88, 6, theme.CARD if state != "ok" else theme.ACCENT_PALE)
+        self.create_rectangle(26, 7, 38, 9, fill=theme.CARD, outline="")
         mark = {"ok": ("✓", GREEN), "searching": ("…", MUTED), "none": ("?", MUTED)}[state]
         self.create_text(32, 50, text=mark[0], fill=mark[1], font=font(26, "bold"))
 
@@ -192,18 +193,18 @@ class StepRow(tk.Frame):
         d.delete("all")
         if self.state == "done":
             d.create_oval(3, 3, 27, 27, fill=GREEN, outline=GREEN)
-            d.create_text(15, 15, text="✓", fill="white", font=font(13, "bold"))
+            d.create_text(15, 15, text="✓", fill=theme.ON_ACCENT, font=font(13, "bold"))
         elif self.state == "error":
             d.create_oval(3, 3, 27, 27, fill=RED, outline=RED)
-            d.create_text(15, 15, text="!", fill="white", font=font(13, "bold"))
+            d.create_text(15, 15, text="!", fill=theme.ON_ACCENT, font=font(13, "bold"))
         elif self.state == "skipped":
-            d.create_oval(3, 3, 27, 27, fill="#ffffff", outline=LINE, width=2)
+            d.create_oval(3, 3, 27, 27, fill=theme.CARD, outline=LINE, width=2)
             d.create_text(15, 15, text="–", fill=MUTED, font=font(13, "bold"))
         elif self.state == "active":
-            d.create_oval(3, 3, 27, 27, outline="#d6efe8", width=3)
+            d.create_oval(3, 3, 27, 27, outline=theme.PHONE_ICON_RING, width=3)
             d.create_arc(3, 3, 27, 27, start=self.spin, extent=110, style="arc", outline=GREEN, width=3)
         else:
-            d.create_oval(3, 3, 27, 27, fill="#ffffff", outline=LINE, width=2)
+            d.create_oval(3, 3, 27, 27, fill=theme.CARD, outline=LINE, width=2)
             d.create_text(15, 15, text=str(self.number), fill=MUTED, font=font(12))
 
     def tick(self):
@@ -225,7 +226,7 @@ class Bar(tk.Canvas):
     def draw(self):
         self.delete("all")
         w = self.winfo_width()
-        self.create_rectangle(0, 0, w, 8, fill="#e9edef", outline="")
+        self.create_rectangle(0, 0, w, 8, fill=theme.TILE_BG, outline="")
         self.create_rectangle(0, 0, int(w * self.value / 100), 8, fill=GREEN, outline="")
 
 
@@ -295,24 +296,24 @@ class App(_dnd_root()):
     def _build(self):
         head = tk.Frame(self, bg=GREEN)
         head.pack(fill="x")
-        tk.Label(head, text="PhoneKeep", bg=GREEN, fg="white", font=font(21, "bold")).pack(side="left", padx=(22, 10), pady=14)
+        tk.Label(head, text="PhoneKeep", bg=GREEN, fg=theme.ON_ACCENT, font=font(21, "bold")).pack(side="left", padx=(22, 10), pady=14)
         # right-hand items first, so a narrow window trims the tagline instead of overlapping it; a test build
         # shows "· test build" here and its full label in About (13 Nov: the long label ran over the tagline)
         ui.RoundButton(head, "⚙  Settings", self.open_settings, "ghost", 130, 34, 13).pack(side="right", padx=16)
         ver = tk.Label(head, text=f"v{wv.VERSION}" + (" · test build" if wv.BUILD_LABEL else ""), bg=GREEN,
-                       fg="#d7efe9", font=font(11), cursor="hand2")
+                       fg=theme.ON_ACCENT_2, font=font(11), cursor="hand2")
         ver.pack(side="right", padx=(0, 4))
         ver.bind("<Button-1>", lambda e: self.open_about())
-        tk.Label(head, text="Back up your iPhone to this computer", bg=GREEN, fg="#d7efe9",
+        tk.Label(head, text="Back up your iPhone to this computer", bg=GREEN, fg=theme.ON_ACCENT_2,
                  font=font(13)).pack(side="left", pady=14)
 
         # problem banner (E3): one sentence, one button, Show details. Packed only when needed.
-        self.bar_frame = tk.Frame(self, bg="#fdecea")
-        self.bar_text = tk.Label(self.bar_frame, text="", bg="#fdecea", fg=INK, font=font(13), anchor="w",
+        self.bar_frame = tk.Frame(self, bg=theme.ERROR_BG)
+        self.bar_text = tk.Label(self.bar_frame, text="", bg=theme.ERROR_BG, fg=INK, font=font(13), anchor="w",
                                  justify="left", wraplength=560)
         self.bar_text.pack(side="left", padx=16, pady=10, fill="x", expand=True)
         self.bar_btn = None
-        self.bar_details = tk.Label(self.bar_frame, text="Show details", bg="#fdecea", fg=MUTED, font=font(11), cursor="hand2")
+        self.bar_details = tk.Label(self.bar_frame, text="Show details", bg=theme.ERROR_BG, fg=MUTED, font=font(11), cursor="hand2")
         self.bar_details_text = ""
         self.bar_details.bind("<Button-1>", lambda e: ui.show_details(self, self.details_for_support(self.bar_details_text)))
 
@@ -402,7 +403,7 @@ class App(_dnd_root()):
         self.details_btn.bind("<Button-1>", lambda e: self._toggle_details())
         self.log_frame = tk.Frame(pin, bg=CARD)
         self.log_box = tk.Text(self.log_frame, height=9, wrap="word", state="disabled", relief="flat",
-                               bg="#f7f8f9", fg=INK, font=("Menlo" if sys.platform == "darwin" else "Consolas", 10),
+                               bg=theme.SUBTLE, fg=INK, font=("Menlo" if sys.platform == "darwin" else "Consolas", 10),
                                highlightthickness=1, highlightbackground=LINE)
         self.log_box.pack(fill="both", expand=True, pady=(6, 0))
 
@@ -615,9 +616,9 @@ class App(_dnd_root()):
 
     def show_problem(self, pr: errors.Problem, retry=None):
         """Inline banner at the top: one sentence + one button; red only for real failures."""
-        colour = "#fdecea" if pr.failure else "#fff4e0"
+        colour = theme.ERROR_BG if pr.failure else theme.WARN_BG
         self.bar_frame.configure(bg=colour)
-        self.bar_text.configure(text=pr.message, bg=colour, font=font(13))
+        self.bar_text.configure(text=pr.message, bg=colour, fg=INK if pr.failure else theme.WARN_TEXT, font=font(13))
         self.bar_details.configure(bg=colour)
         if self.bar_btn is not None:
             self.bar_btn.destroy()
@@ -917,7 +918,8 @@ class App(_dnd_root()):
             state, line = "amber", "The last backup didn't finish. Back up again to complete it."
         self.dev_last.configure(text=line or ("Not backed up with PhoneKeep yet" if not info else f"Last backup: {info['date']}"),
                                 fg=AMBER if state == "amber" else MUTED)
-        self.dev_lock.configure(text=self.lock_badge(info))
+        self.dev_lock.configure(text=self.lock_badge(info),
+                                fg=GREEN if not info or info.get("encrypted") else theme.WARN_TEXT)   # a warning
         self.open_btn.set_enabled(True)
 
     def choose_phone(self, udid: str):
@@ -1598,14 +1600,15 @@ class OpenBackupDialog(tk.Toplevel):
         self.transient(app)
         head = tk.Frame(self, bg=GREEN)
         head.pack(fill="x")
-        tk.Label(head, text="Open a backup", bg=GREEN, fg="white", font=font(17, "bold")).pack(side="left", padx=18, pady=12)
+        tk.Label(head, text="Open a backup", bg=GREEN, fg=theme.ON_ACCENT, font=font(17, "bold")).pack(side="left", padx=18, pady=12)
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True, padx=18, pady=14)
         tk.Label(body, text="Backups on this computer. You can also drop a backup folder onto the main window.",
                  bg=BG, fg=MUTED, font=font(12), anchor="w", wraplength=600, justify="left").pack(fill="x")
         c = ui.card(body)
         c.pack(fill="both", expand=True, pady=(8, 8))
-        self.lb = tk.Listbox(c, font=font(12), activestyle="none", height=10)
+        self.lb = tk.Listbox(c, font=font(12), activestyle="none", height=10, bg=CARD, fg=INK,
+                             selectbackground=theme.ACCENT_PALE, selectforeground=INK)
         self.lb.pack(fill="both", expand=True, padx=6, pady=6)
         self.lb.bind("<Double-Button-1>", lambda e: self._open())
         self.note = tk.Label(body, text="", bg=BG, fg=AMBER, font=font(11), anchor="w", wraplength=600, justify="left")

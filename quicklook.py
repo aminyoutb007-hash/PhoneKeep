@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
+import theme
+
 try:
     from PIL import Image, ImageOps, ImageTk
     try:
@@ -49,7 +51,7 @@ TEXT = {".txt", ".csv", ".json", ".log", ".md", ".vcf", ".ics", ".xml", ".plist"
 PDF = {".pdf"}
 MAX_MEMORY = 200 * 1024 * 1024        # bigger than this is played from a file, never held in memory
 MAX_TEXT = 300_000                     # characters shown for a text file
-BG, FG, MUTED = "#1c1c1e", "#f2f2f7", "#a1a1aa"
+BG, FG, MUTED = theme.VIEWER_BG, theme.VIEWER_TEXT, theme.VIEWER_TEXT_2
 
 
 def kind_of(name: str) -> str:
@@ -352,7 +354,7 @@ class Viewer(tk.Toplevel):
         it = self.items[self.index]
         if err is not None:
             self.shown_kind = "error"
-            tk.Label(self.body, text=f"Couldn't preview {it.name}.\n{err}", bg=BG, fg="#ff6b6b",
+            tk.Label(self.body, text=f"Couldn't preview {it.name}.\n{err}", bg=BG, fg=theme.VIEWER_ERROR,
                      font=("Helvetica", 13), justify="center", wraplength=600).pack(expand=True)
             return
         kind, value = res
@@ -363,7 +365,7 @@ class Viewer(tk.Toplevel):
             tk.Label(self.body, image=img, bg=BG).pack(expand=True)
         elif kind == "text":
             self.shown_kind = "text"
-            t = tk.Text(self.body, wrap="word", bg="#2c2c2e", fg=FG, insertbackground=FG, relief="flat",
+            t = tk.Text(self.body, wrap="word", bg=theme.VIEWER_PANEL, fg=FG, insertbackground=FG, relief="flat",
                         font=("Menlo" if sys.platform == "darwin" else "Consolas", 12), padx=14, pady=10)
             t.insert("1.0", value)
             t.configure(state="disabled")
@@ -391,7 +393,7 @@ class Viewer(tk.Toplevel):
             tk.Label(self.body, text=it.name, bg=BG, fg=FG, font=("Helvetica", 15, "bold")).pack()
             if kind == "file":
                 verb = "Play" if it.kind in ("video", "audio") else "Open"
-                b = tk.Label(self.body, text=f"▶  {verb}" if verb == "Play" else "Open", bg="#0a84ff", fg="white",
+                b = tk.Label(self.body, text=f"▶  {verb}" if verb == "Play" else "Open", bg=theme.VIEWER_BUTTON, fg=theme.ON_ACCENT,
                              font=("Helvetica", 14, "bold"), padx=22, pady=8, cursor="hand2")
                 b.pack(pady=16)
                 b.bind("<Button-1>", lambda e: self.open_from_file())

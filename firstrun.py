@@ -19,6 +19,7 @@ from typing import Optional
 import keychain
 import phone_write
 import phonekeep as wv
+import theme
 import ui
 from ui import BG, CARD, GREEN, GREEN_SOFT, INK, LINE, MUTED, RED, font
 
@@ -33,37 +34,37 @@ class Picture(tk.Canvas):
         super().__init__(parent, width=300, height=190, bg=bg, highlightthickness=0)
         getattr(self, "_" + which)()
 
-    def _phone(self, x=110, y=20, w=80, h=150, screen="#1f6f5f"):
+    def _phone(self, x=110, y=20, w=80, h=150, screen=theme.PHONE_SCREEN):
         r = 14
-        self.create_rectangle(x, y + r, x + w, y + h - r, fill="#111b21", outline="")
-        self.create_rectangle(x + r, y, x + w - r, y + h, fill="#111b21", outline="")
+        self.create_rectangle(x, y + r, x + w, y + h - r, fill=theme.DRAW_INK, outline="")
+        self.create_rectangle(x + r, y, x + w - r, y + h, fill=theme.DRAW_INK, outline="")
         for cx, cy in ((x, y), (x + w - 2 * r, y), (x, y + h - 2 * r), (x + w - 2 * r, y + h - 2 * r)):
-            self.create_oval(cx, cy, cx + 2 * r, cy + 2 * r, fill="#111b21", outline="")
+            self.create_oval(cx, cy, cx + 2 * r, cy + 2 * r, fill=theme.DRAW_INK, outline="")
         self.create_rectangle(x + 6, y + 10, x + w - 6, y + h - 10, fill=screen, outline="")
-        self.create_oval(x + w // 2 - 12, y + 12, x + w // 2 + 12, y + 20, fill="#111b21", outline="")
+        self.create_oval(x + w // 2 - 12, y + 12, x + w // 2 + 12, y + 20, fill=theme.DRAW_INK, outline="")
         return x, y, w, h
 
     def _connect(self):
         x, y, w, h = self._phone()
         # cable from the phone's bottom to the right edge
         self.create_line(x + w // 2, y + h, x + w // 2, y + h + 8, 230, y + h + 8, 230, 100, 300, 100,
-                         width=5, fill="#8a949a", smooth=True)
-        self.create_rectangle(x + w // 2 - 7, y + h - 2, x + w // 2 + 7, y + h + 8, fill="#c9cfd3", outline="")
+                         width=5, fill=theme.DRAW_GREY, smooth=True)
+        self.create_rectangle(x + w // 2 - 7, y + h - 2, x + w // 2 + 7, y + h + 8, fill=theme.DRAW_LIGHT, outline="")
         # a simple app grid on the screen (no emoji: large emoji glyphs in a Tk canvas can abort Tk on macOS)
         for r in range(4):
             for c in range(3):
-                self.create_rounded(x + 14 + c * 20, y + 30 + r * 24, 14, GREEN_SOFT if (r + c) % 2 else "#fff4e0")
+                self.create_rounded(x + 14 + c * 20, y + 30 + r * 24, 14, GREEN_SOFT if (r + c) % 2 else theme.WARN_BG)
 
     def _trust(self):
-        x, y, w, h = self._phone(screen="#cfe3dd")
+        x, y, w, h = self._phone(screen=theme.PHONE_SCREEN_SOFT)
         # the Trust prompt
         bx, by, bw, bh = x + 10, y + 46, w - 20, 70
-        self.create_rectangle(bx, by, bx + bw, by + bh, fill="#ffffff", outline=LINE)
+        self.create_rectangle(bx, by, bx + bw, by + bh, fill=theme.CARD, outline=LINE)
         self.create_text(bx + bw // 2, by + 14, text="Trust This\nComputer?", font=font(7, "bold"), fill=INK, justify="center")
         self.create_line(bx, by + 40, bx + bw, by + 40, fill=LINE)
         self.create_line(bx + bw // 2, by + 40, bx + bw // 2, by + bh, fill=LINE)
-        self.create_text(bx + bw // 4, by + 55, text="Trust", font=font(8, "bold"), fill="#0a84ff")
-        self.create_text(bx + 3 * bw // 4, by + 55, text="Don't", font=font(8), fill="#0a84ff")
+        self.create_text(bx + bw // 4, by + 55, text="Trust", font=font(8, "bold"), fill=theme.LINK)
+        self.create_text(bx + 3 * bw // 4, by + 55, text="Don't", font=font(8), fill=theme.LINK)
         self.create_oval(bx + bw // 4 - 12, by + 43, bx + bw // 4 + 12, by + 67, outline=GREEN, width=2)
 
     def create_rounded(self, x, y, size, fill):
@@ -73,7 +74,7 @@ class Picture(tk.Canvas):
         """A padlock drawn with shapes."""
         self.create_rectangle(cx - s * 0.5, cy - s * 0.05, cx + s * 0.5, cy + s * 0.6, fill=GREEN, outline="")
         self.create_arc(cx - s * 0.35, cy - s * 0.65, cx + s * 0.35, cy + s * 0.15, start=0, extent=180, style="arc", outline=GREEN, width=max(2, int(s * 0.12)))
-        self.create_oval(cx - s * 0.08, cy + s * 0.15, cx + s * 0.08, cy + s * 0.31, fill="white", outline="")
+        self.create_oval(cx - s * 0.08, cy + s * 0.15, cx + s * 0.08, cy + s * 0.31, fill=theme.ON_DARK, outline="")
 
     def _password(self):
         self._lock(150, 70, 60)
@@ -82,9 +83,9 @@ class Picture(tk.Canvas):
     def _backup(self):
         x, y, w, h = self._phone(x=40, y=30, w=60, h=120)
         self.create_line(110, 90, 185, 90, width=4, fill=GREEN, arrow="last", arrowshape=(14, 16, 6))
-        self.create_rectangle(195, 50, 290, 130, fill="#e8ecef", outline=LINE)
-        self.create_rectangle(203, 58, 282, 112, fill="#ffffff", outline=LINE)
-        self.create_rectangle(225, 130, 260, 140, fill="#c9cfd3", outline="")
+        self.create_rectangle(195, 50, 290, 130, fill=theme.DRAW_PANEL, outline=LINE)
+        self.create_rectangle(203, 58, 282, 112, fill=theme.CARD, outline=LINE)
+        self.create_rectangle(225, 130, 260, 140, fill=theme.DRAW_LIGHT, outline="")
         self._lock(242, 86, 22)
 
     def _done(self):
@@ -327,7 +328,7 @@ class FirstRunGuide(tk.Frame):
 
     def _strength(self):
         score, word = keychain.strength(self.pw_var.get())
-        self.hint.configure(text=f"Strength: {word}" if word else "", fg={0: MUTED, 1: RED, 2: "#b06000", 3: GREEN, 4: GREEN}[score])
+        self.hint.configure(text=f"Strength: {word}" if word else "", fg=theme.STRENGTH[score])
 
     def do_password(self):
         pw = self.pw_var.get()
