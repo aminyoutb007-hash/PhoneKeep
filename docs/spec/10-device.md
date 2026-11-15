@@ -30,6 +30,18 @@ Clean-up suggestions and the storage forecast: H2 in [13-phone-health.md](13-pho
 - [x] Total, used and free are within 1% of Settings → General → iPhone Storage. *(14 Nov, owner's iPhone: match.)*
 - [ ] Each category is shown with "about" and the 20 largest apps match the phone's list in order.
 
+## V6. Storage tips
+
+**5.2** (owner, 15 Nov). **What the user sees and does:** under Storage → Largest apps, each app has a short line on how to free the space it takes. By default: "Offload on the iPhone: Settings → General → iPhone Storage → <app> → Offload App". For common big apps it first gives the app's own way to clear downloads or its cache (YouTube downloads, WeChat and Spotify storage, and others), then offloading.
+
+**Requirements**
+- Read-only: PhoneKeep never deletes or offloads an app itself. These are steps on the phone ("Only promise what iOS allows", [13-phone-health.md](13-phone-health.md)).
+- Showing the tips asks the phone nothing more than the app list already does.
+
+**Done when**
+- [ ] Every one of the 20 largest apps shows its line; the common big apps show their in-app way first.
+- [ ] The steps match the phone and the apps (checked on a real iPhone for the default line and the apps installed there).
+
 ## V4. Move to a new iPhone
 
 **P3.** Pick the old phone's snapshot and the new phone, choose what to bring (all, or by kind), confirm, restore (uses B6).

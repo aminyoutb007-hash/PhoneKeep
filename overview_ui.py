@@ -8,6 +8,7 @@ from tkinter import filedialog
 from typing import Optional
 
 import deviceinfo as di
+import storage_advice
 import theme
 import ui
 from ui import BG, CARD, INK, LINE, MUTED, RoundButton, font
@@ -263,13 +264,20 @@ def storage_view(win, ov: di.Overview):
         win.app_rows = []
         lst.columnconfigure((0, 1), weight=1, uniform="apps")
         half = (len(apps) + 1) // 2                     # two columns of ten, so all 20 fit without scrolling
+        win.app_tips = []
         for i, a in enumerate(apps):
-            r = tk.Frame(lst, bg=CARD)
-            r.grid(row=i % half, column=i // half, sticky="w", padx=14, pady=2)
+            cell = tk.Frame(lst, bg=CARD)
+            cell.grid(row=i % half, column=i // half, sticky="nw", padx=14, pady=(4, 2))
+            r = tk.Frame(cell, bg=CARD)
+            r.pack(anchor="w")
             tk.Label(r, text=a.name, bg=CARD, fg=INK, font=font(12), width=20, anchor="w").pack(side="left")
             cv = tk.Canvas(r, width=90, height=8, bg=CARD, highlightthickness=0)
             cv.create_rectangle(0, 0, max(2, 90 * a.total / top), 8, fill=di.CATEGORY_COLOURS["Apps"], outline="")
             cv.pack(side="left", padx=8)
             tk.Label(r, text=di.human(a.total) if a.sized or a.total else "…", bg=CARD, fg=MUTED, font=font(11),
                      anchor="w").pack(side="left")
+            tip = "\n".join(storage_advice.app_tip(a.bundle, a.name))      # V6: how to free it (steps only)
+            tk.Label(cell, text=tip, bg=CARD, fg=MUTED, font=font(10), anchor="w", justify="left",
+                     wraplength=360).pack(anchor="w")
             win.app_rows.append(a.name)
+            win.app_tips.append(tip)

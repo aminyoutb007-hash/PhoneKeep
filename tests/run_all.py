@@ -50,6 +50,7 @@ STEPS = [
     ("Main window: the iPhone's home screen in the small phone picture (5.1.3)", "test_main_wallpaper.py", True),
     ("Storage timeout: one slow answer never blanks the rest; storage asked again, then 'Try again' (5.1.3)", "test_storage_timeout.py", True),
     ("Closed connection: reads on a let-go connection fail at once and plainly; the app list reconnects once (5.1.3)", "test_closed_connection.py", False),
+    ("Storage tips (V6): how to free each of the largest apps' space, steps only (5.2)", "test_storage_tips.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
