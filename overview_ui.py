@@ -43,7 +43,7 @@ def storage_bar(parent, ov: di.Overview, cats=None, width=300, height=12, bg=CAR
         x = 0.0
         parts = cats if cats else [("Used", ov.used or 0, True)]
         for name, n, _exact in parts:
-            if name == "Free":
+            if name == "Free" or n is None:        # no size (System and other, when it can't be estimated)
                 continue
             w = width * n / ov.total
             c.create_rectangle(x, 0, x + w, height, fill=di.CATEGORY_COLOURS.get(name, theme.STORAGE["Apps"]), outline="", tags=(name,))
@@ -168,6 +168,7 @@ TIPS = {
     "Messages": "Big chats are usually the photos and videos in them. Open Messages to save them first.",
     "Apps": "The biggest are listed below. The iPhone can offload an app and keep its data.",
     "System": "iOS itself and its caches. This part can't be cleared from a computer.",
+    di.SYSTEM_UNKNOWN: "iOS itself, its caches and space apps share. This part can't be cleared from a computer.",
     "Other": "Caches, downloads and files kept by apps that aren't counted elsewhere.",
 }
 
@@ -192,8 +193,9 @@ def storage_view(win, ov: di.Overview):
         dot = tk.Canvas(r, width=12, height=12, bg=CARD, highlightthickness=0)
         dot.create_oval(1, 1, 11, 11, fill=di.CATEGORY_COLOURS[name], outline=LINE)
         dot.pack(side="left", padx=(0, 8))
-        tk.Label(r, text=name, bg=CARD, fg=INK, font=font(12, "bold"), width=10, anchor="w").pack(side="left")
-        tk.Label(r, text=("" if exact else "about ") + di.human(n), bg=CARD, fg=INK, font=font(12), width=14,
+        tk.Label(r, text=name, bg=CARD, fg=INK, font=font(12, "bold"), width=16, anchor="w").pack(side="left")
+        size = "can't be estimated" if n is None else ("" if exact else "about ") + di.human(n)
+        tk.Label(r, text=size, bg=CARD, fg=INK, font=font(12), width=17,
                  anchor="w").pack(side="left")
         tip = tk.Label(r, text=TIPS.get(name, ""), bg=CARD, fg=MUTED, font=font(11), anchor="w")
         tip.pack(side="left", fill="x", expand=True)
@@ -203,7 +205,8 @@ def storage_view(win, ov: di.Overview):
             _bind_all(r, r.open)
         win.storage_rows[name] = r
     tk.Label(c, text="Free and the total are exact, from the iPhone. The rest are estimates: Apps from the sizes each app "
-                     "reports, Photos and Messages from the latest backup.",
+                     "reports, Photos and Messages from the latest backup. The app sizes iOS reports can overlap with system and "
+                     "shared space, so they can add up to more than what's used.",
              bg=CARD, fg=MUTED, font=font(11), anchor="w", wraplength=640, justify="left").pack(fill="x", padx=18, pady=(6, 14))
 
     apps = ov.largest_apps(20)

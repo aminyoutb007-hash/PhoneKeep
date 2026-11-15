@@ -85,7 +85,39 @@ check(names[:3] == ["Apps", "Photos", "Messages"] and cats[-1] == ("Free", ov.fr
 apps_total = sum(a.total for a in ov.apps)
 check(dict((n, v) for n, v, _ in cats)["Apps"] == apps_total, "V3: Apps is the sum of what each app reports")
 huge = di.categories(ov, photos_bytes=10 ** 13)
-check(sum(c[1] for c in huge) == ov.total and all(c[1] >= 0 for c in huge), "V3: estimates bigger than the phone are scaled to fit")
+check(sum(c[1] or 0 for c in huge) <= ov.total and all(c[1] is None or c[1] >= 0 for c in huge),
+      "V3: estimates bigger than the phone are scaled to fit")
+
+# 5.1.2: the app sizes iOS reports overlap with system and shared space ("System: about 0 KB"). Invented figures:
+# a 128 GB phone with 50 GB used, whose apps report 46 + 9 = 55 GB, more than what's used.
+over = di.Overview(total=128 * GBy, free=78 * GBy, apps=[di.AppSize("com.example.big", "Example Big", 30 * GBy, 16 * GBy),
+                                                        di.AppSize("com.example.small", "Example Small", 6 * GBy, 3 * GBy)])
+cats = di.categories(over, photos_bytes=4 * GBy, messages_bytes=1 * GBy)
+row = dict((n, (v, e)) for n, v, e in cats)
+check("System" not in row and "Other" not in row and row.get("System and other") == (None, False),
+      f"5.1.2: apps adding up to more than 'used': 'System and other' with no size, no 'System: about 0 KB' ({cats})")
+check(all(v is not None and v >= 0 for n, v, _ in cats if n != "System and other") and row["Free"] == (78 * GBy, True),
+      "5.1.2: the other rows keep their sizes and Free stays exact")
+# a little left over (under 2 GB) is no estimate either; 2 GB and more is System as before
+for left, expect in ((int(1.5 * GBy), "System and other"), (5 * GBy, "System")):
+    ov2 = di.Overview(total=128 * GBy, free=78 * GBy, apps=[di.AppSize("com.example.a", "Example A", 50 * GBy - left, 0)])
+    names2 = [n for n, _, _ in di.categories(ov2)]
+    check(expect in names2 and ({"System", "System and other"} - {expect}).isdisjoint(names2),
+          f"5.1.2: {left / GBy:g} GB left over shows '{expect}' ({names2})")
+try:
+    import tkinter as tk
+    import overview_ui
+    _root = tk.Tk()
+    _root.withdraw()
+    bar = overview_ui.storage_bar(_root, over, cats, width=640, height=16)
+    check(not bar.find_withtag("System and other") and bar.find_withtag("Apps"),
+          "5.1.2: 'System and other' without a size is left out of the bar")
+    src = (HERE.parent / "overview_ui.py").read_text(encoding="utf-8")
+    check("can't be estimated" in src and "app sizes iOS reports can overlap" in src,
+          "5.1.2: the row says \"can't be estimated\"; the footnote says the app sizes iOS reports can overlap")
+    _root.destroy()
+except tk.TclError as ex:
+    print(f"(bar check skipped: no display: {ex})")
 top = ov.largest_apps()
 check(len(top) == 20 and top == sorted(top, key=lambda a: a.total, reverse=True) and top[0].name == "Example App 23",
       f"V3: the 20 largest apps, biggest first ({top[0].name})")
