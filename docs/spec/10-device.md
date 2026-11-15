@@ -39,7 +39,7 @@ Clean-up suggestions and the storage forecast: H2 in [13-phone-health.md](13-pho
 - Showing the tips asks the phone nothing more than the app list already does.
 
 **Done when**
-- [ ] Every one of the 20 largest apps shows its line; the common big apps show their in-app way first.
+- [x] Every one of the 20 largest apps shows its line; the common big apps show their in-app way first. *(15 Nov, `tests/test_storage_tips.py`: all 20 can be scrolled into view in the window's normal size.)*
 - [ ] The steps match the phone and the apps (checked on a real iPhone for the default line and the apps installed there).
 
 ## V4. Move to a new iPhone

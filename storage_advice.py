@@ -61,8 +61,10 @@ IN_APP = {
 
 def app_tip(bundle: str, name: str) -> list[str]:
     """How to free the space this app takes, as one or two lines: the app's own way first (for common big apps),
-    then offloading it on the iPhone, which keeps its documents and data."""
-    offload = f"Settings → General → iPhone Storage → {name or 'the app'} → Offload App"
+    then offloading it on the iPhone. Offloading frees the app itself and keeps its documents and data, so the line
+    says so: for an app full of chats or downloads it frees little."""
+    offload = (f"Settings → General → iPhone Storage → {name or 'the app'} → Offload App "
+               "(frees the app, keeps its documents and data)")
     if bundle in IN_APP:
         return [f"In the app: {IN_APP[bundle]}", f"Or offload it on the iPhone: {offload}"]
     return [f"Offload on the iPhone: {offload}"]

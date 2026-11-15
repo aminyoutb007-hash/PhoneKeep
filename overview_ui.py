@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import filedialog, ttk
 from typing import Optional
 
 import deviceinfo as di
@@ -258,15 +258,29 @@ def storage_view(win, ov: di.Overview):
         win.apps_note = tk.Label(head, text=note, bg=BG, fg=MUTED, font=font(11), anchor="w")
         win.apps_note.pack(side="left", padx=(10, 0))
     if apps:
-        lst = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
-        lst.pack(fill="x")
+        # V6: with a "how to free space" line under each app the list is taller than the window: it scrolls on its
+        # own, under the storage figures, so every one of the 20 can be reached
+        box = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+        box.pack(fill="both", expand=True)
+        canvas = tk.Canvas(box, bg=CARD, highlightthickness=0)
+        sb = ttk.Scrollbar(box, orient="vertical", command=canvas.yview)
+        lst = tk.Frame(canvas, bg=CARD)
+        lst.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        inner_id = canvas.create_window(0, 0, window=lst, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(inner_id, width=e.width))
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        ui.wheel_scroll(canvas)
+        win.apps_canvas = canvas
         top = apps[0].total or 1
         win.app_rows = []
         lst.columnconfigure((0, 1), weight=1, uniform="apps")
-        half = (len(apps) + 1) // 2                     # two columns of ten, so all 20 fit without scrolling
-        win.app_tips = []
+        half = (len(apps) + 1) // 2                     # two columns of ten
+        win.app_tips, win.app_cells = [], []
         for i, a in enumerate(apps):
             cell = tk.Frame(lst, bg=CARD)
+            win.app_cells.append(cell)
             cell.grid(row=i % half, column=i // half, sticky="nw", padx=14, pady=(4, 2))
             r = tk.Frame(cell, bg=CARD)
             r.pack(anchor="w")

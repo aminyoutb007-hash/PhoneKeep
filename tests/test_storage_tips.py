@@ -24,17 +24,19 @@ G = 1000 ** 3
 
 # -- the lines ------------------------------------------------------------------------------------------------------
 plain = sa.app_tip("com.example.notes", "Example Notes")
-check(plain == ["Offload on the iPhone: Settings → General → iPhone Storage → Example Notes → Offload App"],  # noqa: F821
-      f"an app with no known in-app way: offload on the iPhone ({plain[0]})")
+check(plain == ["Offload on the iPhone: Settings → General → iPhone Storage → Example Notes → Offload App "
+                "(frees the app, keeps its documents and data)"],                          # noqa: F821
+      f"an app with no known in-app way: offload on the iPhone, saying what it keeps ({plain[0]})")
 yt = sa.app_tip("com.google.ios.youtube", "YouTube")
 check(len(yt) == 2 and yt[0].startswith("In the app: YouTube → You → Downloads")                          # noqa: F821
-      and yt[1] == "Or offload it on the iPhone: Settings → General → iPhone Storage → YouTube → Offload App",
+      and yt[1] == ("Or offload it on the iPhone: Settings → General → iPhone Storage → YouTube → Offload App "
+                    "(frees the app, keeps its documents and data)"),
       "a common big app: its own way first (YouTube's downloads), then offloading")
 for bundle in ("com.tencent.xin", "com.spotify.client"):
     t = sa.app_tip(bundle, "X")
     check(len(t) == 2 and "Storage" in t[0], f"  {bundle}: its storage setting")                           # noqa: F821
 check(all(" → " in v and v.endswith(".") for v in sa.IN_APP.values()), "every in-app way is written as steps")  # noqa: F821
-check(sa.app_tip("com.example.x", "")[0].endswith("iPhone Storage → the app → Offload App"),                # noqa: F821
+check("iPhone Storage → the app → Offload App" in sa.app_tip("com.example.x", "")[0],                # noqa: F821
       "an app without a name still gets a readable line")
 
 # -- the Storage screen -----------------------------------------------------------------------------------------------
@@ -82,6 +84,32 @@ def texts(w):
         texts(c)
 texts(win.content)
 check(sum(1 for t in labels if "Offload" in str(t)) == 20, "  and they're on the screen")                  # noqa: F821
+# every one of the 20 can be reached in the window's normal size: the list scrolls, under the storage figures
+win.geometry("1220x800")
+app.update()
+overview_ui.storage_view(win, win.overview)
+app.update()
+cv = getattr(win, "apps_canvas", None)        # the list's own scrolling area, when there is one
+
+
+def shown(cell):
+    """True when the whole of this app's cell is on screen: inside the window's content area and, if the list
+    scrolls, inside its visible part."""
+    for box in [win.content] + ([cv] if cv is not None else []):
+        y0 = cell.winfo_rooty() - box.winfo_rooty()
+        if y0 < 0 or y0 + cell.winfo_height() > box.winfo_height():
+            return False
+    return True
+
+
+seen = set()
+for k in range(0, 101, 5):
+    if cv is not None:
+        cv.yview_moveto(k / 100)
+    app.update()
+    seen |= {i for i, c in enumerate(win.app_cells) if shown(c)}
+check(seen == set(range(20)), f"in the window's normal size every one of the 20 apps with its line can be seen "
+      f"(scrolling the list): {len(seen)} of 20")                                         # noqa: F821
 check(asked["n"] == before, "showing the tips asks the phone nothing")                                      # noqa: F821
 import device as real_device
 check(not any(hasattr(real_device.LiveDevice, m) for m in ("offload_app", "uninstall", "remove_app", "delete_app")),  # noqa: F821
