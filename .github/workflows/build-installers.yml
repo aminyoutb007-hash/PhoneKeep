@@ -243,6 +243,9 @@ jobs:
           $out = & dist\PhoneKeep\phonekeep-cli.exe --pk-launch-check 2>&1 | Out-String
           Write-Host $out
           if ($out -notmatch "PKLAUNCH ok") { throw "The packaged app did not open its window" }
+          $pdf = & dist\PhoneKeep\phonekeep-cli.exe --pk-pdf-check 2>&1 | Out-String
+          Write-Host $pdf
+          if ($pdf -notmatch "PKPDF ok") { throw "The packaged app can't draw PDF previews (PDFium missing)" }
       - name: Licence check (LICENSE and THIRD_PARTY_NOTICES.md are inside the app)
         run: python tests\test_licence.py --built dist\PhoneKeep
       - name: Make PhoneKeep-Setup.exe
