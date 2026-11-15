@@ -973,6 +973,37 @@ def use_light_appearance(win) -> bool:
     return done
 
 
+def no_tabs(win) -> bool:
+    """Keep a window out of macOS's window tabs: with "Prefer tabs" on, or in full screen, macOS merged
+    PhoneKeep's windows into tabs and the tab bar covered the top of the header (5.1.2). Older Tk without
+    -tabbingmode is left as it is. Returns True if applied."""
+    if sys.platform != "darwin":
+        return False
+    try:
+        win.tk.call("wm", "attributes", win._w, "-tabbingmode", "disallowed")
+        return True
+    except tk.TclError:
+        return False
+
+
+def _no_tabs_on_create(cls) -> None:
+    """Every window, PhoneKeep's own and Tk's (the main window, dialogs, viewers), gets no_tabs() as it's made,
+    before macOS first shows it."""
+    made = cls.__init__
+    if getattr(made, "_pk_no_tabs", False):
+        return
+
+    def __init__(self, *args, **kwargs):
+        made(self, *args, **kwargs)
+        no_tabs(self)
+    __init__._pk_no_tabs = True
+    cls.__init__ = __init__
+
+
+_no_tabs_on_create(tk.Tk)
+_no_tabs_on_create(tk.Toplevel)
+
+
 def _attach_app_menu(win: tk.Toplevel) -> None:
     """Give a dialog the app's menu bar (macOS shows Tk's default File menu otherwise), and the light look."""
     if isinstance(win, tk.Toplevel):

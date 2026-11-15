@@ -44,6 +44,7 @@ STEPS = [
     ("Build: the Mac build script puts build_label.py back with git", "test_build_label.py", False),
     ("Licence: GPL-3.0-or-later; the built app carries LICENSE and THIRD_PARTY_NOTICES.md", "test_licence.py", False),
     ("Theme: Direction A colours from theme.py only; buttons and selected rows", "test_theme.py", False),
+    ("Mac window tabs: every window is made with tabs off (5.1.2)", "test_mac_tabs.py", False),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
