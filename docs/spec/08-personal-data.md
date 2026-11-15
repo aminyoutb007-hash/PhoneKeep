@@ -52,4 +52,4 @@
 - The contents page (web) links to every saved section and states the phone, snapshot date and filters used.
 
 **Done when**
-- [ ] "Last 30 days, mentioning *invoice*" saves only matching messages, notes and files from those 30 days.
+- [x] "Last 30 days, mentioning *invoice*" saves only matching messages, notes and files from those 30 days. *(Stand-in backup: `tests/test_d9_save_everything.py`. Real Mac, 15 Nov 2026: `tools/real_check.py` on the owner's latest backup saves exactly what it works out from the backup on its own, and every saved file and message mentions the word and is from the range. The literal run (last 30 days, *invoice*) kept matching files and left others out by date and by word; that backup had too little recent in messages and notes, so for those two the same check also runs over the fullest 30 days in the backup with a common word, and there too items were kept, others left out by the dates and others by the word.)*
