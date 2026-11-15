@@ -19,7 +19,6 @@ import inspect
 import os
 import shutil
 import threading
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -308,15 +307,19 @@ class DevicePhotoSource(PhotoSource):
         self.afc = None
         self._conn_lock = threading.Lock()
         self.generation = 0          # counts reconnects (5.1.3)
-        self._run(self._connect())
+        try:
+            self._run(self._connect())
+        except BaseException:
+            self.loop.call_soon_threadsafe(self.loop.stop)     # not connected: let go of the loop's thread
+            raise
         self._sizes: dict[str, int] = {}
 
     answered_at = 0.0       # when the iPhone last answered anything (5.1.3)
+    closed = False          # once closed, reads fail at once as a dropped connection (5.1.3)
 
     def _run(self, coro, timeout: float = 600):
-        r = asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
-        self.answered_at = time.time()
-        return r
+        from reconnect import run_on
+        return run_on(self, coro, timeout)
 
     async def _connect(self):
         from pymobiledevice3.lockdown import create_using_usbmux
@@ -329,6 +332,8 @@ class DevicePhotoSource(PhotoSource):
         """A new connection to the same phone (by its UDID, never another one) after the old one dropped (5.1.3)."""
         if not self.udid:
             raise ConnectionError("no UDID: can't tell which iPhone to reconnect to")
+        if self.closed:                          # let go of by the window: a new connection is the window's job
+            raise ConnectionAbortedError("the connection was closed")
         with self._conn_lock:
             if seen is not None and seen != self.generation:
                 return                       # another read has reconnected already
@@ -514,12 +519,10 @@ class DevicePhotoSource(PhotoSource):
             return None
 
     def close(self) -> None:
-        try:
-            if self.afc is not None:
-                self._run(_aw(self.afc.__aexit__(None, None, None)), timeout=10)
-        except Exception:
-            pass
-        self.loop.call_soon_threadsafe(self.loop.stop)
+        from reconnect import shut
+        afc = self.afc
+        shut(self, _aw(afc.__aexit__(None, None, None)) if afc is not None and not isinstance(afc, NotConnected)
+             else None)
 
 
 def human_size(n: float) -> str:
