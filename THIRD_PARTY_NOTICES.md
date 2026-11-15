@@ -136,6 +136,7 @@ LICENSE-THIRD-PARTY.yml).
 | Library | Licence |
 |---|---|
 | [pystray](https://github.com/moses-palmer/pystray) | LGPL-3.0 |
+| [pypdfium2](https://github.com/pypdfium2-team/pypdfium2) (PDF previews; Windows and Linux) | Apache-2.0 or BSD-3-Clause; includes Google's PDFium (BSD-3-Clause) and its parts under their own permissive licences (listed in its wheel's `LICENSES` folder) |
 | [six](https://github.com/benjaminp/six) (used by pystray) | MIT |
 | [lzfse](https://github.com/m1stadev/lzfse) (Windows and Linux; the Mac uses apple-compress) | MIT |
 | [winrt-runtime](https://github.com/pywinrt/pywinrt) | MIT |

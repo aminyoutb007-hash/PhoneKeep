@@ -179,9 +179,12 @@ def image_of(data: bytes, box: tuple[int, int]):
 
 
 def pdf_pages(data: bytes, width: int, max_pages: int = 12) -> Optional[list]:
-    """The first pages of a PDF as images, drawn in memory by macOS. None where that isn't possible."""
-    if sys.platform != "darwin" or Image is None:
+    """The first pages of a PDF as images, drawn in memory: by macOS on a Mac, by PDFium elsewhere (5.2, Q1 on
+    Windows: before, a PDF was copied to disk and opened in another app). None where that isn't possible."""
+    if Image is None:
         return None
+    if sys.platform != "darwin":
+        return pdfium_pages(data, width, max_pages)
     try:
         import Quartz
         from Foundation import NSData
@@ -209,6 +212,27 @@ def pdf_pages(data: bytes, width: int, max_pages: int = 12) -> Optional[list]:
         return out
     except Exception:
         return None
+
+
+def pdfium_pages(data: bytes, width: int, max_pages: int = 12) -> Optional[list]:
+    """The same with PDFium (pypdfium2), from the bytes in memory: nothing is written to disk."""
+    try:
+        import pypdfium2 as pdfium
+        doc = pdfium.PdfDocument(data)
+    except Exception:
+        return None
+    try:
+        out = []
+        for n in range(min(len(doc), max_pages)):
+            page = doc[n]
+            scale = width / max(1.0, page.get_width())
+            out.append(page.render(scale=scale).to_pil().convert("RGB"))
+            page.close()
+        return out
+    except Exception:
+        return None
+    finally:
+        doc.close()
 
 
 def human(n: Optional[int]) -> str:

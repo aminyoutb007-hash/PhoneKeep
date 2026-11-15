@@ -7,7 +7,7 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metada
 datas, binaries, hiddenimports = [], [], []
 for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl", "certifi", "keyring", "tkinterdnd2", "send2trash",
             "reportlab", "arabic_reshaper", "bidi",                       # M3: chats to PDF
-            *(("rumps",) if sys.platform == "darwin" else ("pystray",)),
+            *(("rumps",) if sys.platform == "darwin" else ("pystray", "pypdfium2")),   # Q1: PDF previews off the Mac
             *(("winrt",) if sys.platform == "win32" else ()),                 # S2: Windows Hello
             *(("LocalAuthentication",) if sys.platform == "darwin" else ())):  # S2: Touch ID (with its lazy _metadata)
     try:
