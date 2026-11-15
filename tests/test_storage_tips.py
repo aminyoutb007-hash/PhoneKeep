@@ -126,6 +126,12 @@ if cv is not None:
     check(win.apps_canvas.yview()[0] < 0.01, "  and a list at the top stays at the top")
 else:
     check(False, "the apps list has its own scrolling area")
+# the category tips to the right of the storage figures wrap inside the card rather than running past its edge
+tips = {n: r.winfo_children()[-1] for n, r in win.storage_rows.items()}       # the tip is each row's last label
+cut = [n for n, t in tips.items() if t.cget("text") and (t.winfo_rootx() + t.winfo_reqwidth() >
+                                                         win.content.winfo_rootx() + win.content.winfo_width() + 2
+                                                         or t.winfo_reqwidth() > t.winfo_width() + 2)]
+check(tips and not cut, f"  every category tip fits inside the card ({', '.join(cut) or 'none cut'})")
 check(asked["n"] == before, "showing the tips asks the phone nothing")                                      # noqa: F821
 import device as real_device
 check(not any(hasattr(real_device.LiveDevice, m) for m in ("offload_app", "uninstall", "remove_app", "delete_app")),  # noqa: F821

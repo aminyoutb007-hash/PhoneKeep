@@ -244,8 +244,10 @@ def storage_view(win, ov: di.Overview):
         size = "can't be estimated" if n is None else ("" if exact else "about ") + di.human(n)
         tk.Label(r, text=size, bg=CARD, fg=INK, font=font(12), width=17,
                  anchor="w").pack(side="left")
-        tip = tk.Label(r, text=TIPS.get(name, ""), bg=CARD, fg=MUTED, font=font(11), anchor="w")
+        tip = tk.Label(r, text=TIPS.get(name, ""), bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left")
         tip.pack(side="left", fill="x", expand=True)
+        # a long tip wraps inside the card instead of running past its edge
+        tip.bind("<Configure>", lambda e: e.widget.configure(wraplength=max(120, e.width - 4)))
         if name in ("Photos", "Messages"):
             key = name.lower()
             r.open = lambda k=key: win.open_app(k)
