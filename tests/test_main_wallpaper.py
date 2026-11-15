@@ -75,6 +75,7 @@ class Live:
         pass
 
 
+REAL_LIVE = devmod.LiveDevice
 devmod.LiveDevice = Live
 reach = {"devs": [PHONE]}
 wv.list_devices = lambda: list(reach["devs"])
@@ -128,6 +129,17 @@ pump(lambda: icon._spin != spin0, 2)
 check(icon._spin != spin0, "  and the spinner turns")
 a.busy = False
 
+# at start-up: searching before any picture, then the saved picture comes (the app's first look, about 300 ms in)
+fresh = appmod.PhoneIcon(a, theme.CARD)
+pump(lambda: False, 0.3)
+check(fresh.state == "searching" and not fresh._spinning, "start-up: searching with no picture yet (the drawn phone)")
+fresh.set_picture(wv.phone_picture(UD))
+spin1 = fresh._spin
+pump(lambda: fresh._spin != spin1, 2)
+check(fresh._spin != spin1 and fresh.find_withtag("spinner"),
+      "  the saved picture comes while searching: the spinner turns from the start")
+fresh.destroy()
+
 # not connected: dimmed, a badge
 a.s["chosen_udid"] = UD
 reach["devs"] = []
@@ -150,6 +162,26 @@ check(icon.state == "ok" and icon.picture == wv.phone_picture(UD), "  and the sm
 a.detect(silent=True)
 pump(lambda: False, 0.5)
 check(reads == [UD], "read once per session, not on every look for the phone")
+
+# a try that can't connect (the phone locked or gone; tried again every minute) leaves nothing behind
+import asyncio, threading
+import pymobiledevice3.lockdown as pmd_lockdown
+import quicklook
+
+
+async def no_phone(serial=None, **k):
+    raise ConnectionRefusedError("no phone here")
+real_connect, pmd_lockdown.create_using_usbmux = pmd_lockdown.create_using_usbmux, no_phone
+threads, folders = threading.active_count(), len(list(quicklook.private_dir().iterdir()))
+for _ in range(3):
+    try:
+        REAL_LIVE("00008030-NOPHONE")
+    except Exception:
+        pass
+pump(lambda: threading.active_count() <= threads, 3)
+pmd_lockdown.create_using_usbmux = real_connect
+check(threading.active_count() <= threads and len(list(quicklook.private_dir().iterdir())) == folders,
+      "a try that can't connect leaves no thread and no folder behind")
 
 # the phone window: the saved picture at once, not a plain green screen
 import phone

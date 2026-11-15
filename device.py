@@ -90,6 +90,7 @@ class LiveDevice:
 
     def __init__(self, udid: Optional[str], cache_dir: Optional[Path] = None):
         self.udid = udid
+        made_cache = cache_dir is None
         if cache_dir is None:
             import quicklook
             cache_dir = quicklook.private_tmp("phonekeep-live-")     # goes when PhoneKeep closes
@@ -103,8 +104,16 @@ class LiveDevice:
         self.lockdown = None
         self.generation = 0          # counts reconnects (5.1.3)
         import timing
-        with timing.step("live: lockdown connect"):
-            self.run(self._connect(), 60)
+        try:
+            with timing.step("live: lockdown connect"):
+                self.run(self._connect(), 60)
+        except BaseException:
+            # not connected (locked, gone): let go of the loop's thread, and the empty folder made for this connection,
+            # so tries every minute leave nothing behind (5.1.3)
+            self.loop.call_soon_threadsafe(self.loop.stop)
+            if made_cache:
+                shutil.rmtree(self.cache, ignore_errors=True)
+            raise
 
     # plumbing -----------------------------------------------------------------
     answered_at = 0.0       # when the iPhone last answered anything (5.1.3: a storage question that timed out is

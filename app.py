@@ -167,7 +167,8 @@ class PhoneIcon(tk.Canvas):
                     full = ImageOps.fit(im.convert("RGB"), size)
                 mask = Image.new("L", size, 0)
                 ImageDraw.Draw(mask).rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), 7, fill=255)
-                dim = Image.blend(full, Image.new("RGB", size, (255, 255, 255)), 0.55)
+                from PIL import ImageColor
+                dim = Image.blend(full, Image.new("RGB", size, ImageColor.getrgb(theme.CARD)), 0.55)
                 for key, img in (("full", full), ("dim", dim)):
                     out = Image.new("RGBA", size, (0, 0, 0, 0))
                     out.paste(img, (0, 0), mask)
@@ -177,13 +178,17 @@ class PhoneIcon(tk.Canvas):
         self.picture = path if imgs else None
         self._imgs = imgs
         self._draw()
+        self._start_spin()          # searching before the picture came: the spinner turns now
 
     def set_state(self, state: str):
         if state == self.state:
             return
         self.state = state
         self._draw()
-        if state == "searching" and not self._spinning:
+        self._start_spin()
+
+    def _start_spin(self):
+        if self.state == "searching" and self._imgs and not self._spinning:
             self._spinning = True
             self.after(90, self._turn)
 
