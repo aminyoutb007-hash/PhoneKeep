@@ -197,13 +197,21 @@ def parse_output(stdout: str) -> Optional[dict]:
 CATEGORY_COLOURS = theme.STORAGE      # the storage bar (theme.py)
 
 
-def categories(ov: Overview, photos_bytes: Optional[int] = None, messages_bytes: Optional[int] = None) -> list[tuple[str, int, bool]]:
+SYSTEM_MIN = 2 * GB      # below this, what's left for System can't be told apart from the app sizes' overlap
+SYSTEM_UNKNOWN = "System and other"
+
+
+def categories(ov: Overview, photos_bytes: Optional[int] = None,
+               messages_bytes: Optional[int] = None) -> list[tuple[str, Optional[int], bool]]:
     """[(name, bytes, exact)] adding up to the capacity. Free (and the total) are exact, the rest "about".
 
     Apps = what the installed apps and their data take (the phone reports each one).
     Photos and Messages come from the newest backup when there is one (an iCloud-only library is mostly in
     iCloud, so this is what's on the phone). System is what's left of the capacity that isn't apps,
     photos, messages or free, capped at a sensible size; anything above that is "Other".
+    The app sizes iOS reports can overlap with system and shared space, so what's left can come out near zero
+    or below (5.1.2: "System: about 0 KB"). Under SYSTEM_MIN it's (SYSTEM_UNKNOWN, None, False): no size, and
+    it's left out of the bar.
     """
     if not ov.total or ov.free is None:
         return []
@@ -217,6 +225,10 @@ def categories(ov: Overview, photos_bytes: Optional[int] = None, messages_bytes:
         apps, photos, msgs = int(apps * f), int(photos * f), int(msgs * f)
         known = apps + photos + msgs
     rest = used - known
+    if rest < SYSTEM_MIN:
+        out = [("Apps", apps, False), ("Photos", photos, False), ("Messages", msgs, False),
+               (SYSTEM_UNKNOWN, None, False), ("Free", ov.free, True)]
+        return [c for c in out if c[1] is None or c[1] > 0 or c[0] == "Free"]
     system = min(rest, int(12 * GB + 0.04 * ov.total))   # iOS itself and its caches: about 12 GB plus a little per size
     other = rest - system
     out = [("Apps", apps, False), ("Photos", photos, False), ("Messages", msgs, False),
