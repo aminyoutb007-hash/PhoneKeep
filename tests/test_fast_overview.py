@@ -94,7 +94,7 @@ check(win.overview is not None and calls["overview"][-1] == {"apps": False, "wif
       f"the overview (battery, storage, details) comes without the app list, shown at once ({time.time() - t0:.1f} s)")
 check(calls["names"] == 0 and not calls["sizes"], "opening the window doesn't ask for the app list")          # noqa: F821
 pump(app, lambda: win.wall_img is not None, 10, "wallpaper")                             # noqa: F821
-check(calls["wallpaper"] >= 1 and (home_cache / "wallpaper.png").exists(),                                    # noqa: F821
+check(calls["wallpaper"] >= 1 and wv.phone_picture(UDID).exists(),                                    # noqa: F821
       "over a cable the wallpaper is read, and a copy kept for Wi-Fi")
 
 overview_ui.storage_view(win, win.overview)

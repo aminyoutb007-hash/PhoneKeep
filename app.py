@@ -19,6 +19,11 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import applock
 import errors
+
+try:
+    from PIL import Image, ImageOps, ImageTk          # the phone's home screen in the main window (5.1.3)
+except Exception:
+    Image = ImageOps = ImageTk = None
 import keychain
 import phone_write
 import phonekeep as wv
@@ -136,16 +141,86 @@ class Settings:
 
 
 class PhoneIcon(tk.Canvas):
+    """The main window's small phone. With a saved home screen (5.1.3) it shows that picture in a dark frame, like the
+    phone window: dimmed with a small spinner while searching, dimmed with a "not connected" badge when the phone isn't
+    there. Without one, the drawn phone with a tick (or … / ?)."""
+    SCREEN = (10, 8, 54, 96)              # the picture's place inside the frame
+
     def __init__(self, parent, bg):
         super().__init__(parent, width=64, height=104, bg=bg, highlightthickness=0)
         self.state = None
+        self.picture = None               # the saved home screen's file
+        self._imgs = {}                   # "full" / "dim" PhotoImages of it
+        self._spin = 0
+        self._spinning = False
         self.set_state("searching")
+
+    def set_picture(self, path) -> None:
+        """Show this home screen (None: the drawn phone). A fresh copy of the same file replaces it quietly."""
+        imgs = {}
+        if path is not None and Image is not None:
+            try:
+                from PIL import ImageDraw
+                x0, y0, x1, y1 = self.SCREEN
+                size = (x1 - x0, y1 - y0)
+                with Image.open(path) as im:
+                    full = ImageOps.fit(im.convert("RGB"), size)
+                mask = Image.new("L", size, 0)
+                ImageDraw.Draw(mask).rounded_rectangle((0, 0, size[0] - 1, size[1] - 1), 7, fill=255)
+                from PIL import ImageColor
+                dim = Image.blend(full, Image.new("RGB", size, ImageColor.getrgb(theme.CARD)), 0.55)
+                for key, img in (("full", full), ("dim", dim)):
+                    out = Image.new("RGBA", size, (0, 0, 0, 0))
+                    out.paste(img, (0, 0), mask)
+                    imgs[key] = ImageTk.PhotoImage(out)
+            except Exception:
+                imgs = {}
+        self.picture = path if imgs else None
+        self._imgs = imgs
+        self._draw()
+        self._start_spin()          # searching before the picture came: the spinner turns now
 
     def set_state(self, state: str):
         if state == self.state:
             return
         self.state = state
+        self._draw()
+        self._start_spin()
+
+    def _start_spin(self):
+        if self.state == "searching" and self._imgs and not self._spinning:
+            self._spinning = True
+            self.after(90, self._turn)
+
+    def _turn(self):
+        if self.state != "searching" or not self._imgs:
+            self._spinning = False
+            return
+        self._spin = (self._spin - 30) % 360
+        self._draw()
+        try:
+            self.after(90, self._turn)
+        except tk.TclError:
+            self._spinning = False
+
+    def _draw(self):
         self.delete("all")
+        state = self.state
+        if self._imgs:
+            x0, y0, x1, y1 = self.SCREEN
+            self._rr(6, 4, 58, 100, 12, theme.PHONE_BODY)
+            self.create_image(x0, y0, anchor="nw", image=self._imgs["full" if state == "ok" else "dim"], tags=("picture",))
+            self.create_rectangle(26, 10, 38, 12, fill=theme.PHONE_BODY, outline="")       # the camera notch
+            if state == "searching":
+                cx, cy = 32, 52
+                self.create_oval(cx - 10, cy - 10, cx + 10, cy + 10, outline=theme.CARD, width=3, tags=("spinner",))
+                self.create_arc(cx - 10, cy - 10, cx + 10, cy + 10, start=self._spin, extent=110, style="arc",
+                                outline=GREEN, width=3, tags=("spinner",))
+            elif state == "none":
+                self._rr(4, 78, 60, 92, 6, theme.WARN_BG)
+                self.create_text(32, 85, text="not connected", fill=theme.WARN_TEXT, font=font(8, "bold"),
+                                 tags=("badge",))
+            return
         body = theme.PHONE_ICON[state]
         self._rr(6, 4, 58, 100, 12, body)
         self._rr(11, 12, 53, 88, 6, theme.CARD if state != "ok" else theme.ACCENT_PALE)
@@ -904,7 +979,10 @@ class App(_dnd_root()):
         if self.s.data.get("chosen_name") != (d.get("DeviceName") or "iPhone"):
             self.s["chosen_name"] = d.get("DeviceName") or "iPhone"
         how = "USB cable" if d.get("ConnectionType") == "USB" else "Wi-Fi"
+        self._show_phone_picture(self.udid)
         self.phone.set_state("ok")
+        if d.get("ConnectionType") == "USB":
+            self._read_home_screen(self.udid)
         self.dev_name.configure(text=d.get("DeviceName") or "iPhone")
         self.dev_line.configure(text=f"iOS {d.get('ProductVersion', '?')} · connected by {how}"
                                 + ("  (a cable is faster for the first backup)" if how == "Wi-Fi" else ""), fg=MUTED)
@@ -921,6 +999,41 @@ class App(_dnd_root()):
         self.dev_lock.configure(text=self.lock_badge(info),
                                 fg=GREEN if not info or info.get("encrypted") else theme.WARN_TEXT)   # a warning
         self.open_btn.set_enabled(True)
+
+    # 5.1.3: the phone's own home screen in the small phone picture ------------------------------------------------
+    HOME_RETRY = 60
+
+    def _show_phone_picture(self, udid) -> None:
+        """The saved home screen of this phone (None / not saved yet: the drawn phone). Redrawn only when it changed."""
+        p = wv.phone_picture(udid) if udid else None
+        key = (str(p), p.stat().st_mtime) if p is not None and p.exists() else None
+        if key != getattr(self, "_picture_key", "unset"):
+            self._picture_key = key
+            self.phone.set_picture(p if key else None)
+
+    def _read_home_screen(self, udid: str) -> None:
+        """Over a cable, a fresh home screen once per session (again after a minute if it didn't come), read-only,
+        in the background; it quietly replaces the saved one."""
+        tried = getattr(self, "_home_read", {})
+        self._home_read = tried
+        if self.busy or tried.get(udid) == "done" or time.time() - tried.get(udid, 0) < self.HOME_RETRY:
+            return
+        tried[udid] = time.time()
+
+        def work():
+            try:
+                import device as devmod
+                live = devmod.LiveDevice(udid)
+                try:
+                    p = live.wallpaper("homescreen") or live.wallpaper("lockscreen")
+                finally:
+                    live.close()
+                if wv.keep_phone_picture(udid, p):
+                    tried[udid] = "done"
+                    self.call(lambda: self._show_phone_picture(self.udid))
+            except Exception:
+                pass
+        threading.Thread(target=work, daemon=True).start()
 
     def choose_phone(self, udid: str):
         """B8: the owner picked a phone from the list; the options below are now for it."""
@@ -1049,8 +1162,9 @@ class App(_dnd_root()):
             elif self.devices:
                 # several phones and none chosen yet, or the chosen one went away: never switch by itself (B8)
                 self.device = self.udid = None
-                self.phone.set_state("none")
                 gone = chosen and chosen not in ids
+                self._show_phone_picture(chosen if gone else None)
+                self.phone.set_state("none")
                 self.dev_name.configure(text=(f"{self.s.data.get('chosen_name') or 'Your iPhone'} is no longer connected"
                                               if gone else f"{len(self.devices)} iPhones nearby"))
                 self.dev_line.configure(text="Choose the iPhone to back up below.", fg=MUTED)
@@ -1059,6 +1173,7 @@ class App(_dnd_root()):
                 self.open_btn.set_enabled(False)
             else:
                 self.device = self.udid = None
+                self._show_phone_picture(chosen)            # the last phone, dimmed, "not connected"
                 self.phone.set_state("none")
                 self.dev_name.configure(text="No iPhone found")
                 self.dev_line.configure(text=err or "Plug in your iPhone (or use Wi-Fi sync), unlock it and tap “Trust”.",
@@ -1068,6 +1183,8 @@ class App(_dnd_root()):
                 self.open_btn.set_enabled(False)
             self._fill_phone_list()
         if not silent:
+            if self.udid is None:
+                self._show_phone_picture(self.s.data.get("chosen_udid"))
             self.phone.set_state("searching")
             self.dev_name.configure(text="Looking for your iPhone…")
 
