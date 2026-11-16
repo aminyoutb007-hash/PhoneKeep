@@ -53,6 +53,12 @@ Click **Open iPhone** (or the phone itself) in the main window. A window opens w
 
 Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. Nothing is ever written to the phone.
 
+## New in 5.2
+
+- A calmer layout for the phone window, the backing-up screen, Settings and the first-run guide.
+- The first-run guide can set up Wi-Fi backups for your iPhone (off unless you turn it on; it asks first).
+- Storage tips: each of the largest apps says how to free its space. PhoneKeep never deletes anything itself.
+
 ## New in 5.1.3
 
 - Reconnects by itself when the iPhone is unplugged and plugged back in; the phone window opens much faster, also over Wi-Fi; your iPhone's home screen shows in the main window.

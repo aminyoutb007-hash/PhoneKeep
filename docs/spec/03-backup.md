@@ -121,6 +121,21 @@
 
 Related: [E5](05-ease-of-use.md#e5-all-phones-and-backups-in-one-list) (a card per phone ever backed up, P2) builds on this list.
 
+## B9. Keep backing up after the window closes
+
+**5.3** (owner, 16 Nov). **Why:** in 5.2, closing the main window quits PhoneKeep, so the backup progress screen ([L2](14-layouts.md#l2-backup-progress-screen)) says "Keep PhoneKeep open until it's done." The mockup's line, "You can close this window. You'll get a notification when it's done.", becomes true with this.
+
+**What the user sees and does:** while a backup runs, closing the window doesn't stop it. The backup carries on, and a notification says when it's done (or that it didn't finish, and why). The line under the progress card then says "You can close this window. You'll get a notification when it's done."
+
+**Requirements**
+- The notification is the computer's own; nothing is sent online (S3).
+- Cancel stays possible while it runs on (for example from the menu bar helper, [E2](05-ease-of-use.md#e2-menu-bar-and-system-tray-helper)).
+- Two backups still never run at once ([B8](#b8-choose-which-iphone-when-several-are-reachable)).
+
+**Done when**
+- [ ] With a real iPhone: start a backup, close the window; the backup finishes and the notification says so; the snapshot is there.
+- [ ] Closing the window while nothing runs works as today.
+
 ## B6. Restore a backup to an iPhone
 
 **What the user sees and does:** in the snapshot list, **Restore to iPhone…** → choose the phone → a confirmation: "Restore *Amin's iPhone* from 3 Nov? Everything on this iPhone will be replaced with the data from that day." The main button says **Restore**. Progress, then "Restore finished. Your iPhone will restart."
