@@ -26,7 +26,8 @@ SMALL = 2 * 1000 ** 2       # what a kind without media roughly takes once saved
 
 
 def estimate_sizes(reader, backup_path: Path) -> dict[str, int]:
-    """Roughly what each kind takes when saved with its media, from the backup's own file list."""
+    """Roughly what each kind takes when saved with its media, from the backup's own file list. `reader`: anything
+    with file_meta(domain, prefix); the phone window gives its BackupData, whose file_meta holds its lock."""
     def total(domain, prefix=""):
         try:
             return sum((m[2] or 0) for m in reader.file_meta(domain, prefix).values())

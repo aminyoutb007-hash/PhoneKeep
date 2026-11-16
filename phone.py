@@ -200,11 +200,15 @@ class BackupData:
             pass
         self.cache: dict = {}
         self.lock = threading.Lock()
+        self.closed = threading.Event()     # set once the backup's files have been let go
+        self._closing = False
 
     def get(self, key: str):
         with self.lock:
             if key in self.cache:
                 return self.cache[key]
+            if self._closing:
+                raise wv.PhoneKeepError("This backup was closed.")
             c = self.ctx
             if key == "messages":
                 v = sx.load_messages(c)
@@ -251,23 +255,47 @@ class BackupData:
         if key == "photos":
             return f"{len(v[1]):,}"
         if key == "allfiles":
-            n = self.reader.db.execute("SELECT COUNT(*) FROM Files WHERE flags=1").fetchone()[0]
+            with self.lock:
+                if self._closing:
+                    raise wv.PhoneKeepError("This backup was closed.")
+                n = self.reader.db.execute("SELECT COUNT(*) FROM Files WHERE flags=1").fetchone()[0]
             return f"{n:,} file{'s' if n != 1 else ''}"
         return f"{len(v):,}"
 
     def copy(self, domain: str, rel: str, dest: Path) -> bool:
         with self.lock:
-            return self.ctx.copy(domain, rel, dest)
+            return False if self._closing else self.ctx.copy(domain, rel, dest)
 
     def read(self, domain: str, rel: str) -> Optional[bytes]:
         with self.lock:
-            return self.ctx.read(domain, rel)
+            return None if self._closing else self.ctx.read(domain, rel)
+
+    def file_meta(self, domain: str, prefix: str = "") -> dict:
+        """The backup's file list under a folder (as BackupReader.file_meta), under the lock."""
+        with self.lock:
+            if self._closing:
+                raise wv.PhoneKeepError("This backup was closed.")
+            return self.reader.file_meta(domain, prefix)
 
     def close(self):
-        try:
-            self.reader.close()
-        except Exception:
-            pass
+        """Let go of the backup's files. A read still running (the home screen's counts) finishes first: closing
+        the database under it crashed PhoneKeep (16 Nov). The window never waits: if a read is running, the
+        closing happens in the background as soon as it ends; `closed` is set when it's done."""
+        def shut(wait: bool) -> bool:
+            if not self.lock.acquire(blocking=wait):
+                return False
+            try:
+                self._closing = True
+                try:
+                    self.reader.close()
+                except Exception:
+                    pass
+            finally:
+                self.lock.release()
+            self.closed.set()
+            return True
+        if not shut(False):
+            threading.Thread(target=shut, args=(True,), daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -871,9 +899,10 @@ class PhoneWindow(tk.Toplevel):
         except tk.TclError:
             pass
 
-    def _backup_sizes(self):
-        """V3: what Photos and Messages take, from the backup (an estimate: iCloud-only photos aren't in it)."""
-        r = self.data.reader
+    @staticmethod
+    def _backup_sizes(r):
+        """V3: what Photos and Messages take, from the backup `r` (BackupData) (an estimate: iCloud-only photos
+        aren't in it)."""
         photos = sum((m[2] or 0) for rel, m in r.file_meta("CameraRollDomain", "Media/DCIM/").items())
         msgs = sum((m[2] or 0) for m in r.file_meta("HomeDomain", "Library/SMS/").values())
         msgs += sum((m[2] or 0) for m in r.file_meta("MediaDomain", "Library/SMS/Attachments/").values())
@@ -921,8 +950,9 @@ class PhoneWindow(tk.Toplevel):
             self._update_src_line()
             self.counts = {}
             self._count_next([k for k, *_r, where in APPS if where == "backup"])
-            self.backup_runner.submit(self._backup_sizes,
-                                      lambda pm: setattr(self, "photos_bytes", pm[0]) or setattr(self, "messages_bytes", pm[1]),
+            self.backup_runner.submit(lambda: self._backup_sizes(data),
+                                      lambda pm: data is self.data and (setattr(self, "photos_bytes", pm[0])
+                                                                        or setattr(self, "messages_bytes", pm[1])),
                                       lambda e: None)
             if self.current is None:
                 self.show_home()
@@ -952,11 +982,15 @@ class PhoneWindow(tk.Toplevel):
         data = self.data
 
         def ok(n):
+            if data is not self.data:
+                return                      # another snapshot was opened meanwhile: its own counts are coming
             self.counts[key] = n
             self._paint_count(key)
             self._count_next(rest)
 
         def err(e):
+            if data is not self.data:
+                return
             self.counts[key] = "nothing found"
             self._paint_count(key)
             self._count_next(rest)
@@ -1197,7 +1231,7 @@ class PhoneWindow(tk.Toplevel):
             return
         if choice is None:
             data = self.data
-            dlg = saveall_ui.SaveEverythingDialog(self, self.counts, lambda: saveall_ui.estimate_sizes(data.reader, data.path))
+            dlg = saveall_ui.SaveEverythingDialog(self, self.counts, lambda: saveall_ui.estimate_sizes(data, data.path))
             self.save_all_dialog = dlg
             dlg.grab_set()
             self.wait_window(dlg)
