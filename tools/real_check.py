@@ -137,6 +137,7 @@ dev = devs[0]
 print(f"Checking the iPhone on the cable (iOS {dev.get('ProductVersion')}). This takes a few minutes.\n", flush=True)
 app = App()
 win = phone.PhoneWindow(app, dev, dev["UniqueDeviceID"])
+win.seal_backups = False    # S8: never write a seal into the real backups (the app seals them when the owner opens them)
 win.crashes_read = True     # the check-up reads crash reports into the phone's real folder: the H4 step reads them
                             # into the temporary folder instead
 try:

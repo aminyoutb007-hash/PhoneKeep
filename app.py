@@ -360,6 +360,9 @@ class App(_dnd_root()):
         import quicklook
         quicklook.cleanup_stale()    # Q1: what PhoneKeeps no longer running left in the private folder
         threading.Thread(target=activity.prune, daemon=True).start()     # S7: the record keeps 12 months
+        import tamper                       # S8: snapshot seals are signed with a key in the keychain (window only;
+        if keychain.available() and not os.environ.get("PHONEKEEP_HOME"):     # tests bring their own key)
+            tamper.key_source = tamper.keychain_key
         ui.use_light_appearance(self)
         self.title(wv.APP_NAME)
         self._build_menu()
