@@ -18,6 +18,7 @@ os.environ["PHONEKEEP_NO_HELPER"] = "1"
 
 import keychain
 import phone_write
+import activity
 import phonekeep as wv
 
 keychain.use_memory()
@@ -28,7 +29,7 @@ applock.use_backend(lambda: None, lambda reason: False)   # no Touch ID prompts 
 W = HERE / "work" / "e1"
 shutil.rmtree(W, ignore_errors=True)
 W.mkdir(parents=True)
-phone_write.ACTIVITY_FILE = W / "activity.jsonl"
+activity.ACTIVITY_FILE = W / "activity.jsonl"
 failures = []
 
 
@@ -221,8 +222,8 @@ check(not a.guide.continue_btn.enabled, "  while the Wi-Fi write runs, Continue 
 a.guide._show_trusted(True)                    # a replug mid-write
 check(not a.guide.continue_btn.enabled, "  even if the phone is seen again mid-write")
 pump(lambda: a.guide.wifi_note.cget("text").startswith("Not done"), 20, "the failed write")
-acts_now = [json.loads(l) for l in phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()] \
-    if phone_write.ACTIVITY_FILE.exists() else []
+acts_now = [json.loads(l) for l in activity.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()] \
+    if activity.ACTIVITY_FILE.exists() else []
 check(a.guide.wifi_note.cget("text").startswith("Not done") and a.guide.wifi_var.get() is False
       and not a.bar_frame.winfo_manager() and len(wifi_calls()) == 1
       and not any(x["summary"] == "Turned on Wi-Fi backups" for x in acts_now) and a.guide.continue_btn.enabled,
@@ -237,7 +238,7 @@ check(len(wifi_calls()) == fails + 1 and wifi_calls()[-1]["argv"][:2] == ["--pk-
       f"  exactly one write to the phone ({len(wifi_calls()) - fails})")
 argv = wifi_calls()[-1]["argv"]
 check("--udid" in argv and argv[argv.index("--udid") + 1] == real_udid, f"  to this phone, by its ID ({argv})")
-acts = [json.loads(l) for l in phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()]
+acts = [json.loads(l) for l in activity.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()]
 check(sum(x["summary"] == "Turned on Wi-Fi backups" for x in acts) == 1, "  the write is in the activity log")
 check(a.guide.wifi_var.get() is True, "  the switch shows on")
 a.udid = "00008030-OTHER"                      # another iPhone in its place: not shown as on, and can be asked
@@ -273,7 +274,7 @@ enc = [c for c in calls if c["argv"][0] == "--pk-encryption"]
 check(len(enc) == 1 and enc[0]["argv"][1] == "on" and enc[0]["stdin"].strip() == "Correct-Horse-7!"
       and "Correct-Horse-7!" not in " ".join(enc[0]["argv"]), "encryption turned on through the phone (password on stdin only)")
 check(keychain.get_password("00008030-E1TEST") == "Correct-Horse-7!", "password in the keychain")
-acts = [json.loads(l) for l in phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()]
+acts = [json.loads(l) for l in activity.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()]
 check(sum(x["summary"] == "Turned on backup encryption" for x in acts) == 1, "activity log has the write")
 
 # back up now

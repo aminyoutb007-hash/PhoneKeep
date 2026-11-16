@@ -15,6 +15,7 @@ import time
 import tkinter as tk
 import webbrowser
 from pathlib import Path
+from typing import Optional
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import applock
@@ -25,6 +26,7 @@ try:
 except Exception:
     Image = ImageOps = ImageTk = None
 import keychain
+import activity
 import phone_write
 import phonekeep as wv
 import sections as sx
@@ -357,6 +359,7 @@ class App(_dnd_root()):
         super().__init__()
         import quicklook
         quicklook.cleanup_stale()    # Q1: what PhoneKeeps no longer running left in the private folder
+        threading.Thread(target=activity.prune, daemon=True).start()     # S7: the record keeps 12 months
         ui.use_light_appearance(self)
         self.title(wv.APP_NAME)
         self._build_menu()
@@ -1938,6 +1941,8 @@ class App(_dnd_root()):
                 self.steps[k].set("done", detail="", right="")
         self._set_pct(100, "")
         self.last_index = Path(index)
+        activity.log(f"Saved the archive to {activity.where(self.s['archive_dir'])}",
+                     (self.device or {}).get("DeviceName"), kind="save")
         fm = " + ".join(lbl for f, lbl in (("web", "web pages"), ("pdf", "PDF"), ("excel", "Excel"), ("csv", "CSV")) if self.fmt[f].get())
         notes = ["You chose " + " and ".join(self.notes) + "."] if self.notes else []
         where = self.s["archive_dir"].replace(str(Path.home()), "~", 1)
@@ -2187,21 +2192,10 @@ class OpenBackupDialog(tk.Toplevel):
 SETTINGS_GROUPS = ["Backups", "Automatic backups", "Security", "Saving", "Activity", "About"]
 
 
-def activity_summary(n: int = 5) -> str:
-    """The last few lines of the activity record (S7), newest first, in plain words."""
-    try:
-        rows = phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()[-n:]
-    except (OSError, ValueError):            # unreadable or not UTF-8: Settings still opens
-        rows = []
-    out = []
-    for r in reversed(rows):
-        try:
-            d = json.loads(r)
-            out.append(f"{d.get('when', '')[:16].replace('T', ' ')}  {d.get('summary', '')}"
-                       + (f" ({d['phone']})" if d.get("phone") else ""))
-        except (ValueError, AttributeError, TypeError, KeyError):     # a damaged line is skipped
-            continue
-    return "\n".join(out) if out else "Nothing recorded yet."
+def activity_summary(n: Optional[int] = None) -> str:
+    """The activity record (S7) of the last 12 months, newest first, one line each, in plain words."""
+    lines = [activity.line(d) for d in activity.entries()][:n]
+    return "\n".join(lines) if lines else "Nothing recorded yet."
 
 
 class SettingsWindow(tk.Toplevel):
@@ -2484,15 +2478,27 @@ class SettingsWindow(tk.Toplevel):
         self._refresh_backups()
 
         # activity (S7): the record PhoneKeep keeps on this computer of what it changed; read here, never sent
-        ac = section("Activity", "PhoneKeep keeps a record, on this computer only, of every change it makes to your "
-                                 "iPhone and of settings like where backups are kept. Kept 12 months.", "Activity")
-        self.activity_lines = tk.Label(ac, text=activity_summary(), bg=CARD, fg=INK, font=font(12), anchor="w",
-                                       justify="left", wraplength=560)
-        self.activity_lines.pack(fill="x")
-        ui.RoundButton(ac, "Show in Finder" if sys.platform == "darwin" else "Show folder",
-                       lambda: reveal(phone_write.ACTIVITY_FILE if phone_write.ACTIVITY_FILE.exists()
-                                      else phone_write.ACTIVITY_FILE.parent),
-                       "secondary", 140, 34, 12, bg=CARD).pack(anchor="w", pady=(8, 0))
+        ac = section("Activity", "What PhoneKeep did, on this computer only: each backup, each save, each change it "
+                                 "made to your iPhone and settings like where backups are kept. Never your messages or "
+                                 "passwords. Kept 12 months.", "Activity")
+        box = tk.Frame(ac, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+        box.pack(fill="x")
+        text = activity_summary()
+        self.activity_lines = tk.Text(box, height=min(10, max(2, text.count("\n") + 1)), wrap="word", bg=CARD,
+                                      fg=INK, font=font(12), relief="flat", bd=0, highlightthickness=0, padx=8, pady=6)
+        sb = ttk.Scrollbar(box, orient="vertical", command=self.activity_lines.yview)
+        self.activity_lines.configure(yscrollcommand=sb.set)
+        self.activity_lines.insert("1.0", text)
+        self.activity_lines.configure(state="disabled")
+        sb.pack(side="right", fill="y")
+        self.activity_lines.pack(side="left", fill="x", expand=True)
+        row = tk.Frame(ac, bg=CARD)
+        row.pack(anchor="w", pady=(8, 0))
+        ui.RoundButton(row, "Save as CSV…", self.save_activity, "secondary", 140, 34, 12, bg=CARD).pack(side="left")
+        ui.RoundButton(row, "Show in Finder" if sys.platform == "darwin" else "Show folder",
+                       lambda: reveal(activity.ACTIVITY_FILE if activity.ACTIVITY_FILE.exists()
+                                      else activity.ACTIVITY_FILE.parent),
+                       "secondary", 140, 34, 12, bg=CARD).pack(side="left", padx=(8, 0))
 
         # about
         abt = section("About", f"{wv.APP_NAME} {wv.VERSION}" + (f" · test build {wv.BUILD_LABEL}" if wv.BUILD_LABEL else ""),
@@ -2513,6 +2519,20 @@ class SettingsWindow(tk.Toplevel):
         self._mark_current()
         if focus == "include":
             self.after(100, lambda: self.go_to("Saving"))
+
+    def save_activity(self, path: Optional[Path] = None) -> Optional[Path]:
+        """S7: the record as CSV, where the owner chooses. path: given by the tests instead of the dialog."""
+        if path is None:
+            p = filedialog.asksaveasfilename(parent=self, defaultextension=".csv", initialfile="PhoneKeep activity.csv",
+                                             filetypes=[("CSV", "*.csv")])
+            if not p:
+                return None
+            path = Path(p)
+        try:
+            return activity.save_csv(path)
+        except OSError as e:
+            messagebox.showerror(wv.APP_NAME, f"Couldn't save the activity record: {e}", parent=self)
+            return None
 
     def go_to(self, group: str):
         """Scroll so the group's first card is at the top (as far as the page goes)."""

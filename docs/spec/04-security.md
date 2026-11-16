@@ -88,7 +88,9 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 **Requirements:** kept locally, never contains message text or passwords; can be exported as CSV; kept 12 months.
 
 **Done when**
-- [ ] Each backup, save, restore and write-to-phone action appears once with date and summary.
+- [x] Each backup, save, restore and write-to-phone action appears once with date and summary. *(16 Nov: `tests/test_s7_activity.py`. A backup is recorded by the engine that the window, the menu bar helper and B9 share, so it appears once with the phone's name and whether it's encrypted. Saves are recorded where they finish: files in a phone window, one app, PDFs, Save everything, Photo clean-up, the details and battery files, and the main window's archive. Each is counted and has its folder, never a file's name. Print isn't a save. Writes to the iPhone go through `phone_write.run()`, which S1's test checks. Restore (B6, 5.3) writes to the iPhone, so it will be recorded the same way once it's built.)*
+
+**How it's built (16 Nov):** `activity.py` keeps the record in `activity.jsonl`, in PhoneKeep's own folder on this computer. Each line has the date, a kind (backup, save, phone-write, settings), the phone and a plain-words summary. Lines older than 12 months, and damaged ones, are dropped when PhoneKeep starts. Settings → Activity lists the last 12 months, newest first, with **Save as CSV…**; the CSV is safe in Excel, as the other exports are. Nothing in the record leaves the computer, and no line holds message text, a password or a file's name from the backup.
 
 ## S8. Tamper check
 

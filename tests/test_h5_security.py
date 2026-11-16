@@ -205,6 +205,7 @@ real = (pl.create_using_usbmux, pmc.MobileConfigService, pip_.InstallationProxyS
 pl.create_using_usbmux, pmc.MobileConfigService, pip_.InstallationProxyService = fake_connect, FakeMC, FakeIP
 import launcher
 import phone_write
+import activity
 out = io.StringIO()
 with contextlib.redirect_stdout(out):
     launcher._pk_security([])
@@ -219,7 +220,7 @@ check(not [c for c in CALLS if c[0].startswith("REFUSED")] and set(kinds) <= {
       "get_value", "get_profile_list", "get_cloud_configuration", "get_apps", "start_service"}
       and ("start_service", "com.apple.afc2") in CALLS,
       f"only reads (lockdown values, the profile list, the cloud configuration, the app list, the afc2 probe): {kinds}")
-check(not phone_write.ACTIVITY_FILE.exists() or not phone_write.ACTIVITY_FILE.read_text().strip(),
+check(not activity.ACTIVITY_FILE.exists() or not activity.ACTIVITY_FILE.read_text().strip(),
       "the phone-write gate's log is empty after the checks: nothing was written to the phone")
 src = (HERE.parent / "launcher.py").read_text(encoding="utf-8")
 body = src[src.index("def _pk_security"):src.index("def _pk_battery")]

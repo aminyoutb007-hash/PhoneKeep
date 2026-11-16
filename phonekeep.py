@@ -508,6 +508,13 @@ def make_backup(backup_root: Path = DEFAULT_BACKUP_DIR, udid: Optional[str] = No
     if status:
         status("Saving this backup as a snapshot…")
     snap = _snaps.make_snapshot(backup_root, udid, log=log)
+    try:                                       # S7: each backup once in the activity record, window or helper
+        import activity
+        info = backup_info(snap.path)
+        activity.log(f"Backed up {info.get('name') or 'iPhone'} ({'encrypted' if info.get('encrypted') else 'not encrypted'})",
+                     kind="backup")
+    except Exception:
+        pass
     _snaps.prune(backup_root, udid, keep=keep, until_disk_full=until_disk_full, log=log)
     try:                       # H1: the check-up's record (storage, battery) for "As of last backup" and history
         import checkup

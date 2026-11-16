@@ -23,14 +23,15 @@ W.mkdir(parents=True, exist_ok=True)
 import phonekeep as wv
 import keychain
 import phone_write
+import activity
 
 keychain.use_memory()
 
 import applock
 
 applock.use_backend(lambda: None, lambda reason: False)   # no Touch ID prompts in tests (S2 has its own)
-phone_write.ACTIVITY_FILE = W / "activity.jsonl"
-phone_write.ACTIVITY_FILE.unlink(missing_ok=True)
+activity.ACTIVITY_FILE = W / "activity.jsonl"
+activity.ACTIVITY_FILE.unlink(missing_ok=True)
 
 failures = []
 
@@ -114,10 +115,10 @@ check(recorded[0]["stdin"].strip() == SECRET, "the password travelled through st
 check(recorded[1]["stdin"].splitlines() == [SECRET, "New-Pass-99!"], "old and new password through stdin")
 check(all(SECRET not in m and "New-Pass-99!" not in m for m in logs), "no password in the log lines")
 
-acts = [json.loads(l) for l in phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()]
+acts = [json.loads(l) for l in activity.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()]
 check([a["summary"] for a in acts] == ["Turned on backup encryption", "Changed the backup password",
                                         "Turned off backup encryption"], "activity log has one line per write")
-check(all(SECRET not in l and "New-Pass-99!" not in l for l in phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()),
+check(all(SECRET not in l and "New-Pass-99!" not in l for l in activity.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()),
       "no password in the activity log")
 check(all(a["phone"] == "Test iPhone" and a["when"] for a in acts), "activity lines carry the phone and the time")
 

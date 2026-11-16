@@ -27,6 +27,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 
+import activity
 import checkup_ui
 import keychain
 import deviceinfo as di
@@ -1401,6 +1402,7 @@ class PhoneWindow(tk.Toplevel):
         if not n:
             messagebox.showwarning(wv.APP_NAME, "Nothing could be saved.", parent=self)
             return
+        activity.saved(n, what, folder, self.name, plural="photos/videos" if what == "photo/video" else None)
         self.banner(f"✓ Saved {n:,} {what}{'s' if n != 1 else ''} to {folder}", ("Show in Finder" if sys.platform == "darwin"
                     else "Show folder", lambda: reveal(folder)))
 
@@ -1446,6 +1448,7 @@ class PhoneWindow(tk.Toplevel):
         def ok(index):
             state["finished"] = True
             self.last_save_all = Path(index)
+            activity.log(f"Saved everything to {activity.where(folder)}", self.name, kind="save")
             self.banner(f"✓ Saved to {folder}", ("Open", lambda: open_file(Path(index))))
 
         def err(e):
@@ -1483,6 +1486,7 @@ class PhoneWindow(tk.Toplevel):
                 then(index)
                 return
             pdfs = out / LABEL[key] / "PDF"
+            activity.log(f"Saved {LABEL[key]} to {activity.where(out)}", self.name, kind="save")
             if formats == {"pdf"} and pdfs.exists():
                 self.banner(f"✓ Saved PDF to {pdfs}", ("Show in Finder" if sys.platform == "darwin" else "Show folder",
                                                        lambda: reveal(pdfs)))
@@ -1560,6 +1564,7 @@ class PhoneWindow(tk.Toplevel):
                     shutil.copy2(str(f), str(dest)) if folder.resolve() != build.resolve() else None
                     saved.append(dest if folder.resolve() != build.resolve() else f)
                 what = saved[0].name if len(saved) == 1 else f"{len(saved):,} PDFs"
+                activity.saved(len(saved), "PDF", folder, self.name)          # counted, never named (S7)
                 self.banner(f"✓ Saved {what} to {folder}",
                             ("Open" if len(saved) == 1 else ("Show in Finder" if sys.platform == "darwin" else "Show folder"),
                              (lambda: open_file(saved[0])) if len(saved) == 1 else (lambda: reveal(folder))))

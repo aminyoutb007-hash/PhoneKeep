@@ -227,11 +227,11 @@ try:
     note(f"{n1} reports in 30 days; this week {sum(c7.values())} app crashes in {len(c7)} apps, {r7} unexpected restarts")
 
     # -- H5: the security checks, read-only ---------------------------------------------------------------------
-    import checkup as cku5, phone_write, security as sx
-    log_before = phone_write.ACTIVITY_FILE.read_text() if phone_write.ACTIVITY_FILE.exists() else ""
+    import activity, checkup as cku5, phone_write, security as sx
+    log_before = activity.ACTIVITY_FILE.read_text() if activity.ACTIVITY_FILE.exists() else ""
     raw = wv.read_security(win.udid, WORK / "h5", timeout=60)
     cs = cku5.security_checks(cku5.load(WORK / "h5")) if raw else []
-    log_after = phone_write.ACTIVITY_FILE.read_text() if phone_write.ACTIVITY_FILE.exists() else ""
+    log_after = activity.ACTIVITY_FILE.read_text() if activity.ACTIVITY_FILE.exists() else ""
     check(raw is not None and not raw.get("problems") and len(cs) == 6 and log_after == log_before,
           "Security: every check's read works, and the phone-write gate's log is unchanged")
     note("; ".join(f"{c.key} {c.state}" for c in cs) + f"; locked at this read: {raw.get('password_protected') if raw else None}")

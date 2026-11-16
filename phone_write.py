@@ -11,31 +11,22 @@ encryption on, changing the backup password, and turning on Wi-Fi sync.
 """
 from __future__ import annotations
 
-import datetime as dt
-import json
-from pathlib import Path
 from typing import Callable, Optional, TypeVar
 
 import phonekeep as wv
-
-T = TypeVar("T")
-
-ACTIVITY_FILE = wv.DEFAULT_HOME / "activity.jsonl"
 
 
 class NotConfirmed(wv.PhoneKeepError):
     pass
 
 
+T = TypeVar("T")
+
+
 def log_activity(summary: str, phone: Optional[str] = None, kind: str = "phone-write") -> None:
-    """One line, local only, kept 12 months (S7). `summary` must never contain a password or message text."""
-    try:
-        ACTIVITY_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(ACTIVITY_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"when": dt.datetime.now().isoformat(timespec="seconds"), "kind": kind,
-                                "phone": phone, "summary": summary}, ensure_ascii=False) + "\n")
-    except OSError:
-        pass
+    """One line in the activity record (S7: activity.py). `summary` must never contain a password or message text."""
+    import activity
+    activity.log(summary, phone, kind)
 
 
 def run(action: str, phone_name: str, fn: Callable[[], T], *, confirmed: bool) -> T:

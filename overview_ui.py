@@ -187,6 +187,8 @@ def save_details(win, ov: di.Overview, path: Optional[Path] = None) -> Optional[
             return None
         path = Path(p)
     path.write_text(di.details_json(ov), encoding="utf-8")
+    import activity
+    activity.log(f"Saved the iPhone's details to {activity.where(path.parent)}", getattr(ov, "name", None), kind="save")
     return path
 
 
