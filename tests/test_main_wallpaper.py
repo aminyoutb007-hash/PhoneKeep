@@ -166,7 +166,8 @@ a.detect(silent=True)
 pump(lambda: reads and corner() not in (before, None), 10)
 pump(lambda: False, 0.3)
 check(reads == [UD] and corner() == (30, 90, 200),
-      "over a cable: a fresh home screen is read from this phone and replaces the saved one")
+      f"over a cable: a fresh home screen is read from this phone and replaces the saved one (reads {reads}, "
+      f"corner {corner()})")
 check(icon.state == "ok" and icon.picture == wv.phone_picture(UD), "  and the small phone shows the fresh one")
 a.detect(silent=True)
 pump(lambda: False, 0.5)
