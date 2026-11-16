@@ -119,6 +119,8 @@
 
 **How it's built (5.1):** the device card lists the reachable phones (`App._fill_phone_list`) when there's more than one, or when the chosen one went away; the choice is kept in Settings (`chosen_udid`). Each row shows the iOS version rather than the model (PhoneKeep has no model-name table yet). Automatic backups follow `auto_backup_phones`; on the first start of 5.1 it is filled with the phones already backed up, so nothing changes for them. One backup at a time across processes: `backup-running.lock` in the backup folder; another phone's backup waits and says so, and Cancel works while it waits.
 
+**Compact rows (owner, 16 Nov):** with two phones nearby, the large phone drawings plus E5's list made the main window taller than a laptop screen, which pushed Back up now out of view. Each nearby phone is now one row: a small phone with its picture, then the name, model and iOS, the cable or Wi-Fi mark and the battery on the same line, and a ✓ on the chosen one (`ui.PhoneCard`). Two phones take about 160 px instead of over 300. When the window is still too short (a 13-inch screen with two phones and the list of phones), the main window scrolls and shows a scrollbar; otherwise there is no scrollbar (`App._fit_body`). Tests: `test_b8_choose_iphone`. [Screenshot with two invented phones](../evidence/b8-compact/two-phones.png).
+
 Related: [E5](05-ease-of-use.md#e5-all-phones-and-backups-in-one-list) (a card per phone ever backed up, P2) builds on this list.
 
 ## B9. Keep backing up after the window closes

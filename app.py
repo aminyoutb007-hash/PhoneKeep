@@ -430,8 +430,19 @@ class App(_dnd_root()):
         self.bar_details_text = ""
         self.bar_details.bind("<Button-1>", lambda e: ui.show_details(self, self.details_for_support(self.bar_details_text)))
 
-        self.body = tk.Frame(self, bg=BG)
-        self.body.pack(fill="both", expand=True, padx=22, pady=16)
+        # the main window scrolls when it's taller than the screen (owner, 16 Nov: two phones nearby and the list of
+        # phones pushed Back up now off a laptop screen); the scrollbar shows only then
+        self.scroll_box = tk.Frame(self, bg=BG)
+        self.scroll_box.pack(fill="both", expand=True)
+        self.scroller = tk.Canvas(self.scroll_box, bg=BG, highlightthickness=0)
+        self.vbar = ttk.Scrollbar(self.scroll_box, orient="vertical", command=self.scroller.yview)
+        self.scroller.configure(yscrollcommand=self.vbar.set)
+        self.scroller.pack(side="left", fill="both", expand=True)
+        self.body = tk.Frame(self.scroller, bg=BG)
+        self._body_item = self.scroller.create_window(22, 16, window=self.body, anchor="nw")
+        self.body.bind("<Configure>", lambda e: self._fit_body())
+        self.scroller.bind("<Configure>", lambda e: self._fit_body())
+        ui.wheel_scroll(self.scroller)
 
         # device card
         dc = self.device_card = ui.card(self.body)
@@ -832,7 +843,7 @@ class App(_dnd_root()):
         if pr.details and pr.action != errors.SHOW_DETAILS:
             self.bar_details.pack(side="right", padx=(0, 6))
         if not self.bar_frame.winfo_ismapped():
-            self.bar_frame.pack(fill="x", before=self.body)
+            self.bar_frame.pack(fill="x", before=self.scroll_box)
 
     def hide_problem(self):
         self.bar_frame.pack_forget()
@@ -1036,12 +1047,14 @@ class App(_dnd_root()):
             w.pack_forget()
         self.guide = firstrun.FirstRunGuide(self)
         self.guide.pack(fill="both", expand=True)
+        self.after_idle(self._fit_body)
 
     def end_first_run(self):
         if self.guide is None:
             return
         self.guide.destroy()
         self.guide = None
+        self.after_idle(self._fit_body)
         self._all_key = None
         for w in self.main_cards:
             if w is self.prog or w is self.done or w is self.all_phones:
@@ -1268,7 +1281,7 @@ class App(_dnd_root()):
         tk.Label(self.phone_list, text="iPhones nearby · click one to back it up", bg=CARD, fg=MUTED,
                  font=font(11, "bold"), anchor="w").pack(fill="x")
         row = tk.Frame(self.phone_list, bg=CARD)
-        row.pack(pady=(6, 0))
+        row.pack(fill="x", pady=(6, 0))
         self.phone_rows = {}
         self._phone_extra = getattr(self, "_phone_extra", {})          # udid -> {"wall": path, "battery": dict}
         for d in devs:
@@ -1276,7 +1289,7 @@ class App(_dnd_root()):
             how = "cable" if d.get("ConnectionType") == "USB" else "Wi-Fi"
             card = ui.PhoneCard(row, d.get("DeviceName") or "iPhone", models.model_name(d.get("ProductType")),
                                 d.get("ProductVersion", "?"), how, lambda u=udid: self.choose_phone(u), bg=CARD)
-            card.pack(side="left", padx=10)
+            card.pack(fill="x", pady=(0, 4))            # one line per phone (owner, 16 Nov)
             card.set(udid == self.udid)
             self.phone_rows[udid] = card
             extra = self._phone_extra.get(udid) or {}
@@ -1324,12 +1337,34 @@ class App(_dnd_root()):
         self.all_phones.pack(fill="x", pady=(14, 0), after=self.device_card)
         self._fit_height()
 
+    def _fit_body(self):
+        """The main window's contents fill its width; taller than the window, they scroll (scrollbar shown)."""
+        try:
+            # only the width is set: the body keeps its own height, so it hears (<Configure>) every card that comes
+            # or goes and the scroll area follows it (reviewer, #83)
+            cw, ch = self.scroller.winfo_width(), self.scroller.winfo_height()
+            need = self.body.winfo_reqheight() + 32
+            # the first-run guide fills what's visible (its step list and footer sit at the bottom); 0 = own height
+            fill = max(self.body.winfo_reqheight(), ch - 32) if self.guide is not None else 0
+            self.scroller.itemconfigure(self._body_item, width=max(1, cw - 44), height=fill)
+            self.scroller.configure(scrollregion=(0, 0, cw, max(need, ch)))
+            if need > ch > 1:
+                if not self.vbar.winfo_ismapped():
+                    self.vbar.pack(side="right", fill="y", before=self.scroller)
+            elif self.vbar.winfo_ismapped():
+                self.vbar.pack_forget()
+                self.scroller.yview_moveto(0)
+        except tk.TclError:
+            pass
+
     def _fit_height(self):
-        """Grow the window when a list makes it taller than it is (never past the screen), so Back up now stays in view."""
+        """Grow the window when a list makes it taller than it is (never past the screen), so Back up now stays in
+        view; past the screen the body scrolls (_fit_body)."""
         try:
             self.update_idletasks()
-            need = self.winfo_reqheight()
             have = self.winfo_height()
+            # the header and any problem bar, plus everything in the (scrolling) body
+            need = have - self.scroller.winfo_height() + self.body.winfo_reqheight() + 32
             if need <= getattr(self, "_fitted", 0):
                 return                              # grown for this much once: the user's own size wins after that
             self._fitted = need

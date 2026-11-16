@@ -92,14 +92,18 @@ try:
     check(a.s["auto_backup_phones"] == [A["UniqueDeviceID"]],
           "on first start, the phones already backed up stay ticked for automatic backups; nothing else is")
     detect()
+    a.deiconify()                               # laid out on screen before anything is measured (Windows: a hidden
+    a.geometry("820x640")                       # window's rows are 1 px high)
+    for _ in range(5):
+        a.update(); time.sleep(0.05)
     rows = getattr(a, "phone_rows", {})
     check(a.udid is None and a.dev_name.cget("text") == "2 iPhones nearby" and not a.open_btn.enabled,
           f"two iPhones and none chosen yet: the card says so and nothing is picked ({a.dev_name.cget('text')!r})")
     texts = {u: " ".join(r.itemcget(i, "text") for i in r.find_all() if r.type(i) == "text") for u, r in rows.items()}
     check(set(rows) == {A["UniqueDeviceID"], B["UniqueDeviceID"]} and "Cable" in texts[A["UniqueDeviceID"]]
-          and "Wi-Fi" in texts[B["UniqueDeviceID"]] and "iPhone 14 Pro Max iOS 26.5" in texts[A["UniqueDeviceID"]]
-          and "iPhone 17 Pro Max iOS 18.6" in texts[B["UniqueDeviceID"]],
-          f"both are shown as phones with their name, model, iOS and connection: {list(texts.values())}")
+          and "Wi-Fi" in texts[B["UniqueDeviceID"]] and "iPhone 14 Pro Max  ·  iOS 26.5" in texts[A["UniqueDeviceID"]]
+          and "iPhone 17 Pro Max  ·  iOS 18.6" in texts[B["UniqueDeviceID"]],
+          f"both are shown with their name, model, iOS and connection: {list(texts.values())}")
     _pc = rows[A["UniqueDeviceID"]]
     from PIL import Image as _Im
     _Im.new("RGB", (300, 600), (40, 90, 160)).save(W / "wall.png")
@@ -111,11 +115,63 @@ try:
     check("80%" in _t and "⚡" in _t and not any("🔋" in t or "📶" in t or "🔌" in t for t in _t),
           "the battery level and charging show on the card, as drawn icons (no emoji)")
     _pc.update_idletasks()
-    _boxes = sorted((_pc.bbox(i) for i in _pc.find_all() if _pc.type(i) == "text" and _pc.itemcget(i, "anchor") == "n"),
-                    key=lambda b: b[1])
-    check(len(_boxes) == 3 and all(b1[3] <= b2[1] + 1 for b1, b2 in zip(_boxes, _boxes[1:])),
-          "the name, model and iOS lines never overlap")
+    _boxes = sorted((_pc.bbox(i) for i in _pc.find_all() if _pc.type(i) == "text" and _pc.itemcget(i, "text") != "⚡"),
+                    key=lambda b: b[0])
+    _mid = [(b[1] + b[3]) / 2 for b in _boxes]
+    check(len(_boxes) >= 4 and max(_mid) - min(_mid) <= 3 and all(b1[2] <= b2[0] + 1 for b1, b2 in zip(_boxes, _boxes[1:])),
+          f"one line per phone (owner, 16 Nov): name, model and iOS, connection, battery side by side, never overlapping")
+    _rows = list(rows.values())
+    check(all(r.winfo_height() <= 64 for r in _rows) and _rows[0].winfo_width() > 400
+          and _rows[1].winfo_rooty() > _rows[0].winfo_rooty(),
+          f"each phone is a short row across the card, one under the other ({[r.winfo_height() for r in _rows]} px high)")
+    a.update_idletasks()
+    check(a.phone_list.winfo_reqheight() <= 2 * 64 + 40,
+          f"the two phones take {a.phone_list.winfo_reqheight()} px (were over 300 as drawn phones)")
+    # still taller than a small screen: the window scrolls, and Back up now can be reached
+    _settle = lambda: [(a.update(), time.sleep(0.05)) for _ in range(5)]
+    _vis = lambda: a.go.winfo_rooty() + a.go.winfo_height() <= a.scroller.winfo_rooty() + a.scroller.winfo_height()
+    check(a.vbar.winfo_ismapped() and not _vis(),
+          "a window too short for it all shows a scrollbar (Back up now is below the fold)")
+    a.scroller.yview_moveto(1.0)
+    a.update()
+    check(_vis(), "scrolled down, Back up now is in view")
 
+    # the content changes while the window keeps its size (the user's own size wins): the scroll area follows
+    a._fitted = 10 ** 6                         # no growing the window
+    reach["devs"] = [A]
+    detect(); _settle()
+    one = a.body.winfo_reqheight() + 32
+    reach["devs"] = [A, B]
+    detect(); _settle()
+    two = a.body.winfo_reqheight() + 32
+    a.geometry(f"820x{a.winfo_height() - a.scroller.winfo_height() + (one + two) // 2}")   # between the two
+    _settle()
+    h = a.scroller.winfo_height()
+    check(one < h < two, f"the window is set between what one phone and two phones need ({one} < {h} < {two})")
+    check(a.vbar.winfo_ismapped() and float(a.scroller.cget("scrollregion").split()[3]) >= two - 1,
+          "two phones: a scrollbar, and the scroll area reaches the end of the content")
+    a.scroller.yview_moveto(1.0); a.update()
+    reach["devs"] = [A]                         # less to show at the same size: it fits now
+    detect(); _settle()
+    check(not a.vbar.winfo_ismapped() and a.scroller.canvasy(0) == 0 and _vis(),
+          "one phone at the same size: the scrollbar goes, back at the top, Back up now in view")
+    reach["devs"] = [A, B]                      # and more again: the scrollbar comes back
+    detect(); _settle()
+    check(a.vbar.winfo_ismapped() and not _vis(), "two phones again: the scrollbar comes back")
+
+    # a long name is cut with "…" and never runs into the connection and battery marks
+    import ui as _ui
+    _long = _ui.PhoneCard(a.phone_list, "A Very Long Invented iPhone Name For Testing The Row Width, Longer Than Any Window Is Wide " * 2, "iPhone 17 Pro Max",
+                         "26.5", "cable", lambda: None)
+    _long.pack(fill="x")
+    _long.set_battery({"level": 50, "charging": False})
+    _settle()
+    _items = {_long.itemcget(i, "text"): _long.bbox(i) for i in _long.find_all() if _long.type(i) == "text"}
+    _name = next(t for t in _items if t.startswith("A Very"))
+    check(_name.endswith("…") and _items[_name][2] < _items["Cable"][0],
+          f"a long name is cut ({_name!r}) and stays clear of the cable mark")
+    _long.destroy()
+    a.withdraw()
     # a phone on Wi-Fi that dozes: the first read finds nothing, a later one gets its picture, which is kept
     import device as _devmod
     reachable = {"on": False}

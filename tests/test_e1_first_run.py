@@ -133,6 +133,24 @@ check(a.guide.skip.cget("text") == "Skip for now" and isinstance(a.guide.skip, t
 check([r[3].cget("text") for r in a.guide.rows] == ["Connect your iPhone", "Tap Trust", "Choose a backup password", "Back up now"]
       and a.guide.rows[0][0].cget("bg") == appmod.theme.ACCENT_PALE and a.guide.kicker.cget("text") == "Step 1 of 4",
       "the four steps on the left, the current one marked; 'Step 1 of 4'")
+# the guide fills the window (the main window scrolls since #83; the guide must not shrink to its content)
+a.deiconify()
+a.geometry("820x860")
+for _ in range(6):
+    a.update(); time.sleep(0.05)
+_note, _todo = None, [a.guide]
+while _todo:
+    _w = _todo.pop()
+    _todo.extend(_w.winfo_children())
+    if isinstance(_w, tk.Label) and _w.cget("text").startswith("Everything stays on this computer"):
+        _note = _w
+_view = (a.scroller.winfo_rooty(), a.scroller.winfo_rooty() + a.scroller.winfo_height())
+check(abs(a.guide.winfo_height() - (a.scroller.winfo_height() - 32)) <= 4 and _note is not None
+      and _view[0] <= _note.winfo_rooty() and _note.winfo_rooty() + _note.winfo_height() <= _view[1]
+      and _note.winfo_height() >= _note.winfo_reqheight(),
+      f"the guide fills the window ({a.guide.winfo_height()} of {a.scroller.winfo_height()} px) and its privacy note "
+      f"shows in full")
+a.withdraw()
 
 # no phone: three fixes after the wait
 a.detect(silent=True)
