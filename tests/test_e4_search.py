@@ -202,23 +202,8 @@ asked_at = []
 real_messages = win.data.preview.messages
 win.data.preview.messages = lambda *a, **k: (asked_at.append(k.get("at")), real_messages(*a, **k))[1]
 type_("dinner")
-# TEMP (Linux CI crash on #80): log every PhoneKeep call around the click
-_ROOT = str(HERE.parent)
-
-
-def _tr(frame, event, arg):
-    if event == "call" and frame.f_code.co_filename.startswith(_ROOT):
-        print(f"TRACE {Path(frame.f_code.co_filename).name}:{frame.f_lineno} {frame.f_code.co_name}", file=sys.stderr, flush=True)
-    return None
-
-
-sys.settrace(_tr)
-import threading as _th
-_th.settrace(_tr)
 h = click_first("Messages")
 check(pump(lambda: win.current == "messages" and win.find_hook is not None, 30), "clicking a message opens Messages")
-sys.settrace(None)
-_th.settrace(None)
 panel = next(w for w in win.content.winfo_children() if isinstance(w, phone.ui.ChatPanel))
 check(panel.q.get() == "dinner" and panel.current == ("messages", h.ref[0]),
       f"  with the same words in its search box and that chat chosen ({panel.q.get()!r}, {panel.current})")

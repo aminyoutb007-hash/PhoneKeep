@@ -1065,19 +1065,24 @@ class PhoneWindow(tk.Toplevel):
         ent = tk.Entry(box, textvariable=self.find_q, width=26, relief="flat", bd=0, bg=CARD, fg=INK,
                        insertbackground=INK, highlightthickness=0, font=font(13))
         ent.pack(side="left", padx=(2, 10), pady=7)
+        # the grey hint is packed after the entry while it's empty (not placed over it: Tk on Linux crashed when a
+        # window placed inside the entry was torn down with it; #80 CI)
         hint = tk.Label(box, text="Search everything", bg=CARD, fg=MUTED, font=font(13), cursor="xterm")
         hint.bind("<Button-1>", lambda e: ent.focus_set())
+        tid = None
 
         def show_hint(*_):
-            try:
-                if self.find_q.get():
-                    hint.place_forget()
-                else:
-                    hint.place(in_=ent, x=1, rely=0.5, anchor="w")
-            except tk.TclError:
-                pass
+            if not hint.winfo_exists():
+                self.find_q.trace_remove("write", tid)        # this box is gone
+                return
+            if self.find_q.get():
+                hint.pack_forget()
+                ent.configure(width=26)
+            else:                           # an empty entry just wide enough for the cursor, the hint after it
+                ent.configure(width=1)
+                if not hint.winfo_manager():
+                    hint.pack(side="left", after=ent, padx=(0, 10))
         tid = self.find_q.trace_add("write", show_hint)
-        ent.bind("<Destroy>", lambda e: self.find_q.trace_remove("write", tid) if e.widget is ent else None)
         show_hint()
         box.entry = ent
         return box
