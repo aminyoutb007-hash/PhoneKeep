@@ -1346,7 +1346,8 @@ class App(_dnd_root()):
                             "by hand: " + ", ".join(r["left_behind"]))
                 messagebox.showinfo(wv.APP_NAME, msg, parent=self)
                 self.detect(silent=True)
-        self._reset_progress(MOVE_STEPS, "Moving your backups")
+        if not self._reset_progress(MOVE_STEPS, "Moving your backups"):
+            return
         self.steps["backup"].set("active")
         self.now_lbl.configure(text=f"To {new}")
         self._run(work, done)
@@ -1492,7 +1493,11 @@ class App(_dnd_root()):
             self.steps[key] = r
 
     def _reset_progress(self, rows=STEPS, kicker: str = "Backing up"):
-        """L2: the progress card takes the window's place until the job ends (_finish puts the window back)."""
+        """L2: the progress card takes the window's place until the job ends (_finish puts the window back).
+        Returns False, changing nothing, while a job runs: its steps must stay as they are (reviewer, #73)."""
+        if self.busy:
+            messagebox.showinfo(wv.APP_NAME, "PhoneKeep is already working. Please wait for it to finish.", parent=self)
+            return False
         self.notes = []
         self.done.pack_forget()
         self.hide_problem()
@@ -1512,6 +1517,7 @@ class App(_dnd_root()):
             for w, _i in self._hidden:
                 w.pack_forget()
             self.prog.pack(fill="x", padx=30, pady=(4, 0))
+        return True
 
     def _end_progress(self):
         """Put the window back as it was before the job (the finished card, if any, goes under it)."""
@@ -1624,7 +1630,8 @@ class App(_dnd_root()):
         if self.device is None and not messagebox.askyesno(
                 wv.APP_NAME, "No iPhone is connected right now.\n\nTry anyway?"):
             return
-        self._reset_progress(STEPS, "Backing up")
+        if not self._reset_progress(STEPS, "Backing up"):
+            return
         t0 = [None]
 
         def work():
@@ -1648,7 +1655,8 @@ class App(_dnd_root()):
         self._run(work, self._exported)
 
     def export_existing(self, path: Path):
-        self._reset_progress(EXPORT_STEPS, "Building your archive")
+        if not self._reset_progress(EXPORT_STEPS, "Building your archive"):
+            return
         self._run(lambda: self._export(path), self._exported)
 
     def _exported(self, index):

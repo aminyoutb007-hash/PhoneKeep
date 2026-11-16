@@ -112,6 +112,17 @@ check(a.eta_lbl.cget("text") != "", f"  the time left (or that it's being worked
 check(bool(a.cancel_btn.winfo_manager()) and a.cancel_btn.text == "Cancel backup" and a.cancel_btn.master.master.master is not a.body,
       "  Cancel backup is in the card")
 
+# a second job while the backup runs (e.g. Settings → Use an existing backup) is refused and changes nothing
+shown = []
+real_info = appmod.messagebox.showinfo
+appmod.messagebox.showinfo = lambda *x, **k: shown.append(x[1] if len(x) > 1 else "")
+keys = list(a.steps)
+a.export_existing(root)
+a.update()
+appmod.messagebox.showinfo = real_info
+check(list(a.steps) == keys and a.prog_kicker.cget("text") == "Backing up" and shown and "already working" in shown[0],
+      f"a second job while it runs is refused and leaves the steps and title alone ({list(a.steps)})")
+
 a.cancel_btn.command()
 pump(lambda: not a.busy, 30, "the backup to stop")
 check(not a.busy and not wv.backup_running(), "Cancel stops the backup")
