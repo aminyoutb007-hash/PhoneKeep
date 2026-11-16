@@ -51,7 +51,7 @@ Click **Open iPhone** (or the phone itself) in the main window. A window opens w
 - **Books**: open or save EPUBs, PDFs and audiobooks stored on the phone.
 - **App Files**: browse the Documents of apps that share files (Files, Pages, VLC, ...) and save what you need.
 
-Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. Nothing is ever written to the phone, except the one Wi-Fi setting if you turn on Wi-Fi backups in the first-run guide (it asks first).
+Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. The phone window never writes to the phone. PhoneKeep changes the iPhone's settings only when you ask, and asks first: turning backup encryption on or off, changing the backup password, and turning on Wi-Fi backups in the first-run guide.
 
 ## New in 5.2
 
