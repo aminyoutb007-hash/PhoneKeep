@@ -38,10 +38,16 @@ def fold(s: Optional[str]) -> str:
 
 
 def find_span(text: str, query: str) -> Optional[tuple[int, int]]:
-    """Where `query` matches inside `text` (start, end in `text` itself), the same way fold() compares."""
+    """Where `query` first matches inside `text` (start, end in `text` itself), the same way fold() compares."""
+    spans = find_spans(text, query, 1)
+    return spans[0] if spans else None
+
+
+def find_spans(text: str, query: str, most: int = 0) -> list[tuple[int, int]]:
+    """Every place `query` matches inside `text`, one after another (start, end in `text`); `most` > 0 stops early."""
     q = fold(query).strip()
     if not q:
-        return None
+        return []
     folded, where = [], []                  # folded characters and the original position each came from
     for i, ch in enumerate(text):
         f = fold(ch) if not ch.isspace() else " "
@@ -55,10 +61,14 @@ def find_span(text: str, query: str) -> Optional[tuple[int, int]]:
             continue
         out.append(c)
         pos.append(p)
-    at = "".join(out).find(q)
-    if at < 0:
-        return None
-    return pos[at], pos[at + len(q) - 1] + 1
+    flat, spans, at = "".join(out), [], 0
+    while most <= 0 or len(spans) < most:
+        at = flat.find(q, at)
+        if at < 0:
+            break
+        spans.append((pos[at], pos[at + len(q) - 1] + 1))
+        at += len(q)
+    return spans
 
 
 @dataclass

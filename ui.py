@@ -871,7 +871,8 @@ class ChatPanel(tk.Frame):
         t.configure(state="normal")
         t.delete("1.0", "end")
         self.images.clear()
-        last_day = None
+        import search
+        last_day, first = None, None
         for i, m in enumerate(msgs):
             when = dt.datetime.fromisoformat(m["time"]) if m.get("time") else None
             day = when.strftime("%A %d %B %Y") if when else ""
@@ -898,22 +899,18 @@ class ChatPanel(tk.Frame):
             if not body and m.get("type") not in ("image", "sticker", "gif"):
                 body = TYPE_LABEL.get(m.get("type"), m.get("type", ""))
             if body:
-                t.insert("end", body + "\n", tag)
+                # the searched words marked as the text goes in, matched the way the search matches (accents,
+                # Arabic marks); not Tk's own -nocase search, which crashed Tk on Linux with such text (#80)
+                done = 0
+                for a, b in (search.find_spans(body, around) if around else []):
+                    t.insert("end", body[done:a], tag)
+                    first = first or t.index("end-1c")
+                    t.insert("end", body[a:b], (tag, "hit"))
+                    done = b
+                t.insert("end", body[done:] + "\n", tag)
             t.insert("end", (when.strftime("%H:%M") if when else "") + "\n", (tag, "meta"))
         if not msgs:
             t.insert("end", "No messages to show.\n", "day")
-        t.tag_remove("hit", "1.0", "end")
-        first = None
-        if around:
-            pos = "1.0"
-            while True:
-                pos = t.search(around, pos, stopindex="end", nocase=True)
-                if not pos:
-                    break
-                end = f"{pos}+{len(around)}c"
-                t.tag_add("hit", pos, end)
-                first = first or pos
-                pos = end
         t.configure(state="disabled")
         t.see(first or "end")
 

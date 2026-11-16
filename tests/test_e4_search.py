@@ -52,6 +52,10 @@ check(m == "écol" and b.endswith("l'") and a.startswith("e demain"), f"a partia
 b, m, a = search.snippet("سأذهب إلى المَدْرَسَة غداً", "مدرسة")
 check(m == "مَدْرَسَة", "  an Arabic word typed without vowel marks is found and marked with them")
 check(search.snippet("x" * 300 + " needle " + "y" * 300, "needle", 60)[0].startswith("…"), "  long text is cut around the match")
+t_ = "École, ecole, ÉCOLE 🙂 et l'école"
+check([t_[a:b] for a, b in search.find_spans(t_, "ecole")] == ["École", "ecole", "ÉCOLE", "école"]
+      and search.find_span(t_, "ecole") == (0, 5) and search.find_spans(t_, "  ") == [],
+      "every match is found, as written (the chat view marks each one)")
 
 # -- 200,000 messages ----------------------------------------------------------------------------------------
 words = ["dinner", "train", "école", "merci", "رسالة", "bonjour", "meeting", "photo", "مدرسة", "weekend"]
@@ -119,16 +123,9 @@ a.s["backup_dir"] = str(W / "Backups")
 a.s["archive_dir"] = str(W / "Archive")
 
 
-import gc, threading
-# TEMP experiment (#80 Linux CI crash): no automatic collection, which could run on a worker thread and free Tk
-# objects there; collect on the Tk thread instead
-gc.disable()
-
-
 def pump(until, timeout=30):
     end = time.time() + timeout
     while time.time() < end:
-        gc.collect()
         a.update()
         if until():
             return True
@@ -217,6 +214,9 @@ check(panel.q.get() == "dinner" and panel.current == ("messages", h.ref[0]),
 shown = panel.text.get("1.0", "end")
 check("Dinner Friday?" in shown and h.ref[1] and asked_at and asked_at[-1] == h.ref[1],
       f"  showing the message that was clicked (the chat is asked for the one sent at {h.ref[1]})")
+marked = panel.text.tag_ranges("hit")
+check(marked and panel.text.get(marked[0], marked[1]) == "Dinner",
+      f"  the searched words are marked in the chat as written ({[str(x) for x in marked[:2]]})")
 panel.q.set("land")                         # other words typed in the chat screen's own search
 check(getattr(panel, "at_for", None) is None, "  other words in the chat's own search forget the clicked message")
 win.data.preview.messages = real_messages

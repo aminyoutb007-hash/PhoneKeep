@@ -210,5 +210,24 @@ check(win.wall_img is not None, "the phone window shows the saved home screen at
 win.live_runner.stop()
 win.destroy()
 a.destroy()
+
+# Windows refuses to replace a file someone is reading at that moment (a phone card, the window): it tries again
+real_replace, tries = Path.replace, []
+
+
+def busy_twice(self, target):
+    tries.append(1)
+    if len(tries) <= 2:
+        raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+    return real_replace(self, target)
+
+
+Path.replace = busy_twice
+try:
+    got = wv.keep_phone_picture(UD, invented((10, 200, 60), "busy.png"))
+finally:
+    Path.replace = real_replace
+check(got == wv.phone_picture(UD) and len(tries) == 3 and corner() == (10, 200, 60),
+      f"the saved home screen is replaced even if it's being read just then (Windows; tries: {len(tries)})")
 print("\nMAIN WALLPAPER TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)), flush=True)
 os._exit(1 if failures else 0)
