@@ -51,7 +51,7 @@ Click **Open iPhone** (or the phone itself) in the main window. A window opens w
 - **Books**: open or save EPUBs, PDFs and audiobooks stored on the phone.
 - **App Files**: browse the Documents of apps that share files (Files, Pages, VLC, ...) and save what you need.
 
-Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. Nothing is ever written to the phone.
+Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. Nothing is ever written to the phone, except the one Wi-Fi setting if you turn on Wi-Fi backups in the first-run guide (it asks first).
 
 ## New in 5.2
 
@@ -89,7 +89,7 @@ Photos, Music, Books, App Files and the wallpaper are read **live from the iPhon
 - **A menu bar / system tray helper** that shows your last backup, backs up with one click, notifies you when it's done, and can start at login.
 - **Automatic backups**: daily or weekly at a time you choose, only when charging if you like.
 - **Snapshots over time**: every backup is kept as a snapshot you can open from the phone window's timeline; unchanged files are stored once. Keep one forever, rename it, or delete it.
-- **Backups on any drive**: Settings → Location; move existing backups to an external drive with a verified copy; PhoneKeep waits quietly when the drive is unplugged.
+- **Backups on any drive**: Settings → Backups → Where backups are kept; move existing backups to an external drive with a verified copy; PhoneKeep waits quietly when the drive is unplugged.
 - **Open any backup**: File → Open backup… (or drop a folder on the window) opens PhoneKeep's own backups and Finder/iTunes ones, and the **All files** screen shows everything in a backup as folders.
 - **Chats to PDF and print**: tick chats and save them as PDFs that look like the phone (bubbles, photos, emoji, Arabic right to left), one per chat or all in one; *Print* opens the print dialog with the same pages.
 - **Search inside chats**: the search box finds words in messages, not just chat names, and highlights them.
@@ -101,7 +101,7 @@ Photos, Music, Books, App Files and the wallpaper are read **live from the iPhon
 1. Plug in your iPhone (or use Wi-Fi sync), unlock it and tap **Trust This Computer**. PhoneKeep shows the phone's name and when it was last backed up.
 2. Choose **what to keep**: **Chats** (WhatsApp, WhatsApp Business and Messages), **Chats & photos**, **Everything**, or **Custom** to pick exactly.
 3. Choose how to **save chats**: **Web pages** (a WhatsApp-style browsable archive), **Excel** (one workbook, one sheet per chat, plus a summary sheet) and/or **CSV** (one file per chat, plus all chats in one file).
-4. The first time you open PhoneKeep, a short guide walks you through it in five steps: connect, tap Trust, choose a password, back up, done. Afterwards, click **Back up now**. The first time, choose a **backup password**: your iPhone encrypts every backup with it, and PhoneKeep keeps the password in your Mac Keychain or Windows Credential Manager so you never type it again. Keep the phone unlocked. If it asks for its passcode, enter it on the phone.
+4. The first time you open PhoneKeep, a short guide walks you through it in four steps: connect, tap Trust (where you can also choose Wi-Fi backups), choose a password, back up. Afterwards, click **Back up now**. The first time, choose a **backup password**: your iPhone encrypts every backup with it, and PhoneKeep keeps the password in your Mac Keychain or Windows Credential Manager so you never type it again. Keep the phone unlocked. If it asks for its passcode, enter it on the phone.
 5. **Choose your chats.** A window lists every chat from WhatsApp, WhatsApp Business and Messages. Click one to **preview** its latest messages and photos, and tick the ones you want to keep.
 6. **Choose your photos.** Browse them month by month as thumbnails, click to select, or use **Select all** or **Select this month**. Only the photos you pick are copied.
 7. When it's done, click **Open my archive**.
@@ -122,13 +122,13 @@ If **iCloud Photos** is on, iOS leaves the photo library out of backups. Keep **
 
 **File → Open backup…** (or drop a backup folder onto the window) opens any backup — PhoneKeep's own, or one made by Finder or iTunes — in the phone window, with no iPhone connected; an **All files** screen shows the backup as folders, with preview and save.
 
-Backups can live on any disk, external drive or network drive (Settings → Location → **Change…**, which offers to move your existing backups there, checking every file before the old copy is removed). If that drive is unplugged, PhoneKeep simply waits and says "Connect *Backup Drive* to back up."
+Backups can live on any disk, external drive or network drive (Settings → Backups → Where backups are kept → **Change…**, which offers to move your existing backups there, checking every file before the old copy is removed). If that drive is unplugged, PhoneKeep simply waits and says "Connect *Backup Drive* to back up."
 
 Every backup is kept as a **snapshot**: a timeline under the phone picture lets you open your iPhone as it was on any earlier day (handy for a message you deleted since). Unchanged files are stored once, so ten snapshots take little more space than one; PhoneKeep keeps the last 10 (Settings → Snapshots), and you can mark any snapshot **Keep forever**, rename it or delete it.
 
 Turn on **automatic backups** (Settings → Automatic backups: daily or weekly, at a time you choose, only when charging if you like) and PhoneKeep backs up by itself whenever your iPhone is nearby, with a quiet notification each time; the phone card shows when the next one is due.
 
-A small PhoneKeep icon in the menu bar (Mac) or system tray (Windows) shows when your iPhone was last backed up and backs it up with one click, even when the main window is closed; it can start at login (Settings → Backups).
+A small PhoneKeep icon in the menu bar (Mac) or system tray (Windows) shows when your iPhone was last backed up and backs it up with one click, even when the main window is closed; it can start at login (Settings → Automatic backups).
 
 When something goes wrong, PhoneKeep says so in one plain sentence at the top of the window, with one button that fixes it ("Unlock your iPhone to continue" → **Try again**); **Show details** reveals the technical text for support.
 
