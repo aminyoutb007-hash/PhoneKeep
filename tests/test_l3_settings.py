@@ -96,10 +96,26 @@ for _g, c, _t in win.cards:
             walk(k)
     walk(c)
 check("Only when charging" in all_chips, "  \"Only when charging\" (B2) is kept in Automatic backups")
-win.keep_var.set(7)
-win.s["snapshots_keep"] = win.keep_var.get()           # as the spinbox does
-check(a.s["snapshots_keep"] == 7 and json.loads(appmod.SETTINGS_FILE.read_text(encoding="utf-8")).get("snapshots_keep") == 7,
-      "  a setting changed in the window is saved")
+chip = None
+
+
+def find_chip(w):
+    global chip
+    for k in w.winfo_children():
+        if getattr(k, "text", None) == "Only when charging":
+            chip = k
+        find_chip(k)
+
+
+find_chip(cards["Automatic backups"][1])
+was = bool(a.s["auto_backup_charging"])
+chip.event_generate("<ButtonRelease-1>", x=4, y=4)      # a real click on the switch
+win.update()
+saved = json.loads(appmod.SETTINGS_FILE.read_text(encoding="utf-8")).get("auto_backup_charging")
+check(bool(a.s["auto_backup_charging"]) == (not was) and saved == (not was),
+      f"  a setting changed in the window is saved (Only when charging: {was} → {saved})")
+chip.event_generate("<ButtonRelease-1>", x=4, y=4)
+win.update()
 
 # the list reaches each card
 seen = []
@@ -127,6 +143,11 @@ check(win.canvas.yview()[0] == 0.0, "  Backups goes back to the top")
 act = win.activity_lines.cget("text").splitlines()
 check(len(act) == 5 and act[0].endswith("Test change 6") and act[-1].endswith("Test change 2") and act[0].startswith("2026-11-16 10:00"),
       f"Activity shows the 5 newest lines of the record, newest first: {act[:2]}")
+with open(phone_write.ACTIVITY_FILE, "a", encoding="utf-8") as f:     # damaged lines are skipped
+    f.write('{"when": 5, "summary": "x"}\nnot json\n["a list"]\n')
+check(appmod.activity_summary().splitlines()[0].endswith("Test change 6"), "  a damaged line in the record is skipped")
+phone_write.ACTIVITY_FILE.write_bytes(b"\xff\xfe not utf-8")
+check(appmod.activity_summary() == "Nothing recorded yet.", "  an unreadable record doesn't stop Settings opening")
 phone_write.ACTIVITY_FILE.unlink()
 check(appmod.activity_summary() == "Nothing recorded yet.", "  and says so when there's nothing yet")
 

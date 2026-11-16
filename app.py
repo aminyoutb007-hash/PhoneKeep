@@ -1926,7 +1926,7 @@ def activity_summary(n: int = 5) -> str:
     """The last few lines of the activity record (S7), newest first, in plain words."""
     try:
         rows = phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()[-n:]
-    except OSError:
+    except (OSError, ValueError):            # unreadable or not UTF-8: Settings still opens
         rows = []
     out = []
     for r in reversed(rows):
@@ -1934,7 +1934,7 @@ def activity_summary(n: int = 5) -> str:
             d = json.loads(r)
             out.append(f"{d.get('when', '')[:16].replace('T', ' ')}  {d.get('summary', '')}"
                        + (f" ({d['phone']})" if d.get("phone") else ""))
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError, TypeError, KeyError):     # a damaged line is skipped
             continue
     return "\n".join(out) if out else "Nothing recorded yet."
 
@@ -2264,19 +2264,23 @@ class SettingsWindow(tk.Toplevel):
         if not getattr(self, "cards", None) or not hasattr(self, "nav"):
             return
         clicked = getattr(self, "_clicked", None)
-        if group is None and clicked and abs(self.canvas.yview()[0] - clicked[1]) < 0.001:
+        try:
+            now = self.canvas.yview()[0]
+        except tk.TclError:                 # the window is going away
+            return
+        if group is None and clicked and abs(now - clicked[1]) < 0.001:
             group = clicked[0]
         if group is None:
             self._clicked = None
             try:
                 top = self.canvas.canvasy(0) + 30
+                lo, hi = self.canvas.yview()
             except tk.TclError:
                 return
             group = SETTINGS_GROUPS[0]
             for g, c, _t in self.cards:
                 if c.winfo_y() <= top:
                     group = g
-            lo, hi = self.canvas.yview()
             if hi >= 0.999 and lo > 0:            # at the bottom: the last group's cards are the ones in view
                 group = self.cards[-1][0]
         if group == getattr(self, "_current", None):
