@@ -853,6 +853,10 @@ class App(_dnd_root()):
         if not self._backing_up():
             self.quit_app()
             return
+        try:
+            self.update()               # window events still queued from before (e.g. it just came back) go first
+        except tk.TclError:
+            pass
         self._closed_while_busy = True
         self._away = True
         self.log("The window was closed; the backup carries on.")

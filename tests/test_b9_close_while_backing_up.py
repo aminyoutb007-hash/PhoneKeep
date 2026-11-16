@@ -230,7 +230,7 @@ a.update()
 a._come_back()
 pump(lambda: not a.busy, 20, "the stand-in backup to finish")
 settle(1.5)
-check(not notes and not quits, "the window brought back before the end: no notification, no quitting")
+check(not notes and not quits, f"the window brought back before the end: no notification, no quitting ({notes}, {quits})")
 
 # Quit while it backs up, answered OK: the backup stops and PhoneKeep quits
 appmod.messagebox.askokcancel = lambda *x, **k: True
