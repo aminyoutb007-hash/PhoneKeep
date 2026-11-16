@@ -929,10 +929,11 @@ class PhoneWindow(tk.Toplevel):
         except tk.TclError:
             pass
 
-    def load_apps(self, again: bool = True):
+    def load_apps(self, again: bool = False):
         """5.1.3: the app list, in the background: the names at once, then the sizes a few apps at a time, each
-        shown as it arrives; the full list is saved for next time. Once per window. again=False (Storage redrawn,
-        not opened): after a failed ask, don't ask again (a quick failure would redraw and ask for ever)."""
+        shown as it arrives; the full list is saved for next time. Once per window. After a failed ask it's asked
+        again only with again=True (a screen opened, not redrawn): a quick failure redraws the screen, and a redraw
+        that asked again would ask and redraw for ever."""
         if self._apps_state or self.live is None or (self._apps_failed and not again):
             return
         self._apps_state, self._apps_failed = "loading", False

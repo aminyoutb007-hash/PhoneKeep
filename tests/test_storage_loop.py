@@ -5,7 +5,8 @@ Wi-Fi link that's dropping), the failure redrew Storage, the redraw asked again,
 window stopped responding. With a fake iPhone whose app list always fails (nothing talks to a real phone), checks:
 - a failed ask redraws Storage once and doesn't ask again: the window keeps answering;
 - redrawing Storage (sizes arriving, the overview coming back) doesn't ask again either;
-- opening Storage again (from another screen) asks again, and a list that now answers is shown.
+- opening Storage again (from another screen) asks again, and a list that now answers is shown;
+- the same for the Check-up's Storage card, whose suggestions ask for the app list too.
 """
 import copy, os, sys, time
 from pathlib import Path
@@ -75,6 +76,26 @@ check(asked["n"] == 2 and win._apps_state == "done" and not win._apps_failed,   
 overview_ui.storage_view(win, win.overview)
 settle(0.5)
 check(asked["n"] == 2, "  once it's here it isn't asked for again")                                  # noqa: F821
+
+# the same from the Check-up's Storage card (its suggestions ask for the app list too)
+import checkup_ui
+win.show_home()
+asked.update(n=0, fail=True)
+win._apps_state, win._apps_list = "", None                # as if this window had never asked
+win.overview.apps = list(apps)
+checkup_ui.details(win, "storage")
+settle()
+check(asked["n"] == 1 and win.current == "checkup:storage",                                           # noqa: F821
+      f"Check-up → Storage: a failed app list is asked for once ({asked['n']} asks in 2 s)")
+checkup_ui.details(win, "storage")                       # redrawn
+win._apps_refresh(force=True)
+settle(1)
+check(asked["n"] == 1, f"  redrawing it doesn't ask again ({asked['n']} asks)")                        # noqa: F821
+win.show_home()
+asked["fail"] = False
+checkup_ui.details(win, "storage")                       # opened again
+pump(app, lambda: win._apps_state == "done", 30, "list")                                 # noqa: F821
+check(asked["n"] == 2 and win._apps_state == "done", f"  opening it again asks again ({asked['n']} asks)")  # noqa: F821
 
 faulthandler.cancel_dump_traceback_later()                                              # noqa: F821
 win.destroy()
