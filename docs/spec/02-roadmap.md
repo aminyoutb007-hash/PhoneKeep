@@ -39,7 +39,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | V2 | Battery health | Not available | Done | [10-device.md](10-device.md#v2-battery-health) |
 | V3 | Storage usage | Not available | Done | [10-device.md](10-device.md#v3-storage-usage) |
 | Q1 | Quick previews (Space key) everywhere | Partly (double-click opens) | Partial (Windows check deferred) | [11-previews.md](11-previews.md#q1-quick-preview-everywhere) |
-| B8 | Choose which iPhone when several are reachable (added 13 Nov, owner) | Cable wins, else the first on Wi-Fi, without saying so; one phone at a time | Partial (real check: the helper backing up two ticked phones) | [03-backup.md](03-backup.md#b8-choose-which-iphone-when-several-are-reachable) |
+| B8 | Choose which iPhone when several are reachable (added 13 Nov, owner) | Cable wins, else the first on Wi-Fi, without saying so; one phone at a time | Done | [03-backup.md](03-backup.md#b8-choose-which-iphone-when-several-are-reachable) |
 
 ### Release 5.2 (moved out of 5.1 on 14 Nov, owner)
 
