@@ -71,6 +71,14 @@ check(all(label_of[k] in texts(t, []) for k, t in win.tiles.items()), "  each wi
 check(all(win.tile_count[k].cget("text") for k in keys), "  and a count, or where it comes from")  # noqa: F821
 check(win.src_line is not None and win.src_line.winfo_ismapped() and win.src_line.cget("text") == win.src_text
       and "from the backup" in win.src_text, "under the tiles: what comes from the backup and what is read live")  # noqa: F821
+kept = (win.data, win.data_error)
+for err in ("No backup yet. Messages, chats, calls & notes appear after the first backup.", None):
+    win.data, win.data_error = None, err
+    win._update_src_line()
+    check(win.src_text and ".." not in win.src_text and "…." not in win.src_text and win.src_text.endswith((".", "…")),
+          f"  the line ends each part once, with no double full stop ({win.src_text!r})")  # noqa: F821
+win.data, win.data_error = kept
+win._update_src_line()
 seen = []
 for k in keys:                                  # every tile fits in the window's normal size
     t = win.tiles[k]

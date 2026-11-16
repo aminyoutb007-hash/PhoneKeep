@@ -546,7 +546,9 @@ class PhoneWindow(tk.Toplevel):
             parts.append("Photos, music, books & files: live from the iPhone")
         elif self.live_error:
             parts.append("iPhone not reachable: photos come from the backup")
-        self.src_text = ". ".join(parts) + "."
+        # each part keeps its own ending ("…", "." from a message); one without gets a full stop
+        self.src_text = " ".join(p.rstrip() if p.rstrip().endswith((".", "…", "!", "?")) else p.rstrip() + "."
+                                 for p in parts if p.strip())
         try:
             if self.src_line is not None:
                 self.src_line.configure(text=self.src_text)
