@@ -272,7 +272,7 @@ class FirstRunGuide(tk.Frame):
 
     def _show_trusted(self, yes: bool):
         self.trusted = yes
-        self.continue_btn.set_enabled(yes)
+        self.continue_btn.set_enabled(yes and not getattr(self, "_wifi_writing", False))   # not alongside the write
         if yes and self.trust_pic.winfo_manager():          # trusted: the picture has done its job; room for the text
             self.trust_pic.pack_forget()
         elif not yes and not self.trust_pic.winfo_manager():
@@ -296,7 +296,7 @@ class FirstRunGuide(tk.Frame):
             self.wifi_var.set(True)
             return
         if not self.wifi_var.get():
-            self.wifi_note.configure(text="")
+            self.wifi_note.configure(text="", fg=theme.ACCENT)
             return
         udid = self.app.udid
         if getattr(self, "_wifi_writing", False):       # one write at a time; the switch shows it's on its way
@@ -305,7 +305,7 @@ class FirstRunGuide(tk.Frame):
         if not udid or not self.trusted or self.app.busy:
             self.wifi_var.set(False)
             self.wifi_note.configure(text="PhoneKeep is busy; try again in a moment." if udid and self.trusted
-                                     else "Plug in your iPhone and tap Trust first.")
+                                     else "Plug in your iPhone and tap Trust first.", fg=MUTED)
             return
         name = (self.app.device or {}).get("DeviceName", "your iPhone")
         if not messagebox.askokcancel(f"Turn on Wi-Fi backups for {name}?",
@@ -316,9 +316,9 @@ class FirstRunGuide(tk.Frame):
             return
         if self.app.udid != udid or not self.trusted or self.app.busy:     # the phone changed while asking
             self.wifi_var.set(False)
-            self.wifi_note.configure(text="The iPhone changed while asking; nothing was changed.")
+            self.wifi_note.configure(text="The iPhone changed while asking; nothing was changed.", fg=MUTED)
             return
-        self.wifi_note.configure(text="Turning on…")
+        self.wifi_note.configure(text="Turning on…", fg=MUTED)
         self._wifi_writing = True
         self.continue_btn.set_enabled(False)          # one conversation with the phone at a time
 
@@ -329,7 +329,9 @@ class FirstRunGuide(tk.Frame):
                 phone_write.turn_on_wifi_sync(udid, name, confirmed=True, log=self.app.log)
                 return True
             except Exception as e:
-                self._wifi_problem = self.app.problem_of(e).message
+                pr = self.app.problem_of(e)
+                self._wifi_problem = pr.message
+                self.app.log("ERROR: " + pr.message + (f"  [{pr.details.splitlines()[0]}]" if pr.details else ""))
                 return False
 
         def done(r):

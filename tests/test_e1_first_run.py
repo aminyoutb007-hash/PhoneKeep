@@ -58,6 +58,9 @@ if args[0] == "--pk-will-encrypt":
 elif args[0] == "--pk-encryption":
     (here / "encrypted.flag").write_text("1")
 elif args[0] in ("--pk-wifi",):
+    if (here / "wififail.flag").exists():
+        print("Could not connect to the device")
+        sys.exit(1)
     print("PKDONE")
 elif args[0] == "--pk-backup":
     target = Path(args[1]) / "00008030-E1TEST"
@@ -192,11 +195,29 @@ a.update()
 check(len(asked) == 2 and a.guide.wifi_var.get() is False and not wifi_calls() and "changed" in a.guide.wifi_note.cget("text"),
       "  if the phone changes while asking, OK writes nothing")
 a.udid = real_udid
+# a failing write: shown next to the switch, not as the banner (whose Try again would repeat it without the OK)
+(W / "wififail.flag").write_text("1")
+mb.askokcancel = lambda title, *x, **k: (asked.append(title), True)[1]
+a.guide.wifi_var.set(True); a.guide.wifi_switched()
+check(not a.guide.continue_btn.enabled, "  while the Wi-Fi write runs, Continue waits")
+a.guide._show_trusted(True)                    # a replug mid-write
+check(not a.guide.continue_btn.enabled, "  even if the phone is seen again mid-write")
+pump(lambda: a.guide.wifi_note.cget("text").startswith("Not done"), 20, "the failed write")
+acts_now = [json.loads(l) for l in phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()] \
+    if phone_write.ACTIVITY_FILE.exists() else []
+check(a.guide.wifi_note.cget("text").startswith("Not done") and a.guide.wifi_var.get() is False
+      and not a.bar_frame.winfo_manager() and len(wifi_calls()) == 1
+      and not any(x["summary"] == "Turned on Wi-Fi backups" for x in acts_now) and a.guide.continue_btn.enabled,
+      f"  a failed write: 'Not done' by the switch, switch off, no banner, one attempt, nothing logged as done, Continue back ({a.guide.wifi_note.cget('text')!r})")
+(W / "wififail.flag").unlink()
+fails = len(wifi_calls())
+asked.clear(); asked.append("x")
 mb.askokcancel = lambda title, *x, **k: (asked.append(title), True)[1]           # OK
 a.guide.wifi_var.set(True); a.guide.wifi_switched()
 check(pump(lambda: "are on" in a.guide.wifi_note.cget("text"), 20, "wifi"), "  OK: Wi-Fi backups turned on")
-check(len(wifi_calls()) == 1 and wifi_calls()[0]["argv"][:2] == ["--pk-wifi", "on"], f"  exactly one write to the phone ({len(wifi_calls())})")
-argv = wifi_calls()[0]["argv"]
+check(len(wifi_calls()) == fails + 1 and wifi_calls()[-1]["argv"][:2] == ["--pk-wifi", "on"],
+      f"  exactly one write to the phone ({len(wifi_calls()) - fails})")
+argv = wifi_calls()[-1]["argv"]
 check("--udid" in argv and argv[argv.index("--udid") + 1] == real_udid, f"  to this phone, by its ID ({argv})")
 acts = [json.loads(l) for l in phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()]
 check(sum(x["summary"] == "Turned on Wi-Fi backups" for x in acts) == 1, "  the write is in the activity log")
@@ -214,7 +235,7 @@ check(a.guide.kicker.cget("text") == "Step 3 of 4" and a.guide.rows[1][1].find_a
       "  the list marks Trust done and the password step as now")
 a.guide.back_btn.command()
 a.update()
-check(a.guide.step == 1 and a.guide.wifi_var.get() and "are on" in a.guide.wifi_note.cget("text") and len(wifi_calls()) == 1,
+check(a.guide.step == 1 and a.guide.wifi_var.get() and "are on" in a.guide.wifi_note.cget("text") and len(wifi_calls()) == fails + 1,
       "Back: the Trust step again, Wi-Fi still on, nothing written again")
 a.guide.start_password_step()
 check(pump(lambda: a.guide.step == 2 and a.guide.pw_btn.enabled, 15, "step 3 again"), "  and Continue again")
@@ -257,7 +278,7 @@ check(("auto_daily" in a.guide.choices) == appmod.App.FEATURES["scheduler"] and 
 if "auto_daily" in a.guide.choices:
     a.guide.answer("auto_daily", True, a.guide.choices["auto_daily"])
     check(a.s["auto_backup"] == "daily", "'Yes' to daily backups is remembered for the scheduler")
-check("wifi" not in a.guide.choices and len(wifi_calls()) == 1, "no second Wi-Fi question, and still just the one write")
+check("wifi" not in a.guide.choices and len(wifi_calls()) == fails + 1, "no second Wi-Fi question, and still just the one write")
 
 # open iPhone ends the guide and restores the window
 opened = []
