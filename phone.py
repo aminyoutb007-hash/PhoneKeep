@@ -375,6 +375,8 @@ class PhoneWindow(tk.Toplevel):
         self.search_runner = Runner(self)
         self.check_runner = Runner(self)    # S8: the tamper check, so a big backup's check never holds up the counts
         self.tamper_state: Optional[tamper.Result] = None
+        self.tamper_when = None
+        self.seal_backups = True            # S8: seal old snapshots when opened; real_check turns it off (read-only)
         self.find_hook = None               # (key, its search box's StringVar, select(ref)) of the open app view
         self.pending_find = None            # (key, query, ref): what to show once that app's view is up
 
@@ -480,6 +482,7 @@ class PhoneWindow(tk.Toplevel):
         """Show the phone as it was at that snapshot (None = the latest)."""
         latest = self.snaps[0] if self.snaps else None
         self.snapshot = None if (snap is None or (latest and snap.id == latest.id)) else snap
+        self.tamper_state = None
         self.backup_path = (self.snapshot.path if self.snapshot else sn.latest_backup_path(self.backup_dir, self.udid))
         if self.snapshot:
             self.viewing.configure(text=f"Viewing {self.snapshot.title}")
@@ -496,9 +499,9 @@ class PhoneWindow(tk.Toplevel):
 
     # tamper check (S8) ----------------------------------------------------------------------
     def _tamper_banner(self, res: tamper.Result, when) -> None:
-        self.tamper_state = res
+        self.tamper_state, self.tamper_when = res, when
         if res.state == "changed":
-            self.banner(tamper.banner_text(when), button=("Check fully", self.check_backup_fully), color=theme.WARN_BG)
+            self.banner("")                                 # banner() shows the tamper banner while it's "changed"
 
     def check_backup(self) -> None:
         """The fast check (sizes) of the snapshot that was just opened; the amber banner if it changed."""
@@ -507,14 +510,16 @@ class PhoneWindow(tk.Toplevel):
             return
         snap = next((x for x in self.snaps if Path(x.path) == path), None)
         when = snap.when if snap else dt.datetime.now()
+        seal = self.seal_backups
 
         def run():
-            if not (path / tamper.SEAL).exists():          # made before S8: sealed now, checked from now on
+            res = tamper.check(path)
+            if res.state == "no seal" and seal:         # made before S8: sealed now, checked from now on
                 import json as _json
                 tamper.make_seal(path, _json.loads((path / "files.json").read_text(encoding="utf-8")))
-                tamper.note_signed(path)
-            res = tamper.check(path)
-            if res.ok:
+                tamper.note_made(path)
+                res = tamper.check(path)
+            elif res.ok and seal:
                 tamper.sign_pending([path])                # the helper's seal, signed here (it has no keychain)
             return res
         self.check_runner.submit(run, lambda res: data is self.data and self._tamper_banner(res, when), lambda e: None)
@@ -533,25 +538,26 @@ class PhoneWindow(tk.Toplevel):
                 text=f"Checking every file of the backup of {title}… {pct:.0f}%"))
 
         def ok(res: tamper.Result):
-            opened = sn.is_snapshot(Path(self.backup_path)) and Path(self.backup_path) == path
+            opened = data is self.data and Path(self.backup_path) == path
+            if opened and res.state in ("ok", "changed"):
+                self.tamper_state, self.tamper_when = res, snap.when
+            self.banner("")
             if res.state == "changed":
-                if opened and data is self.data:
-                    self._tamper_banner(res, snap.when)
-                else:
-                    self.banner("")
                 messagebox.showwarning(wv.APP_NAME, tamper.banner_text(snap.when) + "\n\nWhat differs: "
                                        + "; ".join(res.changed) + ".", parent=self)
             elif res.state == "no seal":
-                self.banner("")
                 messagebox.showinfo(wv.APP_NAME, "This backup was made before PhoneKeep could check backups, "
                                     "so there's nothing to compare it with. Open it once to seal it.", parent=self)
+            elif res.state == "can't check":
+                messagebox.showinfo(wv.APP_NAME, f"PhoneKeep can't be sure about the backup of {title}: "
+                                    + "; ".join(res.changed) + ". Its files match its seal.", parent=self)
             else:
-                self.banner("")
-                if opened:
-                    self.tamper_state = res
                 messagebox.showinfo(wv.APP_NAME, f"No changes: all {res.checked:,} files of the backup of {title} "
                                     "are as they were when it was made.", parent=self)
-        self.check_runner.submit(lambda: tamper.check(path, full=True, progress=progress), ok,
+        # stops when the window closes (its runners stop): a stopped check says nothing
+        self.check_runner.submit(lambda: tamper.check(path, full=True, progress=progress,
+                                                      cancel=lambda: not self.check_runner.alive),
+                                 lambda res: res.changed != ["the check was stopped"] and ok(res),
                                  lambda e: self.banner(f"Couldn't check the backup: {e}", color=theme.ERROR_BG))
 
     def _snapshot_menu(self, event, snap: sn.Snapshot):
@@ -698,6 +704,10 @@ class PhoneWindow(tk.Toplevel):
                 w.uncover()
 
     def banner(self, text: str, button: Optional[tuple] = None, color=GREEN_SOFT):
+        if not text and self.tamper_state is not None and self.tamper_state.state == "changed":
+            # S8: the open snapshot changed after it was made: that stays said, whatever else came and went
+            text, button, color = (tamper.banner_text(self.tamper_when), ("Check fully", self.check_backup_fully),
+                                   theme.WARN_BG)
         if not text:
             self.bar_frame.pack_forget()
             return

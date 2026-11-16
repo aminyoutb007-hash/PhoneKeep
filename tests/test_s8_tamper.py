@@ -41,7 +41,7 @@ if not (fake / "Manifest.db").exists():
 W = HERE / "work" / "s8"
 shutil.rmtree(W, ignore_errors=True)
 W.mkdir(parents=True)
-tamper._signed_file = lambda: W / "seals.json"
+tamper._record_file = lambda: W / "seals.json"
 
 KEY = bytes(range(32))                     # an invented key: the real one lives in the keychain
 tamper.key_source = lambda: KEY
@@ -69,9 +69,9 @@ s1 = snapshot("00008030-S8SEAL0000000000")
 seal = json.loads((Path(s1.path) / tamper.SEAL).read_text(encoding="utf-8"))
 check(seal.get("mac") and len(seal["sizes"]) == len(blobs(s1)) and "Manifest.db" in seal["manifest"],
       f"each new snapshot has a signed seal: its {len(seal['sizes'])} files' sizes, the manifest and the list of files")
-check(set(seal) == {"version", "files_json", "manifest", "sizes", "mac"},
-      "  the seal holds only hashes and sizes (nothing from inside the backup)")
-check(tamper._seal_id(Path(s1.path)) in tamper._signed(), "  and PhoneKeep notes that it signed it")
+check(set(seal) == {"version", "files_json", "manifest", "sizes", "key", "mac"} and seal["key"] == tamper.key_id(KEY)
+      and seal["key"] != KEY.hex()[:16], "  the seal holds only hashes, sizes and which key signed it (not the key)")
+check(tamper._seal_id(Path(s1.path)) in tamper._record(), "  and PhoneKeep's own folder records it")
 r = tamper.check(s1.path)
 check(r.ok and r.checked == len(blobs(s1)), f"an untouched snapshot passes the fast check ({r.state}, {r.changed})")
 check(tamper.check(s1.path, full=True).ok, "  and the full check")
@@ -115,7 +115,26 @@ tamper.key_source = lambda: None                    # whoever changed it has no 
 tamper.make_seal(s.path, json.loads((Path(s.path) / "files.json").read_text(encoding="utf-8")))
 tamper.key_source = lambda: KEY
 check(tamper.check(s.path).changed == ["its seal was rewritten"],
-      "a seal rewritten without the key (signature taken off): caught, because PhoneKeep noted it had signed it")
+      "a seal rewritten without the key (signature taken off): caught, because it no longer matches the record")
+
+# deleted: once PhoneKeep made a seal, its going missing is a change, and opening doesn't seal it again
+s = fresh("deleted")
+flip_one_byte(Path(s.path) / "Manifest.db")
+(Path(s.path) / tamper.SEAL).unlink()
+check(tamper.check(s.path).changed == ["its seal is missing"], "a deleted seal: caught (its record is still there)")
+
+# a backup taken to another computer, or the keychain reset: another key and no record -> can't check, no banner
+s = fresh("othermac")
+rec_before = tamper._record()
+tamper._record_file = lambda: W / "seals-other-computer.json"      # this other computer has no record of it
+tamper.key_source = lambda: bytes(reversed(range(32)))
+r = tamper.check(s.path)
+check(r.state == "can't check" and "another computer" in r.changed[0],
+      f"a seal signed with another key, no record: \"can't check\", never the banner ({r.state}: {r.changed})")
+blobs(s)[0].unlink()
+check(tamper.check(s.path).state == "changed", "  but a missing file is still caught there")
+tamper.key_source = lambda: KEY
+tamper._record_file = lambda: W / "seals.json"
 s = fresh("forged")
 seal = json.loads((Path(s.path) / tamper.SEAL).read_text(encoding="utf-8"))
 seal["sizes"][next(iter(seal["sizes"]))] += 1
@@ -126,15 +145,71 @@ s = fresh("broken")
 (Path(s.path) / tamper.SEAL).write_text("{not json", encoding="utf-8")
 check(tamper.check(s.path).changed == ["its seal can't be read"], "a damaged seal: caught")
 
-# the helper has no keychain: its seal is unsigned, the window signs it later
+# the helper has no keychain: its seal is unsigned but recorded; the window signs it later
 tamper.key_source = None
 s = fresh("helper")
 check(json.loads((Path(s.path) / tamper.SEAL).read_text(encoding="utf-8"))["mac"] is None
-      and tamper._seal_id(Path(s.path)) not in tamper._signed(), "the menu bar helper's seal is unsigned ...")
+      and tamper._seal_id(Path(s.path)) in tamper._record(), "the menu bar helper's seal is unsigned, and recorded ...")
 tamper.key_source = lambda: KEY
 check(tamper.check(s.path).ok, "  and passes (nothing changed)")
 check(tamper.sign_pending([s.path]) == 1 and tamper.check(s.path).ok
-      and tamper._seal_id(Path(s.path)) in tamper._signed(), "  until the window signs it")
+      and json.loads((Path(s.path) / tamper.SEAL).read_text(encoding="utf-8"))["mac"], "  until the window signs it")
+
+# before the window signs it, someone changes a file and writes a matching unsigned seal: never signed, caught
+tamper.key_source = None
+s = fresh("helperforged")
+with open(blobs(s)[0], "ab") as f:
+    f.write(b"x")
+tamper.make_seal(s.path, json.loads((Path(s.path) / "files.json").read_text(encoding="utf-8")))
+tamper.key_source = lambda: KEY
+check(tamper.sign_pending([s.path]) == 0
+      and json.loads((Path(s.path) / tamper.SEAL).read_text(encoding="utf-8"))["mac"] is None,
+      "an unsigned seal rewritten before the window opens it is never signed ...")
+check(tamper.check(s.path).changed == ["its seal was rewritten"], "  and is caught")
+
+# the record: two threads adding seals at once lose nothing; the key is made once
+import threading
+ids = [W / "Backups" / "00008030-S8REC" / "snapshots" / f"2026111{i}-000000" for i in range(8)]
+ts = [threading.Thread(target=tamper._note, args=(d, {"version": 1, "n": i})) for i, d in enumerate(ids)]
+[t.start() for t in ts]
+[t.join() for t in ts]
+check(all(tamper._seal_id(d) in tamper._record() for d in ids) and not list(W.glob("seals*.tmp"))
+      and not (W / "seals.lock").exists(), "seals added at the same time are all recorded (a lock, own temporary files)")
+# ... and two processes at once (the window and the menu bar helper)
+code = (f"import sys, os; sys.path.insert(0, {str(HERE.parent)!r}); import tamper, pathlib, time;"
+        f"tamper._record_file = lambda: pathlib.Path({str(W / 'seals.json')!r});"
+        "time.sleep(max(0, float(sys.argv[2]) - time.time()));"
+        "[tamper._note(pathlib.Path('B') / 'U' / 'snapshots' / f'{sys.argv[1]}-{i}', {'n': i}) for i in range(25)]")
+go = time.time() + 1.5
+ps = [subprocess.Popen([sys.executable, "-c", code, tag, str(go)]) for tag in ("window", "helper")]
+[p.wait(60) for p in ps]
+rec = tamper._record()
+check(all(f"U/{t}-{i}" in rec for t in ("window", "helper") for i in range(25)),
+      f"seals added by two processes at the same time are all recorded ({sum(k.startswith('U/') for k in rec)} of 50)")
+made = []
+_kb = keychain._backend
+store = {}
+
+
+class OnceKeychain:
+    def get_password(self, svc, user):
+        time.sleep(0.05)
+        return store.get((svc, user))
+
+    def set_password(self, svc, user, pw):
+        made.append(pw)
+        store[(svc, user)] = pw
+
+
+keychain._backend = lambda: OnceKeychain()
+tamper._key_cache.clear()
+keys = []
+ts = [threading.Thread(target=lambda: keys.append(tamper.keychain_key())) for _ in range(4)]
+[t.start() for t in ts]
+[t.join() for t in ts]
+keychain._backend = _kb
+tamper._key_cache.clear()
+check(len(made) == 1 and len(set(keys)) == 1 and keys[0], "the keychain key is made once, even when asked for at once")
 
 # moved to another drive (B4): dates change, nothing is reported
 s = fresh("moved")
@@ -179,9 +254,10 @@ def pump(until, timeout=60):
     return until()
 
 
-def window(udid: str):
+def window(udid: str, seal_backups=True):
     check(a.open_backup(W / "Backups" / udid, udid=udid), f"  the snapshot opens in a phone window")
     w = a.phone_windows[-1]
+    w.seal_backups = seal_backups
     w.withdraw()
     pump(lambda: w.data is not None and w.tamper_state is not None, 90)
     return w
@@ -219,15 +295,72 @@ with open(blobs(sw)[0], "ab") as f:
 w = window(u)
 check(w.tamper_state.state == "changed" and banner(w).startswith("This backup was changed after it was made on 3 Nov"),
       f"a file with another size: the banner as soon as the snapshot opens: {banner(w)!r}")
+w.banner("Saved 2 files to ~/Desktop.")
+w.banner("")
+check(banner(w).startswith("This backup was changed after it was made on 3 Nov")
+      and str(w.bar_frame.cget("bg")) == str(appmod.theme.WARN_BG),
+      "  another message (a save) comes and goes: the amber banner comes back")
 w.destroy()
+
+# the full check stops when the window closes, and a stopped check says nothing
+r = tamper.check(sw.path, full=True, cancel=lambda: True)
+check(r.state == "can't check" and r.changed == ["the check was stopped"], "a full check can be stopped")
+u = "00008030-S8WINDOWSTOP0000"
+sw = snapshot(u)
+w = window(u)
+asked, _check = [], tamper.check
+tamper.check = lambda path, **k: asked.append(k) or Result_stopped
+Result_stopped = tamper.Result("can't check", ["the check was stopped"])
+told.clear()
+w.check_backup_fully()
+pump(lambda: asked, 20)
+pump(lambda: False, 1)
+tamper.check = _check
+check(asked and asked[0].get("full") and asked[0]["cancel"]() is False and not told,
+      "  the window's full check can be stopped, and a stopped check says nothing")
+w.check_runner.alive = False
+check(asked and asked[0]["cancel"]() is True, "  (it stops once the window's runners stop, as on closing)")
+w.check_runner.alive = True
+w.destroy()
+
+# sealed on another computer (or the keychain was reset): "can't be sure", never the banner
+u = "00008030-S8WINDOWOTHER000"
+tamper.key_source = lambda: bytes(reversed(range(32)))
+sw = snapshot(u)
+tamper.key_source = lambda: KEY
+rec = tamper._record()
+rec.pop(tamper._seal_id(Path(sw.path)))
+(W / "seals.json").write_text(json.dumps(rec), encoding="utf-8")
+w = window(u)
+check(w.tamper_state.state == "can't check" and banner(w) == "", "a backup sealed with another key opens with no banner")
+told.clear()
+w.check_backup_fully()
+check(pump(lambda: told, 60) and told[0][0] == "info" and "can't be sure" in told[0][1] and banner(w) == "",
+      f"  and its full check says PhoneKeep can't be sure, without the banner: {told}")
+w.destroy()
+
+
+def made_before_s8(snap):
+    (Path(snap.path) / tamper.SEAL).unlink()
+    rec = tamper._record()
+    rec.pop(tamper._seal_id(Path(snap.path)))
+    (W / "seals.json").write_text(json.dumps(rec), encoding="utf-8")
 
 # made before S8: sealed when first opened; the helper's seal: signed when opened
 u = "00008030-S8WINDOWOLD00000"
 sw = snapshot(u)
-(Path(sw.path) / tamper.SEAL).unlink()
+made_before_s8(sw)
 w = window(u)
-check((Path(sw.path) / tamper.SEAL).exists() and w.tamper_state.ok and banner(w) == "",
-      "a snapshot made before S8 gets its seal when it's first opened (no banner)")
+check((Path(sw.path) / tamper.SEAL).exists() and w.tamper_state.ok and banner(w) == ""
+      and tamper._seal_id(Path(sw.path)) in tamper._record(),
+      "a snapshot made before S8 gets its seal (and record) when it's first opened (no banner)")
+w.destroy()
+u = "00008030-S8WINDOWREAD0000"
+sw = snapshot(u)
+made_before_s8(sw)
+w = window(u, seal_backups=False)
+check(not (Path(sw.path) / tamper.SEAL).exists() and w.tamper_state.state == "no seal",
+      "with seal_backups off (real_check), opening writes nothing into the backup")
 w.destroy()
 u = "00008030-S8WINDOWHELPER00"
 tamper.key_source = None

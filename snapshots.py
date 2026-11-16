@@ -327,7 +327,7 @@ def make_snapshot(backup_dir: Path, udid: str, source: Optional[Path] = None,
     import tamper
     tamper.make_seal(tmpdir, files, store)                       # S8: what the snapshot is, signed when possible
     os.replace(tmpdir, sdir)
-    tamper.note_signed(sdir)
+    tamper.note_made(sdir)
     (pdir / "format.json").write_text(json.dumps({"format": FORMAT}), encoding="utf-8")
     log(f"Snapshot {sid}: {len(files):,} files, {copied:,} new in the store.")
     if progress:

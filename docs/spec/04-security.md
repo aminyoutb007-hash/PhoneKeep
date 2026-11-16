@@ -103,8 +103,11 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 
 **How it's built (16 Nov):** each snapshot gets `seal.json` as it's made: the SHA-256 of its list of files and of the four manifest files, and the size of every file it uses (files in the store are already named by their SHA-256, so the seal costs no extra hashing). It's signed (HMAC-SHA256) with a random key PhoneKeep keeps in the keychain ("PhoneKeep backup seal"). Opening a snapshot runs the fast check in the background: the signature, the list, the manifest, and every file there at its size. ⋯ → Check for changes… also reads every file again and compares it with its name. The seal holds only hashes and sizes, nothing from inside the backup.
 - *Dates aren't compared (decided while building):* copying backups to another drive (B4) and exFAT or network drives change dates, so the banner would show for nothing. A changed file of the same size is what the full check is for.
-- *The menu bar helper* never reads the keychain in the background: its seal is unsigned, and the window signs it when it next opens that snapshot. PhoneKeep notes which seals it signed (`seals.json` in its own folder), so a signed seal whose signature was taken off is caught too.
-- *Snapshots made before S8* get their seal the first time a window opens them.
+- *A record outside the backup folder:* PhoneKeep's own folder keeps `seals.json`, the hash of every seal it made (the window's and the menu bar helper's). A seal that was deleted or rewritten no longer matches it, even before it's signed.
+- *The menu bar helper* never reads the keychain in the background: its seal is unsigned (but recorded), and the window signs it when it next opens that snapshot, only if it still matches the record.
+- *Another computer, or a reset keychain:* each seal says which key signed it (a hash of the key, not the key). A seal signed with another key and not in this computer's record can't be verified: "can't check", never the banner. Files missing or with another size are still caught there.
+- *Snapshots made before S8* (no seal, not in the record) get their seal the first time a window opens them. real_check turns this off, so it never writes into the owner's real backups.
+- The full check stops when the phone window closes. The amber banner stays while the open snapshot is the changed one; other messages come and go over it.
 
 ## S9. Secure delete
 
