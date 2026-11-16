@@ -96,10 +96,15 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 
 **What the user sees and does:** nothing, normally. If a backup's files changed after it was made, an amber banner: "This backup was changed after it was made on 3 Nov. It may not be reliable."
 
-**Requirements:** a checksum list is stored (and signed with a key in the keychain) at the end of each backup; verified when opening a snapshot (fast mode: sizes + dates; full check on demand).
+**Requirements:** a checksum list is stored (and signed with a key in the keychain) at the end of each backup; verified when opening a snapshot (fast mode: sizes ~~+ dates~~; full check on demand).
 
 **Done when**
-- [ ] Editing one byte of a backup file triggers the banner on the full check.
+- [x] Editing one byte of a backup file triggers the banner on the full check. *`tests/test_s8_tamper.py`: one byte changed inside the snapshot's largest file (same size) passes the fast check and is caught by ⋯ → Check for changes…, which shows "This backup was changed after it was made on 3 Nov. It may not be reliable." in the phone window.*
+
+**How it's built (16 Nov):** each snapshot gets `seal.json` as it's made: the SHA-256 of its list of files and of the four manifest files, and the size of every file it uses (files in the store are already named by their SHA-256, so the seal costs no extra hashing). It's signed (HMAC-SHA256) with a random key PhoneKeep keeps in the keychain ("PhoneKeep backup seal"). Opening a snapshot runs the fast check in the background: the signature, the list, the manifest, and every file there at its size. ⋯ → Check for changes… also reads every file again and compares it with its name. The seal holds only hashes and sizes, nothing from inside the backup.
+- *Dates aren't compared (decided while building):* copying backups to another drive (B4) and exFAT or network drives change dates, so the banner would show for nothing. A changed file of the same size is what the full check is for.
+- *The menu bar helper* never reads the keychain in the background: its seal is unsigned, and the window signs it when it next opens that snapshot. PhoneKeep notes which seals it signed (`seals.json` in its own folder), so a signed seal whose signature was taken off is caught too.
+- *Snapshots made before S8* get their seal the first time a window opens them.
 
 ## S9. Secure delete
 

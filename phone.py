@@ -38,6 +38,7 @@ import reconnect
 import saveall_ui
 import phonekeep as wv
 import snapshots as sn
+import tamper
 import sections as sx
 import theme
 import ui
@@ -372,6 +373,8 @@ class PhoneWindow(tk.Toplevel):
         self._find_after = None
         self.searcher = None                # search.PhoneSearch for self.data, built on the first search
         self.search_runner = Runner(self)
+        self.check_runner = Runner(self)    # S8: the tamper check, so a big backup's check never holds up the counts
+        self.tamper_state: Optional[tamper.Result] = None
         self.find_hook = None               # (key, its search box's StringVar, select(ref)) of the open app view
         self.pending_find = None            # (key, query, ref): what to show once that app's view is up
 
@@ -491,8 +494,69 @@ class PhoneWindow(tk.Toplevel):
         self.photo_src = None
         self._open_backup()
 
+    # tamper check (S8) ----------------------------------------------------------------------
+    def _tamper_banner(self, res: tamper.Result, when) -> None:
+        self.tamper_state = res
+        if res.state == "changed":
+            self.banner(tamper.banner_text(when), button=("Check fully", self.check_backup_fully), color=theme.WARN_BG)
+
+    def check_backup(self) -> None:
+        """The fast check (sizes) of the snapshot that was just opened; the amber banner if it changed."""
+        path, data = Path(self.backup_path), self.data
+        if not sn.is_snapshot(path):
+            return
+        snap = next((x for x in self.snaps if Path(x.path) == path), None)
+        when = snap.when if snap else dt.datetime.now()
+
+        def run():
+            if not (path / tamper.SEAL).exists():          # made before S8: sealed now, checked from now on
+                import json as _json
+                tamper.make_seal(path, _json.loads((path / "files.json").read_text(encoding="utf-8")))
+                tamper.note_signed(path)
+            res = tamper.check(path)
+            if res.ok:
+                tamper.sign_pending([path])                # the helper's seal, signed here (it has no keychain)
+            return res
+        self.check_runner.submit(run, lambda res: data is self.data and self._tamper_banner(res, when), lambda e: None)
+
+    def check_backup_fully(self, snap: Optional[sn.Snapshot] = None) -> None:
+        """Every file of a snapshot read again and compared with what it was (⋯ → Check for changes)."""
+        snap = snap or self.snapshot or (self.snaps[0] if self.snaps else None)
+        if snap is None:
+            return
+        path, data = Path(snap.path), self.data
+        title = snap.when.strftime('%d %b %Y').lstrip('0')
+        self.banner(f"Checking every file of the backup of {title}… This can take a few minutes.")
+
+        def progress(pct):
+            self.check_runner.on_ui(lambda: self.bar_text.winfo_exists() and self.bar_text.configure(
+                text=f"Checking every file of the backup of {title}… {pct:.0f}%"))
+
+        def ok(res: tamper.Result):
+            opened = sn.is_snapshot(Path(self.backup_path)) and Path(self.backup_path) == path
+            if res.state == "changed":
+                if opened and data is self.data:
+                    self._tamper_banner(res, snap.when)
+                else:
+                    self.banner("")
+                messagebox.showwarning(wv.APP_NAME, tamper.banner_text(snap.when) + "\n\nWhat differs: "
+                                       + "; ".join(res.changed) + ".", parent=self)
+            elif res.state == "no seal":
+                self.banner("")
+                messagebox.showinfo(wv.APP_NAME, "This backup was made before PhoneKeep could check backups, "
+                                    "so there's nothing to compare it with. Open it once to seal it.", parent=self)
+            else:
+                self.banner("")
+                if opened:
+                    self.tamper_state = res
+                messagebox.showinfo(wv.APP_NAME, f"No changes: all {res.checked:,} files of the backup of {title} "
+                                    "are as they were when it was made.", parent=self)
+        self.check_runner.submit(lambda: tamper.check(path, full=True, progress=progress), ok,
+                                 lambda e: self.banner(f"Couldn't check the backup: {e}", color=theme.ERROR_BG))
+
     def _snapshot_menu(self, event, snap: sn.Snapshot):
         m = tk.Menu(self, tearoff=0)
+        m.add_command(label="Check for changes…", command=lambda: self.check_backup_fully(snap))
         m.add_command(label="Keep forever" if not snap.locked else "Don't keep forever",
                       command=lambda: (sn.set_locked(self.backup_dir, self.udid, snap.id, not snap.locked), self._build_timeline()))
         m.add_command(label="Rename…", command=lambda: self._rename_snapshot(snap))
@@ -956,6 +1020,7 @@ class PhoneWindow(tk.Toplevel):
                     keychain.set_password(self.udid, password)   # it opened the backup, so keep it
             self.banner("")
             self._update_src_line()
+            self.check_backup()
             self.counts = {}
             self._count_next([k for k, *_r, where in APPS if where == "backup"])
             self.backup_runner.submit(lambda: self._backup_sizes(data),
@@ -2405,7 +2470,7 @@ class PhoneWindow(tk.Toplevel):
                 wv.APP_NAME, "A backup is still running. Close anyway? It will carry on next time.", parent=self):
             return
         for r in (self.backup_runner, self.live_runner, self.info_runner, self.apps_runner, self.watch_runner,
-                  self.storage_runner, self.search_runner):
+                  self.storage_runner, self.search_runner, self.check_runner):
             r.stop()
         self._storage_tick_cancel()
         if quicklook.Viewer.current is not None:
