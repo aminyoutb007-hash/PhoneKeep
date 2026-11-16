@@ -119,9 +119,16 @@ a.s["backup_dir"] = str(W / "Backups")
 a.s["archive_dir"] = str(W / "Archive")
 
 
+import gc, threading
+# TEMP experiment (#80 Linux CI crash): no automatic collection, which could run on a worker thread and free Tk
+# objects there; collect on the Tk thread instead
+gc.disable()
+
+
 def pump(until, timeout=30):
     end = time.time() + timeout
     while time.time() < end:
+        gc.collect()
         a.update()
         if until():
             return True
