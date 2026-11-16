@@ -1,7 +1,7 @@
 """L3 (5.2): Settings in the Direction A layout (docs/spec/14-layouts.md#l3-settings-layout).
 
 With a test home folder (no real phone, no real settings), checks:
-- the list on the left: Backups, Automatic backups, Security, Saving, Activity, About;
+- the list on the left: Backups, Automatic backups, Security, Saving, Appearance (E6), Activity, About;
 - every card from before is still there (the Location card is now called "Where backups are kept"), plus Activity
   and About, in the list's order;
 - every setting from before can still be found and changed, including the app lock (S2) and "Only when charging" (B2);
@@ -53,14 +53,14 @@ a.update()
 win = appmod.SettingsWindow(a)           # drawn, so the list can scroll it
 win.update()
 
-GROUPS = ["Backups", "Automatic backups", "Security", "Saving", "Activity", "About"]
+GROUPS = ["Backups", "Automatic backups", "Security", "Saving", "Appearance", "Activity", "About"]
 check(list(getattr(win, "nav", {})) == GROUPS, f"the list on the left: {list(getattr(win, 'nav', {}))}")
 helper = "Menu bar helper" if sys.platform == "darwin" else "System tray helper"
 before = {"What to include (Custom)", "Options", "Security", "Internet", "Automatic backups", "Snapshots", helper,
           "Where backups are kept", "Folders", "Use an existing backup"}
 titles = [t for _g, _c, t in win.cards]
-check(before <= set(titles) and {"Activity", "About"} <= set(titles) and len(titles) == len(before) + 2,
-      f"every card from before is there, plus Activity and About ({len(titles)})")
+check(before <= set(titles) and {"Appearance", "Activity", "About"} <= set(titles) and len(titles) == len(before) + 3,
+      f"every card from before is there, plus Appearance, Activity and About ({len(titles)})")
 order = [c for c in win.cards[0][1].master.pack_slaves() if c in [x[1] for x in win.cards]]
 check(order == [c for _g, c, _t in win.cards] and [g for g, *_ in win.cards] == sorted([g for g, *_ in win.cards], key=GROUPS.index),
       "  in the list's order")
