@@ -176,6 +176,36 @@ check(a.udid == A and a.s["chosen_udid"] == A, "  and the phone chosen for backi
 check(all(w.bind("<ButtonRelease-1>") for w in [a.phone_tiles[A]] + list(a.phone_tiles[A].winfo_children())
           + a.phone_tiles[A].lines), "a click anywhere on a card opens it")
 
+# -- the first-run guide (E1) ----------------------------------------------------------------------------------
+three = appmod.phone_summaries(BD, [DA, DB])
+a.start_first_run()
+a.update()
+pumped = []
+a._all_key = None                               # a list not shown before (e.g. the second phone just came)
+a._show_all_phones(three)                       # two phones connected while the guide is up
+a.call(lambda: pumped.append(1))
+pump(lambda: pumped, 3)
+check(pumped and a.all_phones.winfo_manager() == "", "two phones during the first-run guide: no list over the guide, and the window keeps working")
+a.end_first_run()
+pump(lambda: False, 0.3)
+a._show_all_phones(three)
+check(a.all_phones.winfo_manager() == "pack" and set(a.phone_tiles) == {A, B, C}, "  after the guide, the list shows")
+a.start_first_run()
+a.update()
+a.end_first_run()
+check(a.all_phones.winfo_manager() == "", "  when the guide ends, the list isn't put back by itself (the next search decides)")
+a._show_all_phones(three[:1])
+check(a.all_phones.winfo_manager() == "", "the guide ending with one phone: no empty 'Your iPhones' title")
+
+# -- a phone whose backup went away ----------------------------------------------------------------------------
+told = []
+real_info = messagebox.showinfo
+messagebox.showinfo = lambda title, text, **k: told.append(text)
+before = len(opened)
+a.open_phone_for("00008030-E5GONE")
+messagebox.showinfo = real_info
+check(told and len(opened) == before, "a phone with no backup left and not connected: it says so and opens nothing")
+
 # -- one phone: no list --------------------------------------------------------------------------------------
 for w in a.open_phone_windows():
     w.destroy()

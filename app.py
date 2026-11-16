@@ -1042,9 +1042,10 @@ class App(_dnd_root()):
             return
         self.guide.destroy()
         self.guide = None
+        self._all_key = None
         for w in self.main_cards:
-            if w is self.prog or w is self.done:
-                continue
+            if w is self.prog or w is self.done or w is self.all_phones:
+                continue                            # "Your iPhones" comes back with the next search, if it's wanted
             w.pack(fill="x", pady=(0, 0) if w is self.main_cards[0] else (14, 0))
         self.detect(silent=True)
 
@@ -1300,9 +1301,11 @@ class App(_dnd_root()):
         threading.Thread(target=work, daemon=True).start()
 
     def _show_all_phones(self, phones: list):
-        if self.prog.winfo_manager():
-            self._all_key = None                    # a job's card fills the window: the next search shows it
-            return
+        if len(phones) < 2:
+            self.all_phones.pack_forget()
+        if self.prog.winfo_manager() or self.guide is not None:
+            self._all_key = None                    # a job's card or the first-run guide fills the window: the next
+            return                                  # search after it shows the list
         key = repr(phones)
         if key == self._all_key:
             return                                  # nothing changed: no flicker on every search for phones
@@ -1311,7 +1314,6 @@ class App(_dnd_root()):
             w.destroy()
         self.phone_tiles = {}
         if len(phones) < 2:
-            self.all_phones.pack_forget()
             return
         for i, p in enumerate(phones):
             tile = ui.PhoneTile(self.all_grid, p, lambda u=p["udid"]: self.open_phone_for(u))
@@ -1328,6 +1330,9 @@ class App(_dnd_root()):
             self.update_idletasks()
             need = self.winfo_reqheight()
             have = self.winfo_height()
+            if need <= getattr(self, "_fitted", 0):
+                return                              # grown for this much once: the user's own size wins after that
+            self._fitted = need
             if self.state() == "normal" and 1 < have < need:
                 self.geometry(f"{self.winfo_width()}x{min(need, self.winfo_screenheight() - 80)}")
         except tk.TclError:
@@ -1353,7 +1358,10 @@ class App(_dnd_root()):
         else:
             import snapshots as _snaps
             latest = _snaps.latest_backup_path(Path(self.s["backup_dir"]), udid)
-            if latest is not None:
+            if latest is None:
+                messagebox.showinfo(wv.APP_NAME, "This iPhone's backup isn't in the backup folder any more. "
+                                    "Connect the iPhone to open it.", parent=self)
+            else:
                 self.open_backup(latest, udid)
 
     def add_phone(self):
