@@ -31,7 +31,7 @@ Common rules for L1-L3 and the E1 refresh:
 - Cancel works as it does today.
 
 **Done when**
-- [x] Side by side with `Backup.png` (invented test phone, stand-in backup): the same structure. *(16 Nov: [waiting for the passcode](../evidence/l2-backup-progress/waiting.png), [copying](../evidence/l2-backup-progress/copying.png). Two differences, on purpose: the steps are the phases the backup reports (it can't tell chats from photos while it copies), and the line under the card says "Keep PhoneKeep open until it's done": closing the main window quits PhoneKeep, and the window sends no notification when it's done.)*
+- [x] Side by side with `Backup.png` (invented test phone, stand-in backup): the same structure. *(16 Nov: [waiting for the passcode](../evidence/l2-backup-progress/waiting.png), [copying](../evidence/l2-backup-progress/copying.png). Two differences, on purpose: the steps are the phases the backup reports (it can't tell chats from photos while it copies), and the line under the card says "Keep PhoneKeep open until it's done": closing the main window quits PhoneKeep, and the window sends no notification when it's done. 16 Nov, owner: keep that line; closing the window while a backup carries on, with a notification, is [B9](03-backup.md#b9-keep-backing-up-after-the-window-closes) in 5.3.)*
 - [x] With a stand-in backup: the percentage, the steps and the "Look at your iPhone" notice follow what the backup reports, and Cancel stops it (`tests/test_l2_backup_progress.py`).
 
 ## L3. Settings layout
@@ -40,7 +40,7 @@ Common rules for L1-L3 and the E1 refresh:
 
 **Requirements**
 - Every setting there today is kept, in the card it belongs to.
-- The mockup README calls "Lock PhoneKeep with Touch ID" and "Only while the iPhone is charging" ideas. Both already exist (S2, B2), so they stay as they are; nothing new is added.
+- The mockup README calls "Lock PhoneKeep with Touch ID" and "Only while the iPhone is charging" ideas. Both already exist (S2, B2), so they stay as they are; nothing new is added. (16 Nov, owner: keep both.)
 
 **Done when**
 - [x] Side by side with `Settings.png` (test home folder): the same structure. *(16 Nov: [screenshot](../evidence/l3-settings/settings.png). The Location card is now called "Where backups are kept", as in the mockup. Activity shows the newest lines of the record PhoneKeep already keeps on this computer (S7); About shows the version and opens the About box. Internet (S3) sits under Security; "Use an existing backup", which the mockup doesn't show, sits under Backups.)*
