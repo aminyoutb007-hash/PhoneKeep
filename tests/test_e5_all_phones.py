@@ -125,7 +125,10 @@ def close_windows():
     for w in a.open_phone_windows():
         if w.backup_path is not None:
             pump(lambda: w.data is not None or w.data_error is not None, 30)
+        d = w.data
         w.close()
+        if d is not None:
+            pump(d.closed.is_set, 30)            # a count still reading finishes first, then the files are let go
     a.update()
 
 
