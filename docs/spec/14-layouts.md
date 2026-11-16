@@ -31,8 +31,8 @@ Common rules for L1-L3 and the E1 refresh:
 - Cancel works as it does today.
 
 **Done when**
-- [ ] Side by side with `Backup.png` (invented test phone, stand-in backup): the same structure.
-- [ ] With a stand-in backup: the percentage, the steps and the "Look at your iPhone" notice follow what the backup reports, and Cancel stops it (test).
+- [x] Side by side with `Backup.png` (invented test phone, stand-in backup): the same structure. *(16 Nov: [waiting for the passcode](../evidence/l2-backup-progress/waiting.png), [copying](../evidence/l2-backup-progress/copying.png). Two differences, on purpose: the steps are the phases the backup reports (it can't tell chats from photos while it copies), and the line under the card says "Keep PhoneKeep open until it's done": closing the main window quits PhoneKeep, and the window sends no notification when it's done.)*
+- [x] With a stand-in backup: the percentage, the steps and the "Look at your iPhone" notice follow what the backup reports, and Cancel stops it (`tests/test_l2_backup_progress.py`).
 
 ## L3. Settings layout
 

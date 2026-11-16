@@ -52,6 +52,7 @@ STEPS = [
     ("Closed connection: reads on a let-go connection fail at once and plainly; the app list reconnects once (5.1.3)", "test_closed_connection.py", False),
     ("Storage tips (V6): how to free each of the largest apps' space, steps only (5.2)", "test_storage_tips.py", True),
     ("Phone window layout (L1): header, Snapshot card, cards, four columns of tiles; every tile opens (5.2)", "test_l1_phone_window.py", True),
+    ("Backup progress screen (L2): percentage, steps, Look at your iPhone, Cancel; the window comes back (5.2)", "test_l2_backup_progress.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
