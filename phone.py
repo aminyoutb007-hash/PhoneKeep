@@ -200,11 +200,15 @@ class BackupData:
             pass
         self.cache: dict = {}
         self.lock = threading.Lock()
+        self.closed = threading.Event()     # set once the backup's files have been let go
+        self._closing = False
 
     def get(self, key: str):
         with self.lock:
             if key in self.cache:
                 return self.cache[key]
+            if self._closing:
+                raise wv.PhoneKeepError("This backup was closed.")
             c = self.ctx
             if key == "messages":
                 v = sx.load_messages(c)
@@ -251,23 +255,40 @@ class BackupData:
         if key == "photos":
             return f"{len(v[1]):,}"
         if key == "allfiles":
-            n = self.reader.db.execute("SELECT COUNT(*) FROM Files WHERE flags=1").fetchone()[0]
+            with self.lock:
+                if self._closing:
+                    raise wv.PhoneKeepError("This backup was closed.")
+                n = self.reader.db.execute("SELECT COUNT(*) FROM Files WHERE flags=1").fetchone()[0]
             return f"{n:,} file{'s' if n != 1 else ''}"
         return f"{len(v):,}"
 
     def copy(self, domain: str, rel: str, dest: Path) -> bool:
         with self.lock:
-            return self.ctx.copy(domain, rel, dest)
+            return False if self._closing else self.ctx.copy(domain, rel, dest)
 
     def read(self, domain: str, rel: str) -> Optional[bytes]:
         with self.lock:
-            return self.ctx.read(domain, rel)
+            return None if self._closing else self.ctx.read(domain, rel)
 
     def close(self):
-        try:
-            self.reader.close()
-        except Exception:
-            pass
+        """Let go of the backup's files. A read still running (the home screen's counts) finishes first: closing
+        the database under it crashed PhoneKeep (16 Nov). The window never waits: if a read is running, the
+        closing happens in the background as soon as it ends; `closed` is set when it's done."""
+        def shut(wait: bool) -> bool:
+            if not self.lock.acquire(blocking=wait):
+                return False
+            try:
+                self._closing = True
+                try:
+                    self.reader.close()
+                except Exception:
+                    pass
+            finally:
+                self.lock.release()
+            self.closed.set()
+            return True
+        if not shut(False):
+            threading.Thread(target=shut, args=(True,), daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
