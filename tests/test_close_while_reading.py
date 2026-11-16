@@ -6,7 +6,8 @@ Now closing waits for the read: checked with the tests' invented backup and a re
 - closing during the read doesn't make the window wait;
 - the read finishes with its answer; the files are let go right after it (`closed`);
 - with nothing reading, closing lets go at once;
-- after closing, a new read says the backup was closed instead of touching it.
+- after closing, a new read (a section, a file, the file list behind the V3 sizes and Save everything's
+  estimate) says the backup was closed instead of touching it.
 """
 import os, shutil, subprocess, sys, threading, time
 from pathlib import Path
@@ -64,7 +65,28 @@ try:
 except wv.PhoneKeepError as e:
     check("closed" in str(e), "after closing, a new read says the backup was closed")
 check(d.read("x", "y") is None and d.copy("x", "y", HERE / "work" / "nothing") is False, "  reading or copying a file too")
+try:
+    d.file_meta("CameraRollDomain", "Media/DCIM/")
+    check(False, "  the backup's file list too (V3 sizes, Save everything's estimate)")
+except wv.PhoneKeepError:
+    check(True, "  the backup's file list too (V3 sizes, Save everything's estimate)")
+import saveall_ui
+check(saveall_ui.estimate_sizes(d, fake)["photos"] == 0, "  Save everything's estimate on a closed backup gives 0, no crash")
+try:
+    phone.PhoneWindow._backup_sizes(d)
+    check(False, "  the V3 sizes on a closed backup stop with 'closed'")
+except wv.PhoneKeepError:
+    check(True, "  the V3 sizes on a closed backup stop with 'closed'")
 sx.load_apps = real_apps
+
+d3 = phone.BackupData(fake, None)
+check(phone.PhoneWindow._backup_sizes(d3)[0] > 0 and saveall_ui.estimate_sizes(d3, fake)["photos"] > 0,
+      "an open backup still gives the V3 sizes and the estimate, through the locked file list")
+# the file list waits for a read in progress (it used to query the database without the lock)
+src = (HERE.parent / "phone.py").read_text(encoding="utf-8")
+check("data.reader" not in src.split("class PhoneWindow")[1].split("def _open_backup")[0]
+      and "estimate_sizes(data, data.path)" in src, "the sizes and the estimate go through BackupData, not its reader")
+d3.close()
 
 d2 = phone.BackupData(fake, None)
 d2.close()
