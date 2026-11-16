@@ -1047,12 +1047,14 @@ class App(_dnd_root()):
             w.pack_forget()
         self.guide = firstrun.FirstRunGuide(self)
         self.guide.pack(fill="both", expand=True)
+        self.after_idle(self._fit_body)
 
     def end_first_run(self):
         if self.guide is None:
             return
         self.guide.destroy()
         self.guide = None
+        self.after_idle(self._fit_body)
         self._all_key = None
         for w in self.main_cards:
             if w is self.prog or w is self.done or w is self.all_phones:
@@ -1342,7 +1344,9 @@ class App(_dnd_root()):
             # or goes and the scroll area follows it (reviewer, #83)
             cw, ch = self.scroller.winfo_width(), self.scroller.winfo_height()
             need = self.body.winfo_reqheight() + 32
-            self.scroller.itemconfigure(self._body_item, width=max(1, cw - 44))
+            # the first-run guide fills what's visible (its step list and footer sit at the bottom); 0 = own height
+            fill = max(self.body.winfo_reqheight(), ch - 32) if self.guide is not None else 0
+            self.scroller.itemconfigure(self._body_item, width=max(1, cw - 44), height=fill)
             self.scroller.configure(scrollregion=(0, 0, cw, max(need, ch)))
             if need > ch > 1:
                 if not self.vbar.winfo_ismapped():
