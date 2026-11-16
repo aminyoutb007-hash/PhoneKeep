@@ -43,8 +43,8 @@ Common rules for L1-L3 and the E1 refresh:
 - The mockup README calls "Lock PhoneKeep with Touch ID" and "Only while the iPhone is charging" ideas. Both already exist (S2, B2), so they stay as they are; nothing new is added.
 
 **Done when**
-- [ ] Side by side with `Settings.png` (test home folder): the same structure.
-- [ ] Every setting from before can still be found and changed, and the left list reaches each card (test).
+- [x] Side by side with `Settings.png` (test home folder): the same structure. *(16 Nov: [screenshot](../evidence/l3-settings/settings.png). The Location card is now called "Where backups are kept", as in the mockup. Activity shows the newest lines of the record PhoneKeep already keeps on this computer (S7); About shows the version and opens the About box. Internet (S3) sits under Security.)*
+- [x] Every setting from before can still be found and changed, and the left list reaches each card (`tests/test_l3_settings.py`).
 
 ## E1 refresh: first-run guide layout
 
