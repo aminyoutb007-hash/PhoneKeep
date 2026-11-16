@@ -43,7 +43,11 @@ PRESETS = {
                    list(sx.DEFAULT_SECTIONS)),
     "custom": ("⚙", "Custom", "Pick exactly what to include", None),
 }
-STEPS = [("backup", "Back up iPhone"), ("choose", "Choose chats & photos"), ("build", "Build your archive")]
+# L2: the steps are the phases a backup can tell apart (it can't tell chats from photos while it copies)
+STEPS = [("ready", "Get the iPhone ready"), ("copy", "Copy from the iPhone"), ("snapshot", "Save it as a snapshot"),
+         ("choose", "Choose chats & photos"), ("build", "Build your archive")]
+EXPORT_STEPS = [("choose", "Choose chats & photos"), ("build", "Build your archive")]
+MOVE_STEPS = [("backup", "Move your backups")]
 
 
 def _fmt_eta(seconds: float) -> str:
@@ -250,7 +254,6 @@ class StepRow(tk.Frame):
         self.right.pack(side="right")
         self.detail = tk.Label(col, text="", bg=CARD, fg=MUTED, font=font(12), anchor="w", justify="left",
                                wraplength=560)
-        self.detail.pack(fill="x")
         self.number, self.state, self.spin = number, "pending", 0
         self.set("pending")
 
@@ -258,6 +261,10 @@ class StepRow(tk.Frame):
         self.state = state
         if detail is not None:
             self.detail.configure(text=detail)
+            if detail and not self.detail.winfo_manager():       # a line only when there is something to say
+                self.detail.pack(fill="x")
+            elif not detail and self.detail.winfo_manager():
+                self.detail.pack_forget()
         if right is not None:
             self.right.configure(text=right)
         self.title.configure(fg=INK if state != "pending" else MUTED)
@@ -457,22 +464,55 @@ class App(_dnd_root()):
         # main button
         self.go = ui.RoundButton(self.body, "Back up now", self.backup_and_export, "primary", 400, 50, 16)
         self.go.pack(fill="x")
-        # Cancel is always available for a long job (01-principles.md, 6); shown only while a backup runs
-        self.cancel_btn = ui.RoundButton(self.body, "Cancel backup", self.cancel_backup, "secondary", 400, 40, 14)
-
-        # progress
-        self.prog = ui.card(self.body)
-        pin = tk.Frame(self.prog, bg=CARD)
-        pin.pack(fill="x", padx=18, pady=14)
-        self.steps = {}
-        for n, (key, title) in enumerate(STEPS, 1):
-            r = StepRow(pin, n, title)
-            r.pack(fill="x", pady=4)
-            self.steps[key] = r
+        # progress (L2, 5.2): while a job runs, one card takes the window's place: the phone, the big percentage,
+        # the bar and time left, what is happening now, "Look at your iPhone" when it needs the user, the steps
+        # and Cancel (docs/spec/14-layouts.md#l2-backup-progress-screen)
+        self.prog = tk.Frame(self.body, bg=BG)
+        card = ui.card(self.prog)
+        card.pack(fill="x")
+        pin = tk.Frame(card, bg=CARD)
+        pin.pack(fill="x", padx=26, pady=(22, 16))
+        top = tk.Frame(pin, bg=CARD)
+        top.pack(fill="x")
+        self.prog_phone = PhoneIcon(top, CARD)
+        self.prog_phone.pack(side="left")
+        who = tk.Frame(top, bg=CARD)
+        who.pack(side="left", fill="x", expand=True, padx=16)
+        self.prog_kicker = tk.Label(who, text="Backing up", bg=CARD, fg=theme.ACCENT, font=font(13), anchor="w")
+        self.prog_kicker.pack(fill="x")
+        self.prog_name = tk.Label(who, text="", bg=CARD, fg=INK, font=font(22, "bold"), anchor="w")
+        self.prog_name.pack(fill="x")
+        self.prog_line = tk.Label(who, text="", bg=CARD, fg=MUTED, font=font(13), anchor="w")
+        self.prog_line.pack(fill="x")
+        nums = tk.Frame(pin, bg=CARD)
+        nums.pack(fill="x", pady=(16, 0))
+        self.pct_lbl = tk.Label(nums, text="", bg=CARD, fg=INK, font=font(34, "bold"), anchor="w")
+        self.pct_lbl.pack(side="left")
+        self.eta_lbl = tk.Label(nums, text="", bg=CARD, fg=MUTED, font=font(13), anchor="e")
+        self.eta_lbl.pack(side="right", anchor="s", pady=(0, 6))
         self.bar = Bar(pin)
-        self.bar.pack(fill="x", pady=(10, 4))
+        self.bar.pack(fill="x", pady=(6, 4))
+        self.now_lbl = tk.Label(pin, text="", bg=CARD, fg=MUTED, font=font(12), anchor="w", justify="left",
+                                wraplength=560)
+        self.now_lbl.pack(fill="x")
+        self.now_lbl.bind("<Configure>", lambda e: e.widget.configure(wraplength=max(200, e.width - 4)))
+        # "Look at your iPhone": amber, inside the card, while the phone waits for its passcode
+        self.attn = tk.Frame(pin, bg=theme.WARN_BG, highlightthickness=1, highlightbackground=theme.WARN_TEXT)
+        tk.Label(self.attn, text="📱", bg=theme.WARN_BG, fg=theme.WARN_TEXT, font=font(18)).pack(
+            side="left", padx=(14, 8), pady=10, anchor="n")
+        aw = tk.Frame(self.attn, bg=theme.WARN_BG)
+        aw.pack(side="left", fill="x", expand=True, pady=10, padx=(0, 14))
+        tk.Label(aw, text="Look at your iPhone", bg=theme.WARN_BG, fg=theme.WARN_TEXT, font=font(14, "bold"),
+                 anchor="w").pack(fill="x")
+        self.attn_text = tk.Label(aw, text="", bg=theme.WARN_BG, fg=theme.WARN_TEXT, font=font(13), anchor="w",
+                                  justify="left", wraplength=520)
+        self.attn_text.pack(fill="x")
+        self.steps_box = tk.Frame(pin, bg=CARD)
+        self.steps_box.pack(fill="x", pady=(14, 0))
+        self.steps = {}
+        self._show_steps(STEPS)
         row = tk.Frame(pin, bg=CARD)
-        row.pack(fill="x")
+        row.pack(fill="x", pady=(10, 0))
         self.details_btn = tk.Label(row, text="Show details ▸", bg=CARD, fg=GREEN, font=font(12), cursor="hand2")
         self.details_btn.pack(side="left")
         self.details_btn.bind("<Button-1>", lambda e: self._toggle_details())
@@ -481,6 +521,14 @@ class App(_dnd_root()):
                                bg=theme.SUBTLE, fg=INK, font=("Menlo" if sys.platform == "darwin" else "Consolas", 10),
                                highlightthickness=1, highlightbackground=LINE)
         self.log_box.pack(fill="both", expand=True, pady=(6, 0))
+        tk.Frame(pin, bg=LINE, height=1).pack(fill="x", pady=(14, 12))
+        foot = tk.Frame(pin, bg=CARD)
+        foot.pack(fill="x")
+        tk.Label(foot, text="🔒  Stays on this computer · never sent online", bg=CARD, fg=theme.ACCENT,
+                 font=font(13), anchor="w").pack(side="left")
+        # Cancel is always available for a long job (01-principles.md, 6); shown only while a backup runs
+        self.cancel_btn = ui.RoundButton(foot, "Cancel backup", self.cancel_backup, "secondary", 150, 40, 14, bg=CARD)
+        tk.Label(self.prog, text="Keep PhoneKeep open until it's done.", bg=BG, fg=MUTED, font=font(12)).pack(pady=(10, 0))
 
         # done
         self.done = ui.card(self.body)
@@ -571,10 +619,8 @@ class App(_dnd_root()):
         msg = msg.strip()
         if not msg or msg.startswith("==") or msg.startswith("Traceback") or msg.startswith("File "):
             return
-        for r in self.steps.values():
-            if r.state == "active":
-                r.set("active", detail=msg[:140])
-                return
+        if self.prog.winfo_manager():
+            self.now_lbl.configure(text=msg[:140])
 
     def _ask(self, prompt: str) -> str | None:
         box, ev = {}, threading.Event()
@@ -610,11 +656,11 @@ class App(_dnd_root()):
         if not self.winfo_exists():
             return
         exporting = self.busy and getattr(self, "_exporting", False)
-        running = (wv.backup_running() or exporting) and bool(self.go.winfo_manager())     # the guide has its own Cancel
+        running = (wv.backup_running() or exporting) and bool(self.prog.winfo_manager())   # the guide has its own Cancel
         if running and not self.cancel_btn.winfo_manager():
             self.cancel_btn.configure_text("Cancel backup" if wv.backup_running() else "Cancel export")
             self.cancel_btn.set_enabled(True)
-            self.cancel_btn.pack(fill="x", pady=(6, 0), after=self.go)
+            self.cancel_btn.pack(side="right")
         elif not running and self.cancel_btn.winfo_manager():
             self.cancel_btn.pack_forget()
         if self.busy:
@@ -636,6 +682,8 @@ class App(_dnd_root()):
         self.go.set_enabled(True)
         self.cancel_btn.pack_forget()
         self.go.configure_text("Back up again" if not err and self.last_index else "Back up now")
+        self.passcode_notice(None)
+        card = self._end_progress()    # L2: the window comes back; a problem shows in the banner at the top
         if err is not None:
             pr = self.problem_of(err)
             for r in self.steps.values():
@@ -643,11 +691,18 @@ class App(_dnd_root()):
                     r.set("error", detail=pr.message)
             self.log("ERROR: " + pr.message + (f"  [{pr.details.splitlines()[0]}]" if pr.details else ""))   # full text: Show details
             if not quiet:
-                self.show_problem(pr, retry=(lambda: self._run(fn, done)) if fn else None)
+                self.show_problem(pr, retry=(lambda: self._retry(fn, done, card)) if fn else None)
         else:
             self.hide_problem()
         if done:
             done(None if err is not None else result)
+
+    def _retry(self, fn, done, card):
+        """The banner's Try again (or Back up now after a cancel): the same job, with its progress card back if it
+        had one, so the retry shows its percentage and Cancel (reviewer, #73)."""
+        if card is not None and not self._reset_progress(*card):
+            return
+        self._run(fn, done)
 
     # ------------------------------------------------------------------ problems (E3)
     @staticmethod
@@ -666,11 +721,19 @@ class App(_dnd_root()):
         if text is None:
             if getattr(self, "_passcode_up", False):
                 self._passcode_up = False
-                self.hide_problem()
+                if self.attn.winfo_manager():
+                    self.attn.pack_forget()
+                else:
+                    self.hide_problem()
             return
         self._passcode_up = True
-        self.show_problem(errors.Problem("passcode", "📱  " + text, "", "", failure=False))
-        self.bar_text.configure(font=font(16, "bold"))
+        if self.prog.winfo_manager():                     # L2: in the progress card
+            what = text.split(":", 1)[1].strip() if text.startswith("Look at your iPhone:") else text
+            self.attn_text.configure(text=what[:1].upper() + what[1:])
+            self.attn.pack(fill="x", pady=(14, 0), before=self.steps_box)
+        else:
+            self.show_problem(errors.Problem("passcode", "📱  " + text, "", "", failure=False))
+            self.bar_text.configure(font=font(16, "bold"))
         try:
             self.deiconify()
             self.lift()
@@ -1290,15 +1353,17 @@ class App(_dnd_root()):
                             "by hand: " + ", ".join(r["left_behind"]))
                 messagebox.showinfo(wv.APP_NAME, msg, parent=self)
                 self.detect(silent=True)
-        self._reset_progress(False)
-        self.steps["backup"].set("active", detail=f"Moving backups to {new}…")
+        if not self._reset_progress(MOVE_STEPS, "Moving your backups"):
+            return
+        self.steps["backup"].set("active")
+        self.now_lbl.configure(text=f"To {new}")
         self._run(work, done)
 
     def _progress_backup_simple(self, pct):
         if not hasattr(self, "_simple_eta") or pct < 1:
             self._simple_eta = ui.Eta()
         right = self._simple_eta.feed(pct)
-        self.call(lambda: (self.bar.set(pct), self.steps["backup"].set("active", right=right)))
+        self.call(lambda: self._set_pct(pct, right))
 
     # ------------------------------------------------------------------ automatic backups (B2)
     def set_schedule(self, mode: str, hour_text: str, day_text: str):
@@ -1425,15 +1490,79 @@ class App(_dnd_root()):
         self.require_unlock(go)
 
     # ------------------------------------------------------------------ actions
-    def _reset_progress(self, with_backup: bool = True):
+    def _show_steps(self, rows):
+        for w in self.steps_box.winfo_children():
+            w.destroy()
+        self.steps = {}
+        for n, (key, title) in enumerate(rows, 1):
+            r = StepRow(self.steps_box, n, title)
+            r.pack(fill="x", pady=1)
+            self.steps[key] = r
+
+    def _reset_progress(self, rows=STEPS, kicker: str = "Backing up"):
+        """L2: the progress card takes the window's place until the job ends (_finish puts the window back).
+        Returns False, changing nothing, while a job runs: its steps must stay as they are (reviewer, #73)."""
+        if self.busy:
+            messagebox.showinfo(wv.APP_NAME, "PhoneKeep is already working. Please wait for it to finish.", parent=self)
+            return False
         self.notes = []
         self.done.pack_forget()
-        self.prog.pack(fill="x", pady=(14, 0))
-        for k, r in self.steps.items():
-            r.set("pending", detail="", right="")
-        if not with_backup:
-            self.steps["backup"].set("skipped", detail="Using an existing backup")
-        self.bar.set(0)
+        self.hide_problem()
+        self._show_steps(rows)
+        self._card_for = (rows, kicker)          # a retry from the banner brings back the same card
+        d = self.device or {}
+        self.prog_kicker.configure(text=kicker)
+        self.prog_name.configure(text=d.get("DeviceName") or ("Your iPhone" if rows is not EXPORT_STEPS else "Your backup"))
+        self.prog_line.configure(text=self.dev_line.cget("text") if d else "")
+        self.prog_phone.set_picture(self.phone.picture)
+        self.prog_phone.set_state(self.phone.state or "searching")
+        self.attn.pack_forget()
+        self.now_lbl.configure(text="")
+        self._set_pct(None, "")
+        if not self.prog.winfo_manager():
+            self._hidden = [(w, w.pack_info()) for w in self.body.winfo_children()
+                            if w.winfo_manager() == "pack" and w is not self.prog]
+            for w, _i in self._hidden:
+                w.pack_forget()
+            self.prog.pack(fill="x", padx=30, pady=(4, 0))
+        return True
+
+    def _end_progress(self):
+        """Put the window back as it was before the job (the finished card, if any, goes under it).
+        Returns the card's (rows, kicker) if it was up, else None."""
+        if not self.prog.winfo_manager():
+            return None
+        self.prog.pack_forget()
+        self.attn.pack_forget()
+        for w, info in getattr(self, "_hidden", []):
+            info.pop("in", None)
+            w.pack(**info)
+        self._hidden = []
+        return getattr(self, "_card_for", None)
+
+    def _set_pct(self, pct, right: str):
+        """The big percentage, the bar and the time left (None: nothing to show yet)."""
+        self.bar.set(pct or 0)
+        self.pct_lbl.configure(text="" if pct is None else f"{pct:.0f}%")
+        self.eta_lbl.configure(text=right)
+
+    def _backup_phase(self, key: str):
+        """Move the backup's steps on to this one (ready → copy → snapshot); earlier ones are done."""
+        order = [k for k, _t in STEPS[:3]]
+        if key not in order or key not in self.steps:
+            return
+        for k in order[:order.index(key)]:
+            if self.steps[k].state != "done":
+                self.steps[k].set("done", detail="", right="")
+        if self.steps[key].state != "active":
+            self.steps[key].set("active")
+
+    def _backup_status(self, text: str):
+        if text.startswith("Saving this backup as a snapshot"):
+            self._backup_phase("snapshot")
+        elif "copied from the iPhone" in text:
+            self._backup_phase("copy")
+        self.now_lbl.configure(text=text)
 
     def _progress_backup(self, pct: float, t0: list):
         # The time left is estimated from the speed over the last few minutes, so it settles
@@ -1448,8 +1577,13 @@ class App(_dnd_root()):
         if len(pts) >= 2 and pct > pts[0][1] + 0.5 and now - pts[0][0] > 20:
             rate = (pct - pts[0][1]) / (now - pts[0][0])
             eta = _fmt_eta((100 - pct) / rate) if rate > 0 else ""
-        right = f"{pct:.0f}%" + (f" · {eta}" if eta else " · working out time left…")
-        self.call(lambda: (self.bar.set(pct), self.steps["backup"].set("active", right=right)))
+        right = eta[:1].upper() + eta[1:] if eta else "Working out the time left…"
+
+        def show():
+            if pct >= 0.5 and pct < 100:
+                self._backup_phase("copy")
+            self._set_pct(pct, right)
+        self.call(show)
 
     def _export_progress(self, pct: float):
         """Progress of the archive build; raising here is how Cancel stops the export."""
@@ -1466,8 +1600,7 @@ class App(_dnd_root()):
             if self.steps["choose"].state == "active":
                 self.steps["choose"].set("done", detail="")
                 self.steps["build"].set("active")
-            self.bar.set(pct)
-            self.steps["build"].set("active", right=right)
+            self._set_pct(pct, right)
         self.call(ui_update)
 
     def _export(self, path: Path) -> Path:
@@ -1489,8 +1622,10 @@ class App(_dnd_root()):
             raise wv.PhoneKeepError("Nothing is selected to keep. Choose a preset or tick items in Settings.")
         wants_chats = self.pick_chats.get() and any(k in secs for k, _l in sx.CHAT_SECTIONS)
         wants_photos = self.pick_photos.get() and "photos" in secs and self.s["include_media"]
-        self.call(lambda: self.steps["choose"].set(
-            "active", detail="Reading your chats and photos…" if (wants_chats or wants_photos) else "Getting ready…"))
+        self.call(lambda: (self.prog_kicker.configure(text="Building your archive"), self._set_pct(None, ""),
+                           self.steps["choose"].set("active"),
+                           self.now_lbl.configure(text="Reading your chats and photos…" if (wants_chats or wants_photos)
+                                                  else "Getting ready…")))
         direct = self.s["direct_photos"] and self.udid is not None and "photos" in secs
         index = sx.export_all(path, Path(self.s["archive_dir"]), pw, secs,
                               include_media=self.s["include_media"], log=self.log,
@@ -1505,32 +1640,33 @@ class App(_dnd_root()):
         if self.device is None and not messagebox.askyesno(
                 wv.APP_NAME, "No iPhone is connected right now.\n\nTry anyway?"):
             return
-        self._reset_progress(True)
+        if not self._reset_progress(STEPS, "Backing up"):
+            return
         t0 = [None]
 
         def work():
-            self.call(lambda: self.steps["backup"].set(
-                "active", detail="Checking that your backups are encrypted…"))
+            self.call(lambda: (self._backup_phase("ready"),
+                               self.now_lbl.configure(text="Checking that your backups are encrypted…")))
             self.ensure_encryption()
-            self.call(lambda: self.steps["backup"].set(
-                "active", detail="Connecting… Keep your iPhone unlocked and nearby. If it asks for its "
-                                 "passcode, enter it. Your chats appear for you to choose as soon as "
-                                 "the backup finishes."))
+            self.call(lambda: self.now_lbl.configure(
+                text="Connecting… Keep your iPhone unlocked and nearby. If it asks for its passcode, enter it. "
+                     "Your chats appear for you to choose as soon as the backup finishes."))
             d = self.device or {}
             self.log(f"Backing up {d.get('DeviceName') or 'your iPhone'} "
                      f"({'cable' if d.get('ConnectionType') == 'USB' else 'Wi-Fi'})…")     # B8: names the phone
             path = wv.make_backup(Path(self.s["backup_dir"]), self.udid, log=self.log,
                                   progress=lambda p: self._progress_backup(p, t0),
-                                  status=lambda text: self.call(
-                                      lambda: self.steps["backup"].set("active", detail=text)),
+                                  status=lambda text: self.call(lambda: self._backup_status(text)),
                                   keep=self.s["snapshots_keep"], until_disk_full=self.s["snapshots_until_full"],
                                   attention=lambda text: self.call(lambda: self.passcode_notice(text)))
-            self.call(lambda: self.steps["backup"].set("done", detail="Backup complete", right=""))
+            self.call(lambda: (self._backup_phase("snapshot"), self.steps["snapshot"].set("done", detail="", right=""),
+                               self.now_lbl.configure(text="Backup complete")))
             return self._export(path)
         self._run(work, self._exported)
 
     def export_existing(self, path: Path):
-        self._reset_progress(False)
+        if not self._reset_progress(EXPORT_STEPS, "Building your archive"):
+            return
         self._run(lambda: self._export(path), self._exported)
 
     def _exported(self, index):
@@ -1540,14 +1676,14 @@ class App(_dnd_root()):
         for k in ("choose", "build"):
             if self.steps[k].state in ("active", "pending"):
                 self.steps[k].set("done", detail="", right="")
-        self.bar.set(100)
+        self._set_pct(100, "")
         self.last_index = Path(index)
         fm = " + ".join(lbl for f, lbl in (("web", "web pages"), ("pdf", "PDF"), ("excel", "Excel"), ("csv", "CSV")) if self.fmt[f].get())
         notes = ["You chose " + " and ".join(self.notes) + "."] if self.notes else []
         where = self.s["archive_dir"].replace(str(Path.home()), "~", 1)
         self.done_sub.configure(text=f"Saved in {where}  ·  chats as {fm}"
                                 + (f"\n{notes[0]}" if notes else ""))
-        self.prog.pack_forget()  # the finished card replaces the step list
+        self._end_progress()     # the window comes back, with the finished card under it
         self.done.pack(fill="x", pady=(14, 0))
         self.go.configure_text("Back up again")
         self.detect(silent=True)
