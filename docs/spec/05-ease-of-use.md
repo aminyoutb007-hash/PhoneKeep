@@ -89,7 +89,7 @@ The first search reads each app from the open backup once (a few seconds on a la
   - *every widget of the main window, a phone window (home, Messages, Check-up, Notes, Storage) and Settings has no light background left, and every label is readable;*
   - *a new window is dark from the moment it's made.*
 
-  *Screenshots of 13 screens in both modes, invented test phone, chats and contacts from the X2-redacted copy: `docs/evidence/e6-dark-mode/`.*
+  *Screenshots of 15 screens in both modes (every phone-window screen, the main window, the first-run guide, the backup progress card, Settings and its Appearance card), invented test phone, chats and contacts from the X2-redacted copy: `docs/evidence/e6-dark-mode/`. The About box is the system's own and follows the system.*
 
 **How it's built (16 Nov):** `theme.py` keeps one set of names with two sets of values. Light is Direction A exactly as agreed. Dark is the same calm teal, lifted so it reads on dark grey, with dark text on the main buttons.
 - *When the mode is chosen:* once, as PhoneKeep opens (every window takes its colours as it's built). Settings → Appearance: "Same as this computer" (the default), Light or Dark.

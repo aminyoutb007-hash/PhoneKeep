@@ -9,6 +9,8 @@ from pathlib import Path
 # The app and its exports are UTF-8 everywhere; make Python on Windows read and print them that way too.
 os.environ.setdefault("PYTHONUTF8", "1")
 os.environ["PHONEKEEP_NO_HELPER"] = "1"      # tests open the real window; it must not start a real helper
+for _out in (sys.stdout, sys.stderr):        # run_all's own printing too (a Windows console is cp1252: "→" crashed it)
+    _out.reconfigure(encoding="utf-8", errors="replace")
 
 HERE = Path(__file__).resolve().parent
 STEPS = [
