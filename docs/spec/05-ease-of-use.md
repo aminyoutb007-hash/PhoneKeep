@@ -70,8 +70,10 @@ See also the journeys and patterns in [00-user-experience.md](00-user-experience
 
 **What the user sees and does:** the main window's home shows a card for each phone ever backed up: wallpaper thumbnail, name, model, last backup, size, lock badge, "connected" dot. Click a card to open it; **Add another iPhone** at the end.
 
+**How it's built:** "Your iPhones" sits under the phone card when PhoneKeep knows more than one phone: every phone connected now and every phone with a backup in the backup folder, connected ones first. Each card is a small phone picture (the saved home screen or wallpaper), the name, model and size of its newest snapshot, when it was last backed up, a green dot with Cable or Wi-Fi while it's connected, and the lock badge. A click opens that phone's own window: live when it's connected, else its newest backup on this computer, as Open a backup does (B5). An open window is brought back rather than opened twice. Opening a phone doesn't change which phone Back up now is for (B8). "Add another iPhone" sits at the end of the list's title line: it says to plug the phone in and tap Trust, then looks for phones. The list reads only files on this computer and writes nothing to any phone.
+
 **Done when**
-- [ ] Two phones show as two cards; each opens its own phone window, even when not connected.
+- [x] Two phones show as two cards; each opens its own phone window, even when not connected. *(16 Nov: two invented phones backed up, none connected: two cards, each opening a window for its own backup (`tests/test_e5_all_phones.py`); [screenshot](../evidence/e5-all-phones/main-window.png) with invented phones, one on the cable.)*
 
 ## E6. Dark mode
 

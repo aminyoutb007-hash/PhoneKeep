@@ -307,6 +307,82 @@ class PhoneCard(tk.Canvas):
             self.create_text(W - 22, 20, text="✓", fill=theme.ON_ACCENT, font=font(11, "bold"))
 
 
+class PhoneTile(tk.Frame):
+    """E5: one phone in the main window's "Your iPhones" list: a small picture of the phone (its saved home screen),
+    its name, model and size, when it was last backed up, a green dot with cable / Wi-Fi while it's connected and
+    the lock badge.
+    `phone` is one of app.phone_summaries(). Click anywhere to open it."""
+
+    PW, PH = 26, 52
+
+    def __init__(self, parent, phone: dict, command: Callable):
+        super().__init__(parent, bg=CARD, highlightthickness=1, highlightbackground=LINE, cursor="hand2")
+        self.phone, self.pic, self.command = phone, None, command
+        art = tk.Canvas(self, width=self.PW, height=self.PH, highlightthickness=0, bd=0, bg=CARD)
+        art.pack(side="left", padx=(10, 8), pady=10)
+        text = tk.Frame(self, bg=CARD)
+        text.pack(side="left", fill="x", expand=True, pady=8, padx=(0, 8))
+        self._draw_phone(art, phone.get("picture"))
+        what = phone["model"]
+        if phone.get("size"):
+            n = phone["size"]
+            what += f" · {n / 1e9:.1f} GB" if n >= 1e9 else f" · {n / 1e6:.0f} MB" if n >= 1e6 else " · under 1 MB"
+        lines = [(phone["name"], INK, font(13, "bold")), (what, MUTED, font(11)),
+                 (self.when(phone.get("last")), MUTED, font(11))]
+        marks = []
+        if phone.get("how"):
+            marks.append(("● Cable" if phone["how"] == "cable" else "● Wi-Fi", GREEN))
+        if phone.get("encrypted") is not None:
+            marks.append(("🔒 Encrypted", GREEN) if phone["encrypted"] else ("⚠ Not encrypted", AMBER))
+        self.lines = []
+        for t, colour, f in lines:
+            self.lines.append(tk.Label(text, text=t, bg=CARD, fg=colour, font=f, anchor="w", justify="left"))
+            self.lines[-1].pack(fill="x")
+        # three cards side by side are narrow: a long name or model wraps instead of being cut off
+        text.bind("<Configure>", lambda e: [w.configure(wraplength=max(80, e.width - 2)) for w in self.lines[:3]], add="+")
+        row = tk.Frame(text, bg=CARD)
+        if marks:
+            row.pack(fill="x")
+        for t, colour in marks:
+            self.lines.append(tk.Label(row, text=t, bg=CARD, fg=colour, font=font(11), anchor="w"))
+            self.lines[-1].pack(side="left", padx=(0, 8))
+        for w in [self, art, text, row] + self.lines:
+            w.bind("<ButtonRelease-1>", lambda e: command())
+            w.bind("<Enter>", lambda e: self.configure(highlightbackground=theme.BORDER_HOVER))
+            w.bind("<Leave>", lambda e: self.configure(highlightbackground=LINE))
+
+    def click(self) -> None:
+        """What a click does (tests: a hidden window gets no pointer events)."""
+        self.command()
+
+    @staticmethod
+    def when(last: Optional[str]) -> str:
+        """'Backed up 5 days ago' from the backup's date ('2026-11-10 22:00'), as the phone card says it."""
+        if not last:
+            return "Not backed up yet"
+        import scheduler
+        try:
+            return "Backed up " + scheduler._ago(dt.datetime.now(), dt.datetime.strptime(last, "%Y-%m-%d %H:%M"))
+        except ValueError:
+            return f"Backed up {last}"
+
+    def texts(self) -> list:
+        return [w.cget("text") for w in self.lines]
+
+    def _draw_phone(self, c: tk.Canvas, picture) -> None:
+        c.create_rectangle(0, 0, self.PW, self.PH, fill=theme.PHONE_BODY, outline=theme.PHONE_BODY)
+        if picture and Image is not None:
+            try:
+                from PIL import ImageOps
+                im = ImageOps.fit(Image.open(picture).convert("RGB"), (self.PW - 4, self.PH - 4))
+                self.pic = ImageTk.PhotoImage(im)
+                c.create_image(2, 2, image=self.pic, anchor="nw")
+                return
+            except Exception:
+                self.pic = None
+        c.create_rectangle(2, 2, self.PW - 2, self.PH - 2, fill=theme.PHONE_SCREEN, outline=theme.PHONE_SCREEN)
+
+
 class ChoiceCard(tk.Canvas):
     """One of the "What do you want to keep?" choices: a soft rounded card with PhoneKeep's drawn icon,
     a title and one line of detail; chosen = green outline, light green fill and a ✓ badge

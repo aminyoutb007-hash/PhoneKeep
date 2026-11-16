@@ -910,7 +910,7 @@ def backup_incomplete(path: Path) -> bool:
 
 
 def backup_info(path: Path) -> dict:
-    info = {"path": str(path), "name": path.name, "date": None, "ios": None, "encrypted": False}
+    info = {"path": str(path), "name": path.name, "date": None, "ios": None, "encrypted": False, "product": None}
     try:
         with open(path / "Info.plist", "rb") as f:
             p = plistlib.load(f)
@@ -918,6 +918,7 @@ def backup_info(path: Path) -> dict:
         d = p.get("Last Backup Date")
         info["date"] = d.strftime("%Y-%m-%d %H:%M") if isinstance(d, dt.datetime) else None
         info["ios"] = p.get("Product Version")
+        info["product"] = p.get("Product Type")
     except Exception:
         pass
     try:
