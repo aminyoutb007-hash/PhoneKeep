@@ -71,13 +71,15 @@ jobs:
       - id: pick
         shell: bash
         run: |
-          # a release tag builds everything; a manual run builds what was ticked
+          # a release tag builds everything; a manual run builds what was ticked.
+          # Apple Silicon is pinned to macos-15 (owner, 16 Nov): GitHub didn't give v5.2.0's build a
+          # "macos-latest" Apple Silicon machine in three tries ("capacity constraints").
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo 'mac=[{"runner":"macos-latest","arch":"AppleSilicon"},{"runner":"macos-15-intel","arch":"Intel"}]' >> "$GITHUB_OUTPUT"
+            echo 'mac=[{"runner":"macos-15","arch":"AppleSilicon"},{"runner":"macos-15-intel","arch":"Intel"}]' >> "$GITHUB_OUTPUT"
             echo "windows=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           mac="[]"
-          [[ "${{ inputs.apple_silicon }}" == "true" ]] && mac='[{"runner":"macos-latest","arch":"AppleSilicon"}]'
+          [[ "${{ inputs.apple_silicon }}" == "true" ]] && mac='[{"runner":"macos-15","arch":"AppleSilicon"}]'
           [[ "${{ inputs.intel }}" == "true" ]] && mac=$(echo "$mac" | sed 's/\]$/,{"runner":"macos-15-intel","arch":"Intel"}]/' | sed 's/^\[,/[/')
           echo "mac=$mac" >> "$GITHUB_OUTPUT"
           echo "windows=${{ inputs.windows }}" >> "$GITHUB_OUTPUT"
