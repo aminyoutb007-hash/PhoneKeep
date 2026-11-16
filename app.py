@@ -1338,10 +1338,11 @@ class App(_dnd_root()):
     def _fit_body(self):
         """The main window's contents fill its width; taller than the window, they scroll (scrollbar shown)."""
         try:
+            # only the width is set: the body keeps its own height, so it hears (<Configure>) every card that comes
+            # or goes and the scroll area follows it (reviewer, #83)
             cw, ch = self.scroller.winfo_width(), self.scroller.winfo_height()
             need = self.body.winfo_reqheight() + 32
-            self.scroller.itemconfigure(self._body_item, width=max(1, cw - 44),
-                                        height=max(self.body.winfo_reqheight(), ch - 32))
+            self.scroller.itemconfigure(self._body_item, width=max(1, cw - 44))
             self.scroller.configure(scrollregion=(0, 0, cw, max(need, ch)))
             if need > ch > 1:
                 if not self.vbar.winfo_ismapped():

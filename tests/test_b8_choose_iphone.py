@@ -92,6 +92,10 @@ try:
     check(a.s["auto_backup_phones"] == [A["UniqueDeviceID"]],
           "on first start, the phones already backed up stay ticked for automatic backups; nothing else is")
     detect()
+    a.deiconify()                               # laid out on screen before anything is measured (Windows: a hidden
+    a.geometry("820x640")                       # window's rows are 1 px high)
+    for _ in range(5):
+        a.update(); time.sleep(0.05)
     rows = getattr(a, "phone_rows", {})
     check(a.udid is None and a.dev_name.cget("text") == "2 iPhones nearby" and not a.open_btn.enabled,
           f"two iPhones and none chosen yet: the card says so and nothing is picked ({a.dev_name.cget('text')!r})")
@@ -124,27 +128,49 @@ try:
     check(a.phone_list.winfo_reqheight() <= 2 * 64 + 40,
           f"the two phones take {a.phone_list.winfo_reqheight()} px (were over 300 as drawn phones)")
     # still taller than a small screen: the window scrolls, and Back up now can be reached
-    a.deiconify()
-    a.geometry("820x640")
-    for _ in range(5):
-        a.update(); time.sleep(0.05)
+    _settle = lambda: [(a.update(), time.sleep(0.05)) for _ in range(5)]
     _vis = lambda: a.go.winfo_rooty() + a.go.winfo_height() <= a.scroller.winfo_rooty() + a.scroller.winfo_height()
     check(a.vbar.winfo_ismapped() and not _vis(),
           "a window too short for it all shows a scrollbar (Back up now is below the fold)")
     a.scroller.yview_moveto(1.0)
     a.update()
     check(_vis(), "scrolled down, Back up now is in view")
-    reach["devs"] = [A]                         # less to show: it fits, so no scrollbar, back at the top
-    detect()
-    a.geometry(f"820x{a.winfo_screenheight() - 100}")
-    for _ in range(5):
-        a.update(); time.sleep(0.05)
-    check(a.body.winfo_reqheight() + 32 > a.scroller.winfo_height() or (not a.vbar.winfo_ismapped() and _vis()
-          and a.scroller.canvasy(0) == 0),
-          f"a window tall enough for everything has no scrollbar and starts at the top (fits here: "
-          f"{a.body.winfo_reqheight() + 32 <= a.scroller.winfo_height()})")
+
+    # the content changes while the window keeps its size (the user's own size wins): the scroll area follows
+    a._fitted = 10 ** 6                         # no growing the window
+    reach["devs"] = [A]
+    detect(); _settle()
+    one = a.body.winfo_reqheight() + 32
     reach["devs"] = [A, B]
-    detect()
+    detect(); _settle()
+    two = a.body.winfo_reqheight() + 32
+    a.geometry(f"820x{a.winfo_height() - a.scroller.winfo_height() + (one + two) // 2}")   # between the two
+    _settle()
+    h = a.scroller.winfo_height()
+    check(one < h < two, f"the window is set between what one phone and two phones need ({one} < {h} < {two})")
+    check(a.vbar.winfo_ismapped() and float(a.scroller.cget("scrollregion").split()[3]) >= two - 1,
+          "two phones: a scrollbar, and the scroll area reaches the end of the content")
+    a.scroller.yview_moveto(1.0); a.update()
+    reach["devs"] = [A]                         # less to show at the same size: it fits now
+    detect(); _settle()
+    check(not a.vbar.winfo_ismapped() and a.scroller.canvasy(0) == 0 and _vis(),
+          "one phone at the same size: the scrollbar goes, back at the top, Back up now in view")
+    reach["devs"] = [A, B]                      # and more again: the scrollbar comes back
+    detect(); _settle()
+    check(a.vbar.winfo_ismapped() and not _vis(), "two phones again: the scrollbar comes back")
+
+    # a long name is cut with "…" and never runs into the connection and battery marks
+    import ui as _ui
+    _long = _ui.PhoneCard(a.phone_list, "A Very Long Invented iPhone Name For Testing The Row Width", "iPhone 17 Pro Max",
+                         "26.5", "cable", lambda: None)
+    _long.pack(fill="x")
+    _long.set_battery({"level": 50, "charging": False})
+    _settle()
+    _items = {_long.itemcget(i, "text"): _long.bbox(i) for i in _long.find_all() if _long.type(i) == "text"}
+    _name = next(t for t in _items if t.startswith("A Very"))
+    check(_name.endswith("…") and _items[_name][2] < _items["Cable"][0],
+          f"a long name is cut ({_name!r}) and stays clear of the cable mark")
+    _long.destroy()
     a.withdraw()
     # a phone on Wi-Fi that dozes: the first read finds nothing, a later one gets its picture, which is kept
     import device as _devmod

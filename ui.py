@@ -296,18 +296,17 @@ class PhoneCard(tk.Canvas):
         start = self._status_row(right, H // 2)
         # name, then model and iOS on the same line, cut with "…" when the window is narrow
         x, room = x0 + PW + 14, start - 16
-        name = self.create_text(x, H // 2, text=self.name, fill=INK, font=font(13, "bold"), anchor="w")
+        name, fb = self.name, tkfont.Font(font=font(13, "bold"))
+        while len(name) > 1 and x + fb.measure(name) > room:          # a long name is cut too (reviewer, #83)
+            name = name[:-2] + "…"
+        item = self.create_text(x, H // 2, text=name, fill=INK, font=font(13, "bold"), anchor="w")
         rest = f"  ·  {self.model}  ·  iOS {self.ios}"
-        x = self.bbox(name)[2]
+        x = self.bbox(item)[2]
         f = tkfont.Font(font=font(11))
         while rest and x + f.measure(rest) > room:
             rest = rest[:-2] + "…" if len(rest) > 2 else ""
         if rest:
             self.create_text(x, H // 2, text=rest, fill=MUTED, font=font(11), anchor="w")
-
-    def texts(self) -> list:
-        """What the row says, in order (for tests)."""
-        return [self.itemcget(i, "text") for i in self.find_all() if self.type(i) == "text"]
 
 
 class PhoneTile(tk.Frame):
