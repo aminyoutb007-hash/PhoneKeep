@@ -98,6 +98,11 @@ pump(lambda: a.udid == UD, 10, "the stand-in phone")
 check(a.udid == UD, "the main window sees the stand-in phone")
 
 check("close_window" in str(a.protocol("WM_DELETE_WINDOW")), "the window's close button is close_window")
+if sys.platform != "darwin":
+    filem = a.menubar.nametowidget(a.menubar.entrycget(0, "menu"))
+    quit_cmd = [str(filem.entrycget(i, "command")) for i in range(filem.index("end") + 1)
+                if filem.type(i) == "command" and filem.entrycget(i, "label") == "Quit"]
+    check(quit_cmd and "quit_app" in quit_cmd[0], f"File → Quit goes through quit_app, so it asks during a backup ({quit_cmd})")
 
 # nothing running: the close button quits, as before
 a.close_window()
@@ -114,7 +119,8 @@ pump(lambda: a.steps["copy"].state == "active" and wv.backup_running(), 20, "cop
 check(a.prog_after.cget("text") == appmod.CLOSE_OK, f"a backup says {a.prog_after.cget('text')!r}")
 a.close_window()
 a.update()
-check(a._window_away() and not quits, f"closing the window while it backs up hides it ({a.state()}) and doesn't quit")
+check(a._window_away() and not quits and (a.state() == "withdrawn" if sys.platform == "darwin" else True),
+      f"closing the window while it backs up hides it ({a.state()}) and doesn't quit")
 settle(1.5)
 check(a.busy and wv.backup_running(), "  the backup carries on with the window closed")
 
@@ -144,6 +150,24 @@ a.passcode_notice(None)
 a.close_window()
 a.update()
 
+# a password question while it's away (here: the backup password isn't in the keychain): the same
+import threading
+import ui as uimod
+real_ask_pw, real_will, real_get = uimod.ask_password, wv.backup_will_encrypt, keychain.get_password
+pw_asked = []
+uimod.ask_password = lambda parent, mode, name, *more: (pw_asked.append((mode, name, a._window_away())), "test-password")[1]
+wv.backup_will_encrypt = lambda udid: True
+keychain.get_password = lambda key: None
+notes.clear()
+t = threading.Thread(target=a.ensure_encryption, daemon=True)
+t.start()
+pump(lambda: not t.is_alive(), 10, "the password question")
+uimod.ask_password, wv.backup_will_encrypt, keychain.get_password = real_ask_pw, real_will, real_get
+check(pw_asked == [("enter", "Test iPhone", False)] and notes == [("PhoneKeep needs you", "Type your backup password to carry on.")],
+      f"a password question brings the window back first, with a notification ({pw_asked}, {notes})")
+a.close_window()
+a.update()
+
 # it doesn't finish (stopped here as a stand-in for a lost connection): a notification says why, the window comes back
 notes.clear()
 wv.cancel_backup()
@@ -162,12 +186,15 @@ wv.make_backup = lambda *x, **k: (time.sleep(1.5), made)[1]
 a._export = lambda path: None
 
 
-def finished_run(other_window=False):
+def finished_run(other_window=False, minimised=False):
     notes.clear()
     quits.clear()
     a.backup_and_export()
     pump(lambda: a.prog.winfo_manager(), 10, "the card")
     extra = appmod.tk.Toplevel(a) if other_window else None
+    if extra is not None and minimised:
+        extra.update()
+        extra.iconify()
     a.close_window()
     pump(lambda: not a.busy, 20, "the stand-in backup to finish")
     settle(1.5)
@@ -186,6 +213,9 @@ a._come_back()
 n, q = finished_run(other_window=True)
 check(n == [("Backup finished", "Test iPhone is backed up.")] and not q,
       "  with another PhoneKeep window open, it notifies but doesn't quit")
+a._come_back()
+n, q = finished_run(other_window=True, minimised=True)
+check(n and not q, "  also when that window is minimised")
 a._come_back()
 
 # the window brought back before the end: nothing extra happens

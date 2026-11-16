@@ -631,7 +631,6 @@ class App(_dnd_root()):
         box, ev = {}, threading.Event()
 
         def ask():
-            self._need_user("PhoneKeep needs you", prompt.splitlines()[0])
             box["v"] = simpledialog.askstring(wv.APP_NAME, prompt, show="•", parent=self)
             ev.set()
         self.call(ask)
@@ -839,10 +838,13 @@ class App(_dnd_root()):
         return self.busy and bool(self.prog.winfo_manager()) and getattr(self, "_card_for", (None,))[0] is STEPS
 
     def _window_away(self) -> bool:
-        try:
-            return self.state() in ("withdrawn", "iconic")
-        except tk.TclError:
-            return False
+        """The window was closed while backing up and hasn't come back. PhoneKeep's own flag, not the window's
+        state: without a window manager (or with one that ignores minimising) the state stays "normal"."""
+        return getattr(self, "_away", False)
+
+    def _mapped(self, e):
+        if e.widget is self:            # the window itself is back on the screen (Dock click, taskbar)
+            self._away = False
 
     def close_window(self):
         """The window's close button. While a backup runs the window goes away and the backup carries on
@@ -852,6 +854,7 @@ class App(_dnd_root()):
             self.quit_app()
             return
         self._closed_while_busy = True
+        self._away = True
         self.log("The window was closed; the backup carries on.")
         if sys.platform == "darwin":
             self.withdraw()
@@ -864,6 +867,7 @@ class App(_dnd_root()):
         helper_ui.notify_system(title, text)
 
     def _come_back(self):
+        self._away = False
         try:
             self.deiconify()
             self.lift()
@@ -890,12 +894,13 @@ class App(_dnd_root()):
         if sys.platform == "win32":
             self._come_back()     # the main window can't show a Windows notification yet, so it comes back instead
             return
-        others = [w for w in self.winfo_children() if isinstance(w, tk.Toplevel) and w.winfo_viewable()]
+        others = [w for w in self.winfo_children() if isinstance(w, tk.Toplevel) and w.state() != "withdrawn"]   # minimised counts
         if not others:
             self.after(1000, self.quit_app)
 
     def show_all_windows(self):
         """Bring back every PhoneKeep window (minimised, hidden behind other apps or off the screen)."""
+        self._away = False
         wins = [self] + [w for w in self.winfo_children() if isinstance(w, tk.Toplevel)]
         for w in wins:
             try:
@@ -921,6 +926,7 @@ class App(_dnd_root()):
             # a click on the Dock icon brings PhoneKeep's windows back, even minimised or behind others
             self.createcommand("tk::mac::ReopenApplication", self.show_all_windows)
         self.protocol("WM_DELETE_WINDOW", self.close_window)
+        self.bind("<Map>", self._mapped, add="+")
         bar = tk.Menu(self)
         filem = tk.Menu(bar, tearoff=0)
         filem.add_command(label="Open backup…", command=self.open_backup_dialog, accelerator="Cmd+O" if sys.platform == "darwin" else "Ctrl+O")
@@ -929,7 +935,7 @@ class App(_dnd_root()):
         filem.add_command(label="Settings…", command=self.open_settings)
         if sys.platform != "darwin":
             filem.add_separator()
-            filem.add_command(label="Quit", command=self.destroy)
+            filem.add_command(label="Quit", command=self.quit_app)
         bar.add_cascade(label="File", menu=filem)
         helpm = tk.Menu(bar, tearoff=0)
         helpm.add_command(label=f"About {wv.APP_NAME}", command=self.open_about)
@@ -1832,13 +1838,18 @@ class App(_dnd_root()):
         ev.wait()
         return box.get("v")
 
+    def _ask_password(self, kind, name, *more):
+        """ui.ask_password, bringing the window back first if it was closed while backing up (B9)."""
+        self._need_user("PhoneKeep needs you", "Type your backup password to carry on.")
+        return ui.ask_password(self, kind, name, *more)
+
     def password_for(self, path: Path, phone_name: str) -> str | None:
         """The password for an encrypted backup: silently from the keychain, otherwise asked once and offered
         to the keychain. Never logged."""
         pw = wv.password_for_backup(path)
         if pw:
             return pw
-        pw = self._on_ui(lambda: ui.ask_password(self, "enter", phone_name, wv.RESET_PASSWORD_HELP))
+        pw = self._on_ui(lambda: self._ask_password("enter", phone_name, wv.RESET_PASSWORD_HELP))
         if pw:
             keychain.set_password(Path(path).name, pw)
         return pw
@@ -1856,12 +1867,12 @@ class App(_dnd_root()):
             return
         if on:
             if not keychain.get_password(self.udid):
-                pw = self._on_ui(lambda: ui.ask_password(self, "enter", name, wv.RESET_PASSWORD_HELP))
+                pw = self._on_ui(lambda: self._ask_password("enter", name, wv.RESET_PASSWORD_HELP))
                 if pw:
                     keychain.set_password(self.udid, pw)
                     self.log("Backup password saved to the keychain.")
             return
-        pw = self._on_ui(lambda: ui.ask_password(self, "choose", name))
+        pw = self._on_ui(lambda: self._ask_password("choose", name))
         if not pw:
             raise wv.PhoneKeepError("Backups are encrypted by default. Choose a backup password to continue.")
         self.log("Turning on backup encryption. Your iPhone may ask for its passcode.")
