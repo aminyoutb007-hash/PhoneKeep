@@ -128,7 +128,7 @@ elif args[0] == "--pk-backup":
 ''')
 wv._launcher_cmd = lambda: [sys.executable, str(stub)]
 wv.check_pmd3 = lambda: None
-PHONE = {"DeviceName": "Amin's iPhone", "UniqueDeviceID": UD, "ConnectionType": "WiFi", "ProductVersion": "26.1"}
+PHONE = {"DeviceName": "Sam's iPhone", "UniqueDeviceID": UD, "ConnectionType": "WiFi", "ProductVersion": "26.1"}
 reach = {"on": False}
 wv.list_devices = lambda: [PHONE] if reach["on"] else []
 hc.SETTINGS_FILE.write_text(json.dumps({"auto_backup": "daily", "auto_backup_hour": 21, "backup_dir": str(W / "Backups")}))

@@ -123,10 +123,10 @@ elif os.name == "nt":
     gone = Path("Q:\\PhoneKeep")
     check(loc.drive_name(gone) == "Q:" and not loc.is_available(gone), "Windows: missing drive letter detected")
 else:
-    gone = Path("/media/amin/Backup Drive/PhoneKeep")
+    gone = Path("/media/sam/Backup Drive/PhoneKeep")
     check(loc.drive_name(gone) == "Backup Drive" and not loc.is_available(gone), "Linux: unplugged media detected")
 check(loc.connect_message(gone).startswith("Connect ") and loc.connect_message(gone).endswith(" to back up."), f"wording: {loc.connect_message(gone)!r}")
-wv.list_devices = lambda: [{"DeviceName": "Amin's iPhone", "UniqueDeviceID": UD, "ConnectionType": "USB"}]
+wv.list_devices = lambda: [{"DeviceName": "Sam's iPhone", "UniqueDeviceID": UD, "ConnectionType": "USB"}]
 wv.check_pmd3 = lambda: None
 try:
     wv.make_backup(gone, UD, log=lambda m: None)
@@ -148,7 +148,7 @@ hc.LOCK_FILE = W / "helper.lock"
 notes = []
 h = hc.Helper(notify=lambda t, m: notes.append((t, m)), backup_dir=gone)
 h.devices = wv.list_devices()
-h._backup(UD, "Amin's iPhone")
+h._backup(UD, "Sam's iPhone")
 check(not notes and h.last_error == loc.connect_message(gone), f"helper: no notification, the menu line says {h.last_error!r}")
 check(not gone.exists() and not Path(*gone.parts[:3]).exists(), "nothing was created on the unplugged drive's path")
 

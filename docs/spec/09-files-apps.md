@@ -8,7 +8,7 @@
 
 **Writes to the phone.**
 
-**What the user sees and does:** drag files from the computer onto an app in the App Files screen (or onto the menu bar icon, then pick the app). A confirmation "Copy 3 files (48 MB) to VLC on Amin's iPhone?" → progress → "Copied. Open VLC on your iPhone to see them."
+**What the user sees and does:** drag files from the computer onto an app in the App Files screen (or onto the menu bar icon, then pick the app). A confirmation "Copy 3 files (48 MB) to VLC on Sam's iPhone?" → progress → "Copied. Open VLC on your iPhone to see them."
 
 **Done when**
 - [ ] Files dropped on VLC and Files appear in those apps on the phone.

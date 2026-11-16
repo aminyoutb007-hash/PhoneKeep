@@ -17,7 +17,7 @@ E = wv.APPLE_EPOCH
 t0 = dt.datetime(2025, 6, 1, 10, 0).timestamp() - E
 
 with open(root / "Info.plist", "wb") as f:
-    plistlib.dump({"Device Name": "Amine's iPhone", "Product Type": "iPhone16,2", "Product Version": "26.1",
+    plistlib.dump({"Device Name": "Test iPhone", "Product Type": "iPhone16,2", "Product Version": "26.1",
                    "Last Backup Date": dt.datetime(2026, 11, 10, 22, 0), "Phone Number": "+44 7700 900000",
                    "Installed Applications": ["net.whatsapp.WhatsApp", "com.spotify.client"]}, f)
 with open(root / "Manifest.plist", "wb") as f:
@@ -55,12 +55,12 @@ CREATE TABLE ABPerson(ROWID INTEGER PRIMARY KEY, First, Last, Middle, Organizati
 CREATE TABLE ABMultiValue(UID INTEGER PRIMARY KEY, record_id, property, identifier, label, value);
 CREATE TABLE ABMultiValueLabel(ROWID INTEGER PRIMARY KEY, value);""", [
     ("INSERT INTO ABPerson VALUES (?,?,?,?,?,?,?,?,?)",
-     [(1, "Sara", "Fathi", None, None, None, None, "Sister", str((dt.datetime(1995, 4, 12) - dt.datetime(2001, 1, 1)).total_seconds())),
+     [(1, "Alex", "Example", None, None, None, None, "Friend", str((dt.datetime(1990, 1, 1) - dt.datetime(2001, 1, 1)).total_seconds())),
       (2, "Karim", "B", None, "Acme Ltd", None, "CTO", None, None),
       (3, None, None, None, "Dentist, Smile & Co", None, None, None, None)]),
     ("INSERT INTO ABMultiValueLabel VALUES (?,?)", [(1, "_$!<Mobile>!$_"), (2, "_$!<Work>!$_")]),
     ("INSERT INTO ABMultiValue(record_id,property,label,value) VALUES (?,?,?,?)",
-     [(1, 3, 1, "+44 7700 900123"), (1, 4, 2, "sara@example.com"), (2, 3, 1, "07700 900456"),
+     [(1, 3, 1, "+44 7700 900123"), (1, 4, 2, "alex@example.com"), (2, 3, 1, "07700 900456"),
       (3, 3, 2, "020 7946 0000")])]))
 
 # Messages
@@ -115,7 +115,7 @@ CREATE TABLE ZCALLRECORD(Z_PK INTEGER PRIMARY KEY, ZADDRESS, ZDATE, ZDURATION, Z
     ("INSERT INTO ZCALLRECORD VALUES (?,?,?,?,?,?,?,?,?,?)", [
         (1, b"+447700900123", t0, 125.4, 1, 1, "com.apple.Telephony", None, 1, "United Kingdom"),
         (2, "+447700900456", t0 + 900, 0, 0, 0, "com.apple.Telephony", None, 1, None),
-        (3, "sara@example.com", t0 + 1800, 3700, 0, 1, "com.apple.FaceTime", None, 8, None)])]))
+        (3, "alex@example.com", t0 + 1800, 3700, 0, 1, "com.apple.FaceTime", None, 8, None)])]))
 
 # Notes (gzipped protobuf: 2 -> 3 -> 2 = text)
 def pb_len(field, payload: bytes) -> bytes:
@@ -144,11 +144,11 @@ CREATE TABLE CalendarItem(ROWID INTEGER PRIMARY KEY, summary, start_date, end_da
  description, calendar_id, unique_identifier);
 CREATE TABLE Location(ROWID INTEGER PRIMARY KEY, title);
 CREATE TABLE Calendar(ROWID INTEGER PRIMARY KEY, title);""", [
-    ("INSERT INTO Location VALUES (?,?)", [(1, "Cheshunt, UK")]),
+    ("INSERT INTO Location VALUES (?,?)", [(1, "Exampleton, UK")]),
     ("INSERT INTO Calendar VALUES (?,?)", [(1, "Home")]),
     ("INSERT INTO CalendarItem VALUES (?,?,?,?,?,?,?,?,?)", [
         (1, "Dentist, check-up", t0 + 86400 * 3, t0 + 86400 * 3 + 1800, 0, 1, "Bring card; arrive early", 1, "UID-1"),
-        (2, "Sara's birthday", t0 + 86400 * 10, t0 + 86400 * 11, 1, None, None, 1, "UID-2")])]))
+        (2, "Alex's birthday", t0 + 86400 * 10, t0 + 86400 * 11, 1, None, None, 1, "UID-2")])]))
 
 # Voicemail
 add(sx.HOME, "Library/Voicemail/voicemail.db", db("""

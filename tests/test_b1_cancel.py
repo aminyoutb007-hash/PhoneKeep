@@ -67,7 +67,7 @@ wv.check_pmd3 = lambda: None
 wv.phone_used_bytes = lambda udid: 1_000_000
 UD = "00008030-CANCEL"
 keychain.set_password(UD, "test-password")      # the window's pre-backup check finds the password
-wv.list_devices = lambda: [{"DeviceName": "Amin's iPhone", "UniqueDeviceID": UD, "ConnectionType": "USB"}]
+wv.list_devices = lambda: [{"DeviceName": "Sam's iPhone", "UniqueDeviceID": UD, "ConnectionType": "USB"}]
 root = W / "Backups"
 
 # -- the engine ----------------------------------------------------------------------------------------

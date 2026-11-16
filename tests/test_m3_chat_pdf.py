@@ -92,7 +92,7 @@ t0 = dt.datetime(2025, 1, 1, 8, 0)
 msgs = []
 for i in range(2000):
     m = {"time": (t0 + dt.timedelta(minutes=137 * i)).isoformat(), "from_me": i % 3 == 0,
-         "sender": ("Karim", "Salma", "Yassine")[i % 3], "type": "text", "text": texts[i % len(texts)]}
+         "sender": ("Karim", "Lina", "Tom")[i % 3], "type": "text", "text": texts[i % len(texts)]}
     if i % 10 == 5:
         m.update(type="image", text="", media=f"media/p{i % 20}.jpg", caption="La vue 🌅" if i % 4 == 1 else "")
     elif i % 37 == 7:
@@ -100,7 +100,7 @@ for i in range(2000):
     elif i % 53 == 9:
         m.update(type="video", text="", media="media/clip.mp4")
     msgs.append(m)
-msgs.insert(3, {"type": "system", "text": "Salma added Karim", "time": msgs[2]["time"]})
+msgs.insert(3, {"type": "system", "text": "Lina added Karim", "time": msgs[2]["time"]})
 big = {"name": "Famille 🏡 العائلة", "group": True, "messages": msgs}
 n_photos = sum(1 for m in msgs if m.get("type") == "image")
 start = time.time()

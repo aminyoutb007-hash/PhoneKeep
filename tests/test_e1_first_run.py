@@ -71,7 +71,7 @@ elif args[0] == "--pk-backup":
 ''')
 wv._launcher_cmd = lambda: [sys.executable, str(stub)]
 wv.check_pmd3 = lambda: None
-PHONE = {"DeviceName": "Amin's iPhone", "UniqueDeviceID": "00008030-E1TEST", "ConnectionType": "USB", "ProductVersion": "26.1"}
+PHONE = {"DeviceName": "Sam's iPhone", "UniqueDeviceID": "00008030-E1TEST", "ConnectionType": "USB", "ProductVersion": "26.1"}
 state = {"mode": "none"}   # none | untrusted | trusted
 
 

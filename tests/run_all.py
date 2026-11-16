@@ -43,6 +43,7 @@ STEPS = [
     ("C1: photo clean-up: six cards, keepers, saving checked by checksum, 10,000 photos", "test_c1_cleanup.py", True),
     ("Build: the Mac build script puts build_label.py back with git", "test_build_label.py", False),
     ("Licence: GPL-3.0-or-later; the built app carries LICENSE and THIRD_PARTY_NOTICES.md", "test_licence.py", False),
+    ("No real names: the owner's surname and first name are in no tracked file (checked by hash)", "test_no_owner_names.py", False),
     ("Theme: Direction A colours from theme.py only; buttons and selected rows", "test_theme.py", False),
     ("Mac window tabs: every window is made with tabs off (5.1.2)", "test_mac_tabs.py", False),
     ("Reconnect: the iPhone unplugged and plugged back in (5.1.3)", "test_reconnect.py", True),

@@ -18,7 +18,7 @@ These add to [01-principles.md](01-principles.md); they never relax it.
 
 A **Why is my phone slow?** button gives one plain answer drawn from all four cards, most likely cause first ("Your storage is 96% full and your battery is at 78%. Both slow an iPhone down. Start with Storage").
 
-The check-up runs by itself after every backup (it reads data the backup already collected, so it adds no waiting). When a card turns red, the menu bar helper (E2) shows a small dot and one notification ("Amin's iPhone: storage almost full"), at most once per problem.
+The check-up runs by itself after every backup (it reads data the backup already collected, so it adds no waiting). When a card turns red, the menu bar helper (E2) shows a small dot and one notification ("Sam's iPhone: storage almost full"), at most once per problem.
 
 **Requirements**
 - Thresholds (tunable in one table in the code, not scattered):
@@ -157,7 +157,7 @@ A summary follows: "Saved 1,212 items to your archive. Freed 8.4 GB."
 
 **Start with a spike.** Apple gives computers only a limited way to delete photos: its own Image Capture app can delete photos from an iPhone when **iCloud Photos is off**. Before building, the developer tests whether PhoneKeep can use the same route safely (the photo disappears cleanly from the Photos app, with no blank thumbnails, and Live Photos and edits go together), and reports back. C2 is built only after the owner agrees on the result.
 
-**What the user sees and does (if the spike succeeds):** after **Save to computer and remove**, a confirmation: "Remove 412 items (8.4 GB) from Amin's iPhone? They are saved in your archive. They go to Recently Deleted on the iPhone if it supports that; otherwise they are removed straight away." **Remove** / **Cancel**.
+**What the user sees and does (if the spike succeeds):** after **Save to computer and remove**, a confirmation: "Remove 412 items (8.4 GB) from Sam's iPhone? They are saved in your archive. They go to Recently Deleted on the iPhone if it supports that; otherwise they are removed straight away." **Remove** / **Cancel**.
 
 **When iCloud Photos is on, or the route isn't safe:** PhoneKeep doesn't delete. It shows the steps instead, matched to the card: Duplicates → "Photos → Utilities → Duplicates → Merge"; Screenshots → "Photos → Media Types → Screenshots"; and for everything else a list of dates to find them. It warns clearly that with iCloud Photos on, deleting on the phone also deletes from iCloud and every other device.
 

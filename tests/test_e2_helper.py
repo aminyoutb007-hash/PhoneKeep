@@ -65,7 +65,7 @@ elif args[0] == "--pk-backup":
 real_launcher_cmd = wv._launcher_cmd
 wv._launcher_cmd = lambda: [sys.executable, str(stub)]
 wv.check_pmd3 = lambda: None
-PHONE = {"DeviceName": "Amin's iPhone", "UniqueDeviceID": "00008030-E2TEST", "ConnectionType": "WiFi", "ProductVersion": "26.1"}
+PHONE = {"DeviceName": "Sam's iPhone", "UniqueDeviceID": "00008030-E2TEST", "ConnectionType": "WiFi", "ProductVersion": "26.1"}
 wv.list_devices = lambda: [PHONE]
 
 # -- the helper with no window open ----------------------------------------------------------------------
@@ -86,10 +86,10 @@ import snapshots as _sn
 check(_sn.has_backup(W / "Backups", "00008030-E2TEST"), "a backup was made (as a snapshot)")
 rings = [p for p in changes if p is not None]
 check(rings and max(rings) == 100 and min(rings) >= 0, f"the icon's progress ring moved: {sorted(set(int(r) for r in rings))}")
-check(notes and notes[-1][0] == "iPhone backed up" and notes[-1][1].startswith("Amin's iPhone · ") and "min · " in notes[-1][1]
+check(notes and notes[-1][0] == "iPhone backed up" and notes[-1][1].startswith("Sam's iPhone · ") and "min · " in notes[-1][1]
       and "of changes" in notes[-1][1], f"notification: {notes[-1]}")
 line = h.status_lines()[0]
-check(line.startswith("Amin's iPhone · backed up just now") and "connected by Wi-Fi" in line, f"status after: {line!r}")
+check(line.startswith("Sam's iPhone · backed up just now") and "connected by Wi-Fi" in line, f"status after: {line!r}")
 check("🔒" in hc.Helper(lambda *a: None, backup_dir=HERE / "work" / "nowhere").status_lines()[0] or True, "lock badge shown for encrypted backups (fake backup here is unencrypted)")
 health = json.loads((W / "Backups" / "00008030-E2TEST" / "health.json").read_text(encoding="utf-8"))
 check(health.get("last_ok") and health.get("failed_days") == [], "backup health recorded for B2")
