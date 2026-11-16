@@ -43,6 +43,10 @@ PRESETS = {
                    list(sx.DEFAULT_SECTIONS)),
     "custom": ("⚙", "Custom", "Pick exactly what to include", None),
 }
+KEEP_OPEN = "Keep PhoneKeep open until it's done."
+# B9 (5.3): a backup carries on with the window closed
+CLOSE_OK = ("You can close this window: it waits in the taskbar and comes back when it's done." if sys.platform == "win32"
+            else "You can close this window. You'll get a notification when it's done.")
 # L2: the steps are the phases a backup can tell apart (it can't tell chats from photos while it copies)
 STEPS = [("ready", "Get the iPhone ready"), ("copy", "Copy from the iPhone"), ("snapshot", "Save it as a snapshot"),
          ("choose", "Choose chats & photos"), ("build", "Build your archive")]
@@ -528,7 +532,8 @@ class App(_dnd_root()):
                  font=font(13), anchor="w").pack(side="left")
         # Cancel is always available for a long job (01-principles.md, 6); shown only while a backup runs
         self.cancel_btn = ui.RoundButton(foot, "Cancel backup", self.cancel_backup, "secondary", 150, 40, 14, bg=CARD)
-        tk.Label(self.prog, text="Keep PhoneKeep open until it's done.", bg=BG, fg=MUTED, font=font(12)).pack(pady=(10, 0))
+        self.prog_after = tk.Label(self.prog, text=KEEP_OPEN, bg=BG, fg=MUTED, font=font(12))
+        self.prog_after.pack(pady=(10, 0))
 
         # done
         self.done = ui.card(self.body)
@@ -678,6 +683,8 @@ class App(_dnd_root()):
             self.log("Cancelling the export…")
 
     def _finish(self, result, err, done, quiet, fn=None):
+        closed = getattr(self, "_closed_while_busy", False) and self._window_away()    # B9
+        self._closed_while_busy = False
         self.busy = False
         self.go.set_enabled(True)
         self.cancel_btn.pack_forget()
@@ -696,6 +703,8 @@ class App(_dnd_root()):
             self.hide_problem()
         if done:
             done(None if err is not None else result)
+        if closed:
+            self._after_closed_job(err)
 
     def _retry(self, fn, done, card):
         """The banner's Try again (or Back up now after a cancel): the same job, with its progress card back if it
@@ -727,8 +736,9 @@ class App(_dnd_root()):
                     self.hide_problem()
             return
         self._passcode_up = True
+        what = text.split(":", 1)[1].strip() if text.startswith("Look at your iPhone:") else text
+        self._need_user("Look at your iPhone", what[:1].upper() + what[1:])    # B9: the window was closed while backing up
         if self.prog.winfo_manager():                     # L2: in the progress card
-            what = text.split(":", 1)[1].strip() if text.startswith("Look at your iPhone:") else text
             self.attn_text.configure(text=what[:1].upper() + what[1:])
             self.attn.pack(fill="x", pady=(14, 0), before=self.steps_box)
         else:
@@ -806,14 +816,95 @@ class App(_dnd_root()):
     def quit_app(self):
         """Quit from the menu (Cmd+Q), the red button or the Dock: close every window and end the process.
         Background threads (phone readers, a helper being watched) must never keep a windowless PhoneKeep
-        alive — macOS would then 'open' the invisible one instead of starting the app (found 12 Nov)."""
+        alive — macOS would then 'open' the invisible one instead of starting the app (found 12 Nov).
+        B9: while a backup runs, quitting asks first, and stops the backup if the answer is yes."""
+        if self._backing_up():
+            self._come_back()
+            if not messagebox.askokcancel(
+                    "Stop the backup and quit?",
+                    "A backup is running. If you quit now, it stops; the next backup carries on from where it "
+                    "stopped.\n\nTo let it finish, close the window instead: PhoneKeep tells you when it's done.",
+                    icon="warning", parent=self):
+                return
+            wv.cancel_backup()
         try:
             self.destroy()
         finally:
             os._exit(0)
 
+    # ------------------------------------------------------------------ B9: closing the window while a backup runs
+    def _backing_up(self) -> bool:
+        """A backup (with its progress card) is running: the job closing the window lets carry on."""
+        return self.busy and bool(self.prog.winfo_manager()) and getattr(self, "_card_for", (None,))[0] is STEPS
+
+    def _window_away(self) -> bool:
+        """The window was closed while backing up and hasn't come back. PhoneKeep's own flag, not the window's
+        state: without a window manager (or with one that ignores minimising) the state stays "normal"."""
+        return getattr(self, "_away", False)
+
+    def _mapped(self, e):
+        if e.widget is self:            # the window itself is back on the screen (Dock click, taskbar)
+            self._away = False
+
+    def close_window(self):
+        """The window's close button. While a backup runs the window goes away and the backup carries on
+        (Mac: the Dock icon brings it back; Windows and Linux: it waits in the taskbar). Otherwise PhoneKeep
+        quits, as before."""
+        try:
+            self.update()               # window events still queued from before (e.g. it just came back) go first
+        except tk.TclError:
+            pass
+        if not self._backing_up():      # checked after that: the backup may have ended inside it
+            self.quit_app()
+            return
+        self._closed_while_busy = True
+        self._away = True
+        self.log("The window was closed; the backup carries on.")
+        if sys.platform == "darwin":
+            self.withdraw()
+        else:
+            self.iconify()
+
+    def notify(self, title: str, text: str) -> None:
+        """The computer's own notification (local only, S3)."""
+        import helper_ui
+        helper_ui.notify_system(title, text)
+
+    def _come_back(self):
+        self._away = False
+        try:
+            self.deiconify()
+            self.lift()
+            self.focus_force()
+        except tk.TclError:
+            pass
+
+    def _need_user(self, title: str, text: str):
+        """The backup carrying on with the window closed needs the user: say so and bring the window back."""
+        if getattr(self, "_closed_while_busy", False) and self._window_away():
+            self.notify(title, text)
+            self._come_back()
+
+    def _after_closed_job(self, err):
+        """The backup that carried on with the window closed has ended: a notification says how. Done: PhoneKeep
+        quits, as the closed window asked (unless another PhoneKeep window is open). Not done: the window
+        comes back with the problem and its button."""
+        name = (self.device or {}).get("DeviceName") or "Your iPhone"
+        if err is not None:
+            self.notify("Backup didn't finish", self.problem_of(err).message)
+            self._come_back()
+            return
+        self.notify("Backup finished", f"{name} is backed up.")
+        if sys.platform == "win32":
+            self._come_back()     # the main window can't show a Windows notification yet, so it comes back instead
+            return
+        others = [w for w in self.winfo_children() if isinstance(w, tk.Toplevel) and w.state() != "withdrawn"]   # minimised counts
+        if not others:
+            self.after(1000, self.quit_app)
+
     def show_all_windows(self):
         """Bring back every PhoneKeep window (minimised, hidden behind other apps or off the screen)."""
+        self._away = False
         wins = [self] + [w for w in self.winfo_children() if isinstance(w, tk.Toplevel)]
         for w in wins:
             try:
@@ -838,7 +929,8 @@ class App(_dnd_root()):
             self.createcommand("tk::mac::Quit", self.quit_app)
             # a click on the Dock icon brings PhoneKeep's windows back, even minimised or behind others
             self.createcommand("tk::mac::ReopenApplication", self.show_all_windows)
-        self.protocol("WM_DELETE_WINDOW", self.quit_app)
+        self.protocol("WM_DELETE_WINDOW", self.close_window)
+        self.bind("<Map>", self._mapped, add="+")
         bar = tk.Menu(self)
         filem = tk.Menu(bar, tearoff=0)
         filem.add_command(label="Open backup…", command=self.open_backup_dialog, accelerator="Cmd+O" if sys.platform == "darwin" else "Ctrl+O")
@@ -847,7 +939,7 @@ class App(_dnd_root()):
         filem.add_command(label="Settings…", command=self.open_settings)
         if sys.platform != "darwin":
             filem.add_separator()
-            filem.add_command(label="Quit", command=self.destroy)
+            filem.add_command(label="Quit", command=self.quit_app)
         bar.add_cascade(label="File", menu=filem)
         helpm = tk.Menu(bar, tearoff=0)
         helpm.add_command(label=f"About {wv.APP_NAME}", command=self.open_about)
@@ -1271,6 +1363,7 @@ class App(_dnd_root()):
 
         def show():
             self.steps["choose"].set("active", detail="Waiting for you: choose the chats to export…")
+            self._need_user("Your backup is done", "Choose the chats to keep.")
             p = ui.ChatPicker(self, lists, preview)
             self.wait_window(p)
             box["v"] = p.result
@@ -1292,6 +1385,7 @@ class App(_dnd_root()):
 
         def show():
             self.steps["choose"].set("active", detail="Waiting for you: choose the photos to keep…")
+            self._need_user("Your backup is done", "Choose the photos to keep.")
             p = ui.PhotoPicker(self, source, items, unlock=lambda go: self.confirm_private(go, "show your hidden photos"))
             self.wait_window(p)
             box["v"] = p.result
@@ -1512,6 +1606,7 @@ class App(_dnd_root()):
         self._card_for = (rows, kicker)          # a retry from the banner brings back the same card
         d = self.device or {}
         self.prog_kicker.configure(text=kicker)
+        self.prog_after.configure(text=CLOSE_OK if rows is STEPS else KEEP_OPEN)     # B9: only a backup carries on
         self.prog_name.configure(text=d.get("DeviceName") or ("Your iPhone" if rows is not EXPORT_STEPS else "Your backup"))
         self.prog_line.configure(text=self.dev_line.cget("text") if d else "")
         self.prog_phone.set_picture(self.phone.picture)
@@ -1747,13 +1842,18 @@ class App(_dnd_root()):
         ev.wait()
         return box.get("v")
 
+    def _ask_password(self, kind, name, *more):
+        """ui.ask_password, bringing the window back first if it was closed while backing up (B9)."""
+        self._need_user("PhoneKeep needs you", "Type your backup password to carry on.")
+        return ui.ask_password(self, kind, name, *more)
+
     def password_for(self, path: Path, phone_name: str) -> str | None:
         """The password for an encrypted backup: silently from the keychain, otherwise asked once and offered
         to the keychain. Never logged."""
         pw = wv.password_for_backup(path)
         if pw:
             return pw
-        pw = self._on_ui(lambda: ui.ask_password(self, "enter", phone_name, wv.RESET_PASSWORD_HELP))
+        pw = self._on_ui(lambda: self._ask_password("enter", phone_name, wv.RESET_PASSWORD_HELP))
         if pw:
             keychain.set_password(Path(path).name, pw)
         return pw
@@ -1771,12 +1871,12 @@ class App(_dnd_root()):
             return
         if on:
             if not keychain.get_password(self.udid):
-                pw = self._on_ui(lambda: ui.ask_password(self, "enter", name, wv.RESET_PASSWORD_HELP))
+                pw = self._on_ui(lambda: self._ask_password("enter", name, wv.RESET_PASSWORD_HELP))
                 if pw:
                     keychain.set_password(self.udid, pw)
                     self.log("Backup password saved to the keychain.")
             return
-        pw = self._on_ui(lambda: ui.ask_password(self, "choose", name))
+        pw = self._on_ui(lambda: self._ask_password("choose", name))
         if not pw:
             raise wv.PhoneKeepError("Backups are encrypted by default. Choose a backup password to continue.")
         self.log("Turning on backup encryption. Your iPhone may ask for its passcode.")
