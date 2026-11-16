@@ -1919,29 +1919,71 @@ class OpenBackupDialog(tk.Toplevel):
             self.app.open_backup(Path(d))
 
 
+SETTINGS_GROUPS = ["Backups", "Automatic backups", "Security", "Saving", "Activity", "About"]
+
+
+def activity_summary(n: int = 5) -> str:
+    """The last few lines of the activity record (S7), newest first, in plain words."""
+    try:
+        rows = phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()[-n:]
+    except (OSError, ValueError):            # unreadable or not UTF-8: Settings still opens
+        rows = []
+    out = []
+    for r in reversed(rows):
+        try:
+            d = json.loads(r)
+            out.append(f"{d.get('when', '')[:16].replace('T', ' ')}  {d.get('summary', '')}"
+                       + (f" ({d['phone']})" if d.get("phone") else ""))
+        except (ValueError, AttributeError, TypeError, KeyError):     # a damaged line is skipped
+            continue
+    return "\n".join(out) if out else "Nothing recorded yet."
+
+
 class SettingsWindow(tk.Toplevel):
     def __init__(self, app: App, focus: str = None):
         super().__init__(app, bg=BG)
         app.attach_menu(self)
         self.app, self.s = app, app.s
         self.title("PhoneKeep settings")
-        self.geometry("680x760")
-        self.minsize(600, 560)
+        self.geometry("900x760")
+        self.minsize(780, 560)
         self.transient(app)
+        # L3 (5.2): a list on the left; each item scrolls to its cards on the right
+        # (docs/spec/14-layouts.md#l3-settings-layout)
+        side = tk.Frame(self, bg=theme.SUBTLE, width=210)
+        side.pack(side="left", fill="y")
+        side.pack_propagate(False)
+        tk.Frame(self, bg=theme.BORDER, width=1).pack(side="left", fill="y")
+        tk.Label(side, text="Settings", bg=theme.SUBTLE, fg=INK, font=font(20, "bold"), anchor="w").pack(
+            fill="x", padx=18, pady=(20, 12))
+        self.nav = {}
+        for g in SETTINGS_GROUPS:
+            item = tk.Label(side, text=g, bg=theme.SUBTLE, fg=INK, font=font(13), anchor="w", padx=12, pady=7,
+                            cursor="hand2")
+            item.pack(fill="x", padx=8, pady=1)
+            item.bind("<Button-1>", lambda e, g=g: self.go_to(g))
+            self.nav[g] = item
+        self.cards = []                    # (group, card, title) in the order they're built
         canvas = tk.Canvas(self, bg=BG, highlightthickness=0)
-        sb = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
-        canvas.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
+        vbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+
+        def scrolled(lo, hi):
+            vbar.set(lo, hi)
+            self._mark_current()
+        canvas.configure(yscrollcommand=scrolled)
+        vbar.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
+        self.canvas = canvas
         body = tk.Frame(canvas, bg=BG)
         win = canvas.create_window((0, 0), window=body, anchor="nw")
         body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
         ui.wheel_scroll(canvas)            # Settings scrolled only with its scrollbar
 
-        def section(title, sub=None):
+        def section(title, sub=None, group="Saving"):
             c = ui.card(body)
-            c.pack(fill="x", padx=18, pady=(14, 0))
+            c.pack(fill="x", padx=24, pady=(14, 0))
+            self.cards.append((group, c, title))
             tk.Label(c, text=title, bg=CARD, fg=INK, font=font(15, "bold"), anchor="w").pack(fill="x", padx=16, pady=(12, 0))
             if sub:
                 tk.Label(c, text=sub, bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left",
@@ -1983,7 +2025,7 @@ class SettingsWindow(tk.Toplevel):
                   if info and info["encrypted"]
                   else "Backups are not encrypted." if info
                   else "Encryption is turned on with your first backup.")
-        sec = section("Security", status)
+        sec = section("Security", status, "Security")
         tk.Label(sec, text=(ui.PROTECTED if (info and info["encrypted"]) else ""),
                  bg=CARD, fg=GREEN, font=font(12, "bold")).pack(anchor="w", pady=(0, 6))
         row = tk.Frame(sec, bg=CARD)
@@ -2039,7 +2081,7 @@ class SettingsWindow(tk.Toplevel):
                       "PhoneKeep never sends your data anywhere. It makes no internet connections"
                       + (" (refused by the app itself)" if netguard.installed() else "")
                       + ". The only exception is the button below, which fetches the release page once when you click it, "
-                        "with no information about you or your iPhone.")
+                        "with no information about you or your iPhone.", "Security")
         nrow = tk.Frame(net, bg=CARD)
         nrow.pack(anchor="w")
         tk.Label(nrow, text="Internet use: Off", bg=CARD, fg=GREEN, font=font(12, "bold")).pack(side="left", padx=(0, 14))
@@ -2051,7 +2093,8 @@ class SettingsWindow(tk.Toplevel):
         import scheduler as sch
         ab = section("Automatic backups",
                      "PhoneKeep backs up by itself from the menu bar helper when your iPhone is nearby "
-                     "(same Wi-Fi or cable) at or after the chosen time, and tries again every 30 minutes until midnight.")
+                     "(same Wi-Fi or cable) at or after the chosen time, and tries again every 30 minutes until midnight.",
+                     "Automatic backups")
         self.mode_var = tk.StringVar(value=self.s["auto_backup"])
         mrow = tk.Frame(ab, bg=CARD)
         mrow.pack(anchor="w", pady=(0, 6))
@@ -2104,7 +2147,7 @@ class SettingsWindow(tk.Toplevel):
         # snapshots (B3)
         sp = section("Snapshots",
                      "Every backup is kept as a snapshot you can open from the phone window's timeline. "
-                     "Unchanged files are stored once, so ten snapshots don't take ten times the space.")
+                     "Unchanged files are stored once, so ten snapshots don't take ten times the space.", "Backups")
         srow = tk.Frame(sp, bg=CARD)
         srow.pack(anchor="w", pady=3)
         self.keep_mode = tk.StringVar(value="full" if self.s["snapshots_until_full"] else "keep")
@@ -2125,14 +2168,15 @@ class SettingsWindow(tk.Toplevel):
         import login_item
         hp = section("Menu bar helper" if sys.platform == "darwin" else "System tray helper",
                      "A small PhoneKeep icon that shows your last backup, backs up with one click and keeps "
-                     "running when this window is closed.")
+                     "running when this window is closed.", "Automatic backups")
         self.login_var = tk.BooleanVar(value=bool(self.s["start_at_login"]))
         ui.Chip(hp, "Start at login", self.login_var, lambda: app.set_start_at_login(self.login_var.get()),
                 size=12, bg=CARD).pack(anchor="w", pady=3)
 
         # location (B4)
         import location as loc
-        lo = section("Location", "Where your backups are kept. Any disk, external drive or network drive will do (not FAT32).")
+        lo = section("Where backups are kept",
+                     "Any disk, external drive or network drive will do (not FAT32).", "Backups")
         self.loc_line = tk.Label(lo, text="", bg=CARD, fg=INK, font=font(12), anchor="w", justify="left", wraplength=560)
         self.loc_line.pack(fill="x")
         self.loc_space = tk.Label(lo, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w")
@@ -2162,7 +2206,8 @@ class SettingsWindow(tk.Toplevel):
 
         # existing backups
         ex = section("Use an existing backup",
-                     "Build the archive from a backup that's already on this computer, without connecting the iPhone.")
+                     "Build the archive from a backup that's already on this computer, without connecting the iPhone.",
+                     "Backups")
         self.combo = ttk.Combobox(ex, state="readonly")
         self.combo.pack(fill="x")
         row = tk.Frame(ex, bg=CARD)
@@ -2173,11 +2218,78 @@ class SettingsWindow(tk.Toplevel):
         self.backups: list[dict] = []
         self._refresh_backups()
 
+        # activity (S7): the record PhoneKeep keeps on this computer of what it changed; read here, never sent
+        ac = section("Activity", "PhoneKeep keeps a record, on this computer only, of every change it makes to your "
+                                 "iPhone and of settings like where backups are kept. Kept 12 months.", "Activity")
+        self.activity_lines = tk.Label(ac, text=activity_summary(), bg=CARD, fg=INK, font=font(12), anchor="w",
+                                       justify="left", wraplength=560)
+        self.activity_lines.pack(fill="x")
+        ui.RoundButton(ac, "Show in Finder" if sys.platform == "darwin" else "Show folder",
+                       lambda: reveal(phone_write.ACTIVITY_FILE if phone_write.ACTIVITY_FILE.exists()
+                                      else phone_write.ACTIVITY_FILE.parent),
+                       "secondary", 140, 34, 12, bg=CARD).pack(anchor="w", pady=(8, 0))
+
+        # about
+        abt = section("About", f"{wv.APP_NAME} {wv.VERSION}" + (f" · test build {wv.BUILD_LABEL}" if wv.BUILD_LABEL else ""),
+                      "About")
+        ui.RoundButton(abt, f"About {wv.APP_NAME}…", app.open_about, "secondary", 170, 34, 12, bg=CARD).pack(anchor="w")
+
+        # the cards in the list's order (each card's content is built above, as before)
+        for _g, c, _t in self.cards:
+            c.pack_forget()
+        first = ("Where backups are kept", "Snapshots")          # as in the mockup; the rest keep their order
+        self.cards.sort(key=lambda x: (SETTINGS_GROUPS.index(x[0]), first.index(x[2]) if x[2] in first else len(first)))
+        for _g, c, _t in self.cards:
+            c.pack(fill="x", padx=24, pady=(14, 0))
         bottom = tk.Frame(body, bg=BG)
-        bottom.pack(fill="x", padx=18, pady=16)
+        bottom.pack(fill="x", padx=24, pady=16)
         ui.RoundButton(bottom, "Done", self.destroy, "primary", 120, 40).pack(side="right")
+        self._current = None
+        self._mark_current()
         if focus == "include":
-            self.after(100, lambda: canvas.yview_moveto(0))
+            self.after(100, lambda: self.go_to("Saving"))
+
+    def go_to(self, group: str):
+        """Scroll so the group's first card is at the top (as far as the page goes)."""
+        self.update_idletasks()
+        first = next(c for g, c, _t in self.cards if g == group)
+        total = max(1, first.master.winfo_height())
+        self.canvas.yview_moveto(max(0, first.winfo_y() - 14) / total)
+        # the clicked item stays lit while the page stays put (near the end it can't scroll its cards to the top)
+        self._clicked = (group, self.canvas.yview()[0])
+        self._mark_current(group)
+
+    def _mark_current(self, group: str = None):
+        """Highlight the list item of the cards in view (or the one just clicked)."""
+        if not getattr(self, "cards", None) or not hasattr(self, "nav"):
+            return
+        clicked = getattr(self, "_clicked", None)
+        try:
+            now = self.canvas.yview()[0]
+        except tk.TclError:                 # the window is going away
+            return
+        if group is None and clicked and abs(now - clicked[1]) < 0.001:
+            group = clicked[0]
+        if group is None:
+            self._clicked = None
+            try:
+                top = self.canvas.canvasy(0) + 30
+                lo, hi = self.canvas.yview()
+            except tk.TclError:
+                return
+            group = SETTINGS_GROUPS[0]
+            for g, c, _t in self.cards:
+                if c.winfo_y() <= top:
+                    group = g
+            if hi >= 0.999 and lo > 0:            # at the bottom: the last group's cards are the ones in view
+                group = self.cards[-1][0]
+        if group == getattr(self, "_current", None):
+            return
+        self._current = group
+        for g, item in self.nav.items():
+            on = g == group
+            item.configure(bg=theme.ACCENT_PALE if on else theme.SUBTLE, fg=theme.ACCENT if on else INK,
+                           font=font(13, "bold" if on else "normal"))
 
     def _save_custom(self):
         self.s["custom_sections"] = [k for k, v in self.picks.items() if v.get()]
