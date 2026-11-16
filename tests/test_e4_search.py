@@ -253,9 +253,28 @@ win.v_notes("notes", [{"title": "Réunion à l'école", "folder": "Notes", "crea
                        "text": "Ordre du jour", "locked": False},
                       {"title": "Courses", "folder": "Notes", "created": None, "modified": None, "text": "lait",
                        "locked": False}])
-win.find_hook[1].set("REUNION a l'ecole")
+win.find_hook[1].set("RÉUNION à L'ÉCOLE")
 t = trees(win.content)[0]
 check(len(t.get_children()) == 1, "the notes' own search ignores accents and case")
+win.find_hook[1].set("reunion a l'ecole")
+check(len(t.get_children()) == 1, "  typed without accents too")
+
+# the chats' own search and the jump inside a chat match the same way
+import sections as sx
+
+
+class _Ctx:
+    cache = {"messages": [{"id": 1, "name": "Invented", "group": False, "messages":
+                           [{"text": f"filler {i}", "time": f"2026-01-01T10:{i % 60:02d}:00"} for i in range(200)]
+                           + [{"text": "Rendez-vous à l'ÉCOLE", "time": "2026-01-02T09:00:00"}]
+                           + [{"text": f"after {i}", "time": f"2026-01-03T10:{i % 60:02d}:00"} for i in range(200)]}]}
+
+
+pv = sx.ChatPreview(_Ctx())
+check(pv.matching("messages", "ecole") == {1: 1} and pv.matching("messages", "École") == {1: 1},
+      "a chat's own search ignores accents and case, whichever side has them")
+msgs, _n = pv.messages("messages", 1, 20, around="l'ecole")
+check(any("ÉCOLE" in m["text"] for m in msgs), "  and the chat opens at that message")
 
 # "Show all N in …": the app opens with the same words in its search box, nothing chosen for the user
 win.show_home()
