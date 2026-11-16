@@ -9,7 +9,7 @@ window's Back up now. Notifications are recorded instead of shown. Checks:
 - a backup that doesn't finish: a notification says why and the window comes back with the problem;
 - a backup that finishes: a notification names the phone, then PhoneKeep quits (not while another of its windows is open).
 """
-import json, os, shutil, sys, time
+import json, os, shutil, sys, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -153,7 +153,6 @@ a.close_window()
 a.update()
 
 # a password question while it's away (here: the backup password isn't in the keychain): the same
-import threading
 import ui as uimod
 real_ask_pw, real_will, real_get = uimod.ask_password, wv.backup_will_encrypt, keychain.get_password
 pw_asked = []
@@ -184,13 +183,16 @@ check(not a._window_away() and a.bar_frame.winfo_manager() and not quits,
 made = W / "made"
 made.mkdir()
 a.ensure_encryption = lambda: None
-wv.make_backup = lambda *x, **k: (time.sleep(1.5), made)[1]
+gate = threading.Event()       # the stand-in backup ends when the test says (on Linux without a window manager,
+                               # Tk waits a few seconds for a minimise that never comes)
+wv.make_backup = lambda *x, **k: (gate.wait(30), made)[1]
 a._export = lambda path: None
 
 
 def finished_run(other_window=False, minimised=False):
     notes.clear()
     quits.clear()
+    gate.clear()
     a.backup_and_export()
     pump(lambda: a.prog.winfo_manager(), 10, "the card")
     extra = appmod.tk.Toplevel(a) if other_window else None
@@ -198,9 +200,8 @@ def finished_run(other_window=False, minimised=False):
         extra.update()
         extra.iconify()
     a.close_window()
-    print(f"     (debug: away={a._window_away()} busy={a.busy} state={a.state()} extra={extra.state() if extra else '-'})", flush=True)
+    gate.set()
     pump(lambda: not a.busy, 20, "the stand-in backup to finish")
-    print(f"     (debug: after: away={a._window_away()} notes={notes} quits={quits})", flush=True)
     settle(1.5)
     if extra is not None:
         extra.destroy()
@@ -225,14 +226,14 @@ a._come_back()
 # the window brought back before the end: nothing extra happens
 notes.clear()
 quits.clear()
+gate.clear()
 a.backup_and_export()
 pump(lambda: a.prog.winfo_manager(), 10, "the card")
 a.close_window()
 a.update()
 a._come_back()
-print(f"     (debug: back: away={a._window_away()} busy={a.busy} state={a.state()})", flush=True)
+gate.set()
 pump(lambda: not a.busy, 20, "the stand-in backup to finish")
-print(f"     (debug: end: away={a._window_away()} notes={notes})", flush=True)
 settle(1.5)
 check(not notes and not quits, f"the window brought back before the end: no notification, no quitting ({notes}, {quits})")
 
