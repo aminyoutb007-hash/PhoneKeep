@@ -99,7 +99,9 @@ check(a.udid == UD, "the main window sees the stand-in phone")
 
 check("close_window" in str(a.protocol("WM_DELETE_WINDOW")), "the window's close button is close_window")
 if sys.platform != "darwin":
-    filem = a.menubar.nametowidget(a.menubar.entrycget(0, "menu"))
+    mb = a.menubar
+    filem = [mb.nametowidget(mb.entrycget(i, "menu")) for i in range(mb.index("end") + 1)
+             if mb.type(i) == "cascade" and mb.entrycget(i, "label") == "File"][0]
     quit_cmd = [str(filem.entrycget(i, "command")) for i in range(filem.index("end") + 1)
                 if filem.type(i) == "command" and filem.entrycget(i, "label") == "Quit"]
     check(quit_cmd and "quit_app" in quit_cmd[0], f"File → Quit goes through quit_app, so it asks during a backup ({quit_cmd})")
