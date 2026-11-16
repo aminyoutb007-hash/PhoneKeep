@@ -161,7 +161,7 @@ try:
 
     # a long name is cut with "…" and never runs into the connection and battery marks
     import ui as _ui
-    _long = _ui.PhoneCard(a.phone_list, "A Very Long Invented iPhone Name For Testing The Row Width", "iPhone 17 Pro Max",
+    _long = _ui.PhoneCard(a.phone_list, "A Very Long Invented iPhone Name For Testing The Row Width, Longer Than Any Window Is Wide " * 2, "iPhone 17 Pro Max",
                          "26.5", "cable", lambda: None)
     _long.pack(fill="x")
     _long.set_battery({"level": 50, "charging": False})
