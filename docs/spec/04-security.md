@@ -14,7 +14,7 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 - The password never appears on a command line, in logs or in crash reports.
 - PhoneKeep never removes the stored password by itself. A backup that won't open with it asks for one to be typed; the stored password is replaced only by a typed one that opens the backup. (Lesson of 12 Nov: a failed open seconds after a snapshot wiped the owner's only copy.)
 - The "if you forget it" warning is shown once more at the moments when the keychain and the backup may part ways: when the backup location changes, when backups are moved (B4), and when a backup is opened on another computer (B5).
-- Turning encryption on, and changing the password, write to the phone and go through `phone_write.py` ([12-engineering.md](12-engineering.md#architecture-rules)). In the first-run guide, clicking **Turn on encryption** is itself the confirmation; no second dialog. Changing the password later gets a named confirmation ("Change the backup password on *Amin's iPhone*?").
+- Turning encryption on, and changing the password, write to the phone and go through `phone_write.py` ([12-engineering.md](12-engineering.md#architecture-rules)). In the first-run guide, clicking **Turn on encryption** is itself the confirmation; no second dialog. Changing the password later gets a named confirmation ("Change the backup password on *Sam's iPhone*?").
 
 **Done when**
 - [ ] A new phone's first backup is encrypted with no extra click beyond choosing the password.
@@ -83,7 +83,7 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 
 ## S7. Activity log
 
-**What the user sees and does:** Settings → Security → **Activity**: a simple list, "3 Nov 21:04 · Backed up Amin's iPhone (encrypted)", "3 Nov 21:10 · Saved 12 photos to Desktop", "Restored…", "Copied 2 files to VLC on the iPhone".
+**What the user sees and does:** Settings → Security → **Activity**: a simple list, "3 Nov 21:04 · Backed up Sam's iPhone (encrypted)", "3 Nov 21:10 · Saved 12 photos to Desktop", "Restored…", "Copied 2 files to VLC on the iPhone".
 
 **Requirements:** kept locally, never contains message text or passwords; can be exported as CSV; kept 12 months.
 

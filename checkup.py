@@ -39,7 +39,7 @@ THRESHOLDS = {
 
 ORDER = ("storage", "battery", "stability", "security")        # also the order of impact on speed
 TITLES = {"storage": "Storage", "battery": "Battery", "stability": "Stability", "security": "Security"}
-# what the helper's one notification says when a card turns red ("Amin's iPhone: storage almost full")
+# what the helper's one notification says when a card turns red ("Sam's iPhone: storage almost full")
 ALERTS = {"storage": "storage almost full", "battery": "battery needs attention",
           "stability": "an app keeps crashing", "security": "a security check needs a look"}
 HISTORY_MAX = 1000                    # backups kept in the record (years of daily backups)

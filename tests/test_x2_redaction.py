@@ -98,7 +98,7 @@ check(len(personal) > 15, f"{len(personal)} personal strings collected from the 
 src = W / "src"
 shutil.copytree(fake, src)
 man = sqlite3.connect(src / "Manifest.db")
-_planted = "Library/Mobile Documents/com~apple~CloudDocs/Desktop/Omar/Zineb paperwork/QCS/Zineb-Tazi.docx"
+_planted = "Library/Mobile Documents/com~apple~CloudDocs/Desktop/Robin/Robin paperwork/Forms/Robin-Example.docx"
 import plistlib as _pl
 _rec = _pl.dumps({"$archiver": "NSKeyedArchiver", "$version": 100000, "$top": {"root": _pl.UID(1)},
                   "$objects": ["$null", {"RelativePath": _pl.UID(2), "Mode": 16877, "$class": _pl.UID(3)}, _planted,
@@ -106,19 +106,19 @@ _rec = _pl.dumps({"$archiver": "NSKeyedArchiver", "$version": 100000, "$top": {"
 man.execute("INSERT INTO Files(fileID, domain, relativePath, flags, file) VALUES (?,?,?,?,?)",
             ("a" * 40, "HomeDomain", _planted, 2, _rec))
 man.commit(); man.close()
-personal.add("Zineb paperwork"); personal.add("Zineb-Tazi"); personal.add("/Omar/")
+personal.add("Robin paperwork"); personal.add("Robin-Example"); personal.add("/Robin/")
 for fid, rel in sqlite3.connect(src / "Manifest.db").execute("SELECT fileID, relativePath FROM Files WHERE relativePath LIKE '%ChatStorage.sqlite'"):
     db = src / fid[:2] / fid
     c = sqlite3.connect(db)
     c.execute("CREATE TABLE IF NOT EXISTS ZWAMEDIAITEM (Z_PK INTEGER PRIMARY KEY, ZMESSAGE INTEGER, ZMEDIALOCALPATH VARCHAR, ZMETADATA BLOB)")
     c.execute("INSERT INTO ZWAMEDIAITEM (ZMESSAGE, ZMEDIALOCALPATH, ZMETADATA) VALUES (1, ?, ?)",
-              ("Message/Media/447700900123@s.whatsapp.net/Driss birthday.jpg", b"\x12\x00Your parcel from Driss Lamrani is on its way\x00\x01"))
+              ("Message/Media/447700900123@s.whatsapp.net/Pat birthday.jpg", b"\x12\x00Your parcel from Pat Example is on its way\x00\x01"))
     # SQLite lets a BLOB column hold text: seen on a real phone, it crashed the tool
     c.execute("INSERT INTO ZWAMEDIAITEM (ZMESSAGE, ZMEDIALOCALPATH, ZMETADATA) VALUES (2, NULL, ?)",
-              ("Lunch with Salma Chraibi on Friday",))
-    personal.add("Salma Chraibi")
+              ("Lunch with Lee Sample on Friday",))
+    personal.add("Lee Sample")
     c.commit(); c.close()
-    personal.add("Driss Lamrani"); personal.add("Driss birthday")
+    personal.add("Pat Example"); personal.add("Pat birthday")
     break
 fake = src
 
@@ -159,9 +159,9 @@ r2.close()
 
 # consistent replacements and sizes
 m = rb.Mapper()
-check(m.name("Sara Fathi") == m.name("Sara Fathi") and m.name("Sara Fathi") != "Sara Fathi", "the same name maps to the same fake name")
+check(m.name("Alex Example") == m.name("Alex Example") and m.name("Alex Example") != "Alex Example", "the same name maps to the same fake name")
 check(m.phone("+44 7700 900123") == m.phone("+447700900123".replace("+447700900123", "+44 7700 900123")) and m.phone("07700 900456").startswith("+447700"), "numbers map to the reserved test range")
-check(m.email("sara@example.org").endswith("@example.com"), "emails map to example.com")
+check(m.email("alex@example.org").endswith("@example.com"), "emails map to example.com")
 t = m.text("Did you land? Call me when you can.")
 check(abs(len(t) - len("Did you land? Call me when you can.")) <= 2 and "land" not in t, f"text replaced by words of about the same length: {t!r}")
 check(m.jid("447700900123@s.whatsapp.net").endswith("@s.whatsapp.net") and "447700900123" not in m.jid("447700900123@s.whatsapp.net"), "WhatsApp ids keep their shape")

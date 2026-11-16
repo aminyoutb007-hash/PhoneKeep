@@ -118,7 +118,7 @@ class Helper:
         return sorted(seen.values(), key=lambda e: (not e["connected"], e["name"]))
 
     def status_lines(self) -> list[str]:
-        """The lines at the top of the menu, e.g. "Amin's iPhone · backed up 2 hours ago 🔒"."""
+        """The lines at the top of the menu, e.g. "Sam's iPhone · backed up 2 hours ago 🔒"."""
         out = []
         for p in self.phones():
             lock = " 🔒" if p["encrypted"] else ""

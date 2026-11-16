@@ -100,7 +100,7 @@ check(a.open_backup(finder), "a Finder-made backup folder opens")
 win = a.phone_windows[-1]
 win.withdraw()
 check(win.live_wanted is False and win.udid == finder.name, "opened for browsing: no live phone, UDID from the folder name")
-check("Amine's iPhone" in win.title() and "no iPhone connected" in win.sub.cget("text"), f"title and header name the backup: {win.sub.cget('text')!r}")
+check("Test iPhone" in win.title() and "no iPhone connected" in win.sub.cget("text"), f"title and header name the backup: {win.sub.cget('text')!r}")
 backup_apps = [k for k, *_r, where in phone.APPS if where == "backup"]
 check(pump(lambda: all(k in win.counts for k in backup_apps), 90, "counts"), "home screen counts fill in from the Finder backup")
 win.open_app("messages")
@@ -185,7 +185,7 @@ d = appmod.OpenBackupDialog(a)
 d.withdraw()
 pump(lambda: d.backups, 30, "dialog scan")
 items = [d.lb.get(i) for i in range(d.lb.size())]
-check(len(items) == 2 and all("Amine's iPhone" in t for t in items), f"dialog lists the PhoneKeep snapshot and the Finder backup: {items}")
+check(len(items) == 2 and all("Test iPhone" in t for t in items), f"dialog lists the PhoneKeep snapshot and the Finder backup: {items}")
 d.destroy()
 
 # -- a stored password would be used silently (keychain lookup by UDID) --------------------------------------------

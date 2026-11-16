@@ -21,7 +21,7 @@ Open `index.html` in the archive folder and you get a home page for your iPhone 
 | **Apps** | The installed apps |
 | **All files (raw)** | Optional: every file in the backup, organised by app/area, for anything not covered above |
 
-Contact names are used everywhere, so Messages, Calls and WhatsApp show "Sara" rather than a phone number.
+Contact names are used everywhere, so Messages, Calls and WhatsApp show "Alex" rather than a phone number.
 
 ## Install
 
