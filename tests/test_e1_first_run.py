@@ -168,12 +168,33 @@ check(asked == [f"Turn on Wi-Fi backups for {a.device['DeviceName']}?"] and a.gu
       f"  switching it on asks first, by the phone's name; Cancel turns it back off and writes nothing ({asked})")
 a.guide.wifi_var.set(False); a.guide.wifi_switched()
 check(not wifi_calls() and len(asked) == 1, "  switching it off writes nothing and asks nothing")
+# reviewer, #75: the write only ever goes to the phone that's connected and trusted, and still is after OK
+real_udid = a.udid
+a.udid = None                                   # unplugged, the box not yet gone
+a.guide.wifi_var.set(True); a.guide.wifi_switched()
+check(len(asked) == 1 and a.guide.wifi_var.get() is False and not wifi_calls(),
+      "  with no phone connected, switching on asks nothing and writes nothing")
+a.udid = real_udid
+mb.askokcancel = lambda title, *x, **k: (asked.append(title), setattr(a, "udid", "00008030-OTHER"), True)[2]
+a.guide.wifi_var.set(True); a.guide.wifi_switched()
+a.update()
+check(len(asked) == 2 and a.guide.wifi_var.get() is False and not wifi_calls() and "changed" in a.guide.wifi_note.cget("text"),
+      "  if the phone changes while asking, OK writes nothing")
+a.udid = real_udid
 mb.askokcancel = lambda title, *x, **k: (asked.append(title), True)[1]           # OK
 a.guide.wifi_var.set(True); a.guide.wifi_switched()
 check(pump(lambda: "are on" in a.guide.wifi_note.cget("text"), 20, "wifi"), "  OK: Wi-Fi backups turned on")
 check(len(wifi_calls()) == 1 and wifi_calls()[0]["argv"][:2] == ["--pk-wifi", "on"], f"  exactly one write to the phone ({len(wifi_calls())})")
 acts = [json.loads(l) for l in phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()]
 check(sum(x["summary"] == "Turned on Wi-Fi backups" for x in acts) == 1, "  the write is in the activity log")
+check(a.guide.wifi_var.get() is True, "  the switch shows on")
+a.udid = "00008030-OTHER"                      # another iPhone in its place: not shown as on, and can be asked
+a.guide.show_step(1); a.guide._show_trusted(True)
+check(a.guide.wifi_var.get() is False and "are on" not in a.guide.wifi_note.cget("text"),
+      "  'on' belongs to the phone it was written for, not to another iPhone plugged in after")
+a.udid = real_udid
+a.guide.show_step(1); a.guide._show_trusted(True)
+check(a.guide.wifi_var.get() is True and "are on" in a.guide.wifi_note.cget("text"), "  and shows on again for that phone")
 clicks.append("Continue"); a.guide.start_password_step()
 check(pump(lambda: a.guide.step == 2 and a.guide.pw_btn.enabled, 15, "step 3"), "Continue: 'Choose a backup password', step 3 of 4")
 check(a.guide.kicker.cget("text") == "Step 3 of 4" and a.guide.rows[1][1].find_all() and a.guide.rows[2][0].cget("bg") == appmod.theme.ACCENT_PALE,
@@ -193,6 +214,7 @@ a.guide.do_password()
 check(a.guide.step == 2 and "aren't the same" in a.guide.hint.cget("text"), "two different passwords: asked to type it again, nothing done")
 a.guide.pw2_var.set("Correct-Horse-7!")
 clicks.append("Turn on encryption"); a.guide.do_password()
+check(not a.guide.back_btn.enabled and not a.guide.pw_btn.enabled, "  while the encryption write runs, Back and the button can't be clicked")
 check(pump(lambda: a.guide.step == 3, 20, "step 4"), "after the click, the backup step appears")
 calls = [json.loads(l) for l in (W / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
 enc = [c for c in calls if c["argv"][0] == "--pk-encryption"]

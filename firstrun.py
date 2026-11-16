@@ -188,6 +188,7 @@ class FirstRunGuide(tk.Frame):
                 except Exception:
                     pass
             self.pw_var = None
+        self.pw2_var = tk.StringVar()                # the confirmation goes with its step
         for w in self.inner.winfo_children() + self.buttons.winfo_children():
             w.destroy()
 
@@ -221,7 +222,7 @@ class FirstRunGuide(tk.Frame):
 
     # steps --------------------------------------------------------------------------------------
     def _s_connect(self):
-        self._title("Connect your iPhone", "Use a cable for the first backup. Wi-Fi backups can be set up at the end.")
+        self._title("Connect your iPhone", "Use a cable for the first backup. You can choose Wi-Fi backups at the next step.")
         row = self._row()
         Picture(row, "connect").pack(side="left", padx=(0, 20))
         right = tk.Frame(row, bg=CARD)
@@ -251,7 +252,7 @@ class FirstRunGuide(tk.Frame):
         # "Use over Wi-Fi" (owner, 15 Nov): offered once the phone trusts this computer; off by default, and only
         # turning it on, then OK on the named confirmation, writes to the phone (through phone_write)
         self.wifi_box = tk.Frame(right, bg=CARD)
-        self.wifi_var = tk.BooleanVar(value=bool(getattr(self, "wifi_done", False)))
+        self.wifi_var = tk.BooleanVar(value=self._wifi_on())
         self.wifi_chip = ui.Chip(self.wifi_box, "Turn on Wi-Fi backups", self.wifi_var, self.wifi_switched,
                                  size=13, bg=CARD)
         tk.Label(self.wifi_box, text="Use this iPhone over Wi-Fi from now on?", bg=CARD, fg=INK, font=font(14, "bold"),
@@ -265,7 +266,7 @@ class FirstRunGuide(tk.Frame):
                                      "your network.", bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left",
                  wraplength=360).pack(fill="x", pady=(4, 0))
         self.continue_btn = self._button("Continue", self.start_password_step)
-        if getattr(self, "wifi_done", False):
+        if self._wifi_on():
             self.wifi_note.configure(text="Wi-Fi backups are on for this iPhone.")
         self._show_trusted(self.trusted)
 
@@ -283,13 +284,27 @@ class FirstRunGuide(tk.Frame):
             if not self.wifi_box.winfo_manager():
                 self.wifi_box.pack(fill="x", pady=(16, 0))
 
+    def _wifi_on(self) -> bool:
+        """Wi-Fi backups were turned on, from this guide, for the phone that's connected now."""
+        return bool(self.app.udid) and getattr(self, "wifi_done_for", None) == self.app.udid
+
     def wifi_switched(self):
-        """The Wi-Fi switch. On asks first, by the phone's name; Cancel turns it back off. Off writes nothing."""
-        if getattr(self, "wifi_done", False):          # already written: it stays on (turn it off on the iPhone)
+        """The Wi-Fi switch. On asks first, by the phone's name; Cancel turns it back off. Off writes nothing.
+        The write goes only to the phone that is connected and trusted when the switch is turned on, and that is
+        still the connected phone after OK (reviewer, #75: never to whichever phone the helper finds first)."""
+        if self._wifi_on():                             # already written: it stays on (turn it off on the iPhone)
             self.wifi_var.set(True)
             return
         if not self.wifi_var.get():
             self.wifi_note.configure(text="")
+            return
+        udid = self.app.udid
+        if getattr(self, "_wifi_writing", False):       # one write at a time; the switch shows it's on its way
+            self.wifi_var.set(True)
+            return
+        if not udid or not self.trusted or self.app.busy:
+            self.wifi_var.set(False)
+            self.wifi_note.configure(text="" if udid and self.trusted else "Plug in your iPhone and tap Trust first.")
             return
         name = (self.app.device or {}).get("DeviceName", "your iPhone")
         if not messagebox.askokcancel(f"Turn on Wi-Fi backups for {name}?",
@@ -298,20 +313,27 @@ class FirstRunGuide(tk.Frame):
                                       "iTunes Wi-Fi Sync or in Finder.", parent=self):
             self.wifi_var.set(False)
             return
-        self.app.s["wifi_sync"] = True
+        if self.app.udid != udid or not self.trusted or self.app.busy:     # the phone changed while asking
+            self.wifi_var.set(False)
+            self.wifi_note.configure(text="The iPhone changed while asking; nothing was changed.")
+            return
         self.wifi_note.configure(text="Turning on…")
-        udid = self.app.udid
+        self._wifi_writing = True
 
         def work():
             phone_write.turn_on_wifi_sync(udid, name, confirmed=True, log=self.app.log)
             return True
 
         def done(r):
-            self.wifi_done = bool(r)
-            if not r:
-                self.wifi_var.set(False)
+            self._wifi_writing = False
+            if r:
+                self.wifi_done_for = udid
+                self.app.s["wifi_sync"] = True
             try:
-                self.wifi_note.configure(text="Wi-Fi backups are on for this iPhone." if r else "Not done")
+                on = self._wifi_on()
+                self.wifi_var.set(on)
+                self.wifi_note.configure(text="Wi-Fi backups are on for this iPhone." if on
+                                         else "" if r else "Not done")
             except tk.TclError:
                 pass
         self.app._run(work, done)
@@ -499,6 +521,7 @@ class FirstRunGuide(tk.Frame):
             self.hint.configure(text="The two passwords aren't the same. Type it again.", fg=RED)
             return
         self.pw_btn.set_enabled(False)
+        self.back_btn.set_enabled(False)          # no second write while this one runs (reviewer, #75)
         self.hint.configure(text="Your iPhone may ask for its passcode…", fg=MUTED)
         udid, name = self.app.udid, (self.app.device or {}).get("DeviceName", "your iPhone")
         already = self.phone_encrypts
@@ -518,6 +541,7 @@ class FirstRunGuide(tk.Frame):
         pr = self.app.problem_of(e)
         self.hint.configure(text=pr.message, fg=RED)
         self.pw_btn.set_enabled(True)
+        self.back_btn.set_enabled(True)
 
     def do_backup(self):
         self.backup_btn.set_enabled(False)
