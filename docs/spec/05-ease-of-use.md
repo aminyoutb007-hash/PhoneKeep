@@ -84,7 +84,18 @@ The first search reads each app from the open backup once (a few seconds on a la
 **What the user sees and does:** PhoneKeep follows the computer's light/dark setting (or a choice in Settings → Appearance).
 
 **Done when**
-- [ ] Every screen is readable in dark mode; no white flashes; screenshots of all screens in both modes are attached to the pull request.
+- [x] Every screen is readable in dark mode; no white flashes; screenshots of all screens in both modes are attached to the pull request. *`tests/test_e6_dark_mode.py`:*
+  - *text on every dark background is at least 4.5:1;*
+  - *every widget of the main window, a phone window (home, Messages, Check-up, Notes, Storage) and Settings has no light background left, and every label is readable;*
+  - *a new window is dark from the moment it's made.*
+
+  *Screenshots of 15 screens in both modes (every phone-window screen, the main window, the first-run guide, the backup progress card, Settings and its Appearance card), invented test phone, chats and contacts from the X2-redacted copy: `docs/evidence/e6-dark-mode/`. The About box is the system's own and follows the system.*
+
+**How it's built (16 Nov):** `theme.py` keeps one set of names with two sets of values. Light is Direction A exactly as agreed. Dark is the same calm teal, lifted so it reads on dark grey, with dark text on the main buttons.
+- *When the mode is chosen:* once, as PhoneKeep opens (every window takes its colours as it's built). Settings → Appearance: "Same as this computer" (the default), Light or Dark.
+  - With "Same as this computer", PhoneKeep follows the computer's setting each time it opens. Changing it, or the computer's setting, while PhoneKeep is open shows the next time it opens, and Settings says so.
+- *The system's own controls:* on a Mac they follow the app's appearance (dark aqua). On Windows and Linux, Tk draws them, so they get PhoneKeep's dark colours. The About box and file dialogs are the system's own.
+- *Saved files* (the web archive, chat PDFs) keep their own light look.
 
 ## E7. Fast with very large phones
 

@@ -67,6 +67,50 @@ def setup_styles(root: tk.Misc) -> None:
     st.configure("Treeview.Heading", font=font(12, "bold"))
     # the selected row in sidebars and lists: the pale accent, with the text unchanged
     st.map("Treeview", background=[("selected", theme.ACCENT_PALE)], foreground=[("selected", theme.TEXT)])
+    if theme.DARK:
+        dark_defaults(root, st)
+
+
+def dark_defaults(root: tk.Misc, st: ttk.Style) -> None:
+    """E6: the standard widgets in dark colours. On a Mac the system draws ttk's controls dark itself (the window's
+    dark appearance); on Windows and Linux they're drawn by Tk, so they get PhoneKeep's colours here. Classic Tk
+    widgets (text boxes, lists, spin boxes) get them on every system through the option database."""
+    for pattern, value in (("*Text.background", theme.CARD), ("*Text.foreground", theme.TEXT),
+                           ("*Text.insertBackground", theme.TEXT), ("*Text.selectBackground", theme.ACCENT_PALE),
+                           ("*Text.selectForeground", theme.TEXT), ("*Text.highlightBackground", theme.BORDER),
+                           ("*Listbox.background", theme.CARD), ("*Listbox.foreground", theme.TEXT),
+                           ("*Listbox.selectBackground", theme.ACCENT_PALE), ("*Listbox.selectForeground", theme.TEXT),
+                           ("*Spinbox.background", theme.CARD), ("*Spinbox.foreground", theme.TEXT),
+                           ("*Spinbox.buttonBackground", theme.SECONDARY_HOVER),
+                           ("*Spinbox.insertBackground", theme.TEXT), ("*Entry.background", theme.CARD),
+                           ("*Entry.foreground", theme.TEXT), ("*Entry.insertBackground", theme.TEXT),
+                           ("*Label.background", theme.BG), ("*Label.foreground", theme.TEXT),
+                           ("*Frame.background", theme.BG), ("*Canvas.background", theme.BG),
+                           ("*Checkbutton.background", theme.CARD), ("*Checkbutton.foreground", theme.TEXT),
+                           ("*Checkbutton.selectColor", theme.CARD), ("*Radiobutton.background", theme.CARD),
+                           ("*Radiobutton.foreground", theme.TEXT), ("*Radiobutton.selectColor", theme.CARD),
+                           ("*TCombobox*Listbox.background", theme.CARD), ("*TCombobox*Listbox.foreground", theme.TEXT),
+                           ("*TCombobox*Listbox.selectBackground", theme.ACCENT_PALE),
+                           ("*TCombobox*Listbox.selectForeground", theme.TEXT)):
+        root.option_add(pattern, value)
+    if sys.platform == "darwin":
+        return
+    st.configure(".", background=theme.CARD, foreground=theme.TEXT, fieldbackground=theme.CARD,
+                 bordercolor=theme.BORDER, lightcolor=theme.BORDER, darkcolor=theme.BORDER,
+                 troughcolor=theme.BG, selectbackground=theme.ACCENT_PALE, selectforeground=theme.TEXT,
+                 insertcolor=theme.TEXT, arrowcolor=theme.TEXT_2)
+    for w in ("TEntry", "TCombobox", "TSpinbox"):
+        st.configure(w, fieldbackground=theme.CARD, foreground=theme.TEXT, background=theme.SECONDARY_HOVER)
+        st.map(w, fieldbackground=[("readonly", theme.CARD), ("disabled", theme.SECONDARY_DISABLED)],
+               foreground=[("disabled", theme.TEXT_2)])
+    for w in ("TCheckbutton", "TRadiobutton"):
+        st.configure(w, background=theme.CARD, foreground=theme.TEXT, indicatorbackground=theme.CARD,
+                     indicatorforeground=theme.ACCENT)
+        st.map(w, background=[("active", theme.CARD)], indicatorbackground=[("pressed", theme.SECONDARY_HOVER)])
+    st.configure("TScrollbar", background=theme.SECONDARY_HOVER, troughcolor=theme.BG, arrowcolor=theme.TEXT_2)
+    st.map("TScrollbar", background=[("active", theme.BORDER_HOVER)])
+    st.configure("TProgressbar", background=theme.ACCENT, troughcolor=theme.BORDER)
+    st.configure("Treeview.Heading", background=theme.SECONDARY_HOVER, foreground=theme.TEXT)
 
 
 
@@ -1043,20 +1087,21 @@ def wheel_scroll(canvas: tk.Canvas) -> None:
 
 
 def use_light_appearance(win) -> bool:
-    """PhoneKeep is drawn in light colours; on a Mac in dark mode the standard controls (lists, text boxes,
-    drop-downs) would otherwise turn black (owner, 13 Nov: "the chats in black look untidy"). Until a real
-    dark mode exists (E6), every PhoneKeep window uses macOS's light appearance. Returns True if applied."""
+    """On a Mac the standard controls (lists, text boxes, drop-downs, the title bar) follow the window's appearance.
+    Each PhoneKeep window uses the one matching its colours: light ("the chats in black look untidy", owner, 13 Nov)
+    or, in dark mode (E6), dark. The name is kept from before E6. Returns True if applied."""
     if sys.platform != "darwin":
         return False
     done = False
     try:                                   # the whole app at once
         from AppKit import NSApplication, NSAppearance
-        NSApplication.sharedApplication().setAppearance_(NSAppearance.appearanceNamed_("NSAppearanceNameAqua"))
+        NSApplication.sharedApplication().setAppearance_(NSAppearance.appearanceNamed_(
+            "NSAppearanceNameDarkAqua" if theme.DARK else "NSAppearanceNameAqua"))
         done = True
     except Exception:
         pass
     try:                                   # and this window (works without pyobjc, Tk 8.6.10+)
-        win.tk.call("::tk::unsupported::MacWindowStyle", "appearance", win, "aqua")
+        win.tk.call("::tk::unsupported::MacWindowStyle", "appearance", win, "darkaqua" if theme.DARK else "aqua")
         done = True
     except Exception:
         pass
@@ -1086,6 +1131,11 @@ def _no_tabs_on_create(cls) -> None:
     def __init__(self, *args, **kwargs):
         made(self, *args, **kwargs)
         no_tabs(self)
+        if theme.DARK and "bg" not in kwargs and "background" not in kwargs:
+            try:                           # E6: never a white window before its own colours arrive
+                self.configure(bg=theme.BG)
+            except tk.TclError:
+                pass
     __init__._pk_no_tabs = True
     cls.__init__ = __init__
 

@@ -149,6 +149,7 @@ class Settings:
         "auto_backup_charging": False,  # B2: only when charging
         "snapshots_keep": 10,        # B3: keep the last N snapshots (3-100)
         "snapshots_until_full": False,  # B3: or keep everything until the disk is 90% full
+        "appearance": "system",      # E6: "system" (the computer's light/dark setting), "light" or "dark"
     }
 
     def __init__(self):
@@ -2192,7 +2193,7 @@ class OpenBackupDialog(tk.Toplevel):
             self.app.open_backup(Path(d))
 
 
-SETTINGS_GROUPS = ["Backups", "Automatic backups", "Security", "Saving", "Activity", "About"]
+SETTINGS_GROUPS = ["Backups", "Automatic backups", "Security", "Saving", "Appearance", "Activity", "About"]
 
 
 def activity_summary(n: Optional[int] = None) -> str:
@@ -2202,6 +2203,12 @@ def activity_summary(n: Optional[int] = None) -> str:
 
 
 class SettingsWindow(tk.Toplevel):
+    def set_appearance(self, value: str) -> None:
+        """E6: saved now, used the next time PhoneKeep opens (every window takes its colours as it's built)."""
+        self.s["appearance"] = value
+        will = ("dark" if theme.system_is_dark() else "light") if value == "system" else value
+        self.appearance_note.configure(text="" if will == theme.MODE else f"PhoneKeep will be {will} the next time it opens.")
+
     def __init__(self, app: App, focus: str = None):
         super().__init__(app, bg=BG)
         app.attach_menu(self)
@@ -2502,6 +2509,19 @@ class SettingsWindow(tk.Toplevel):
                        lambda: reveal(activity.ACTIVITY_FILE if activity.ACTIVITY_FILE.exists()
                                       else activity.ACTIVITY_FILE.parent),
                        "secondary", 140, 34, 12, bg=CARD).pack(side="left", padx=(8, 0))
+
+        # appearance (E6): read once as PhoneKeep starts (theme.py), so a change shows the next time it opens
+        ap = section("Appearance", "Light or dark. With “Same as this computer”, PhoneKeep follows the computer's own "
+                     "setting each time it opens.", "Appearance")
+        self.appearance_var = tk.StringVar(value=self.s["appearance"])
+        arow = tk.Frame(ap, bg=CARD)
+        arow.pack(anchor="w", pady=(0, 6))
+        self.appearance_note = tk.Label(ap, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left",
+                                        wraplength=560)
+        for val, label in (("system", "Same as this computer"), ("light", "Light"), ("dark", "Dark")):
+            ttk.Radiobutton(arow, text=label, value=val, variable=self.appearance_var,
+                            command=lambda: self.set_appearance(self.appearance_var.get())).pack(side="left", padx=(0, 14))
+        self.appearance_note.pack(fill="x")
 
         # about
         abt = section("About", f"{wv.APP_NAME} {wv.VERSION}" + (f" · test build {wv.BUILD_LABEL}" if wv.BUILD_LABEL else ""),
