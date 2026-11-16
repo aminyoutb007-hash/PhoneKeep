@@ -850,13 +850,13 @@ class App(_dnd_root()):
         """The window's close button. While a backup runs the window goes away and the backup carries on
         (Mac: the Dock icon brings it back; Windows and Linux: it waits in the taskbar). Otherwise PhoneKeep
         quits, as before."""
-        if not self._backing_up():
-            self.quit_app()
-            return
         try:
             self.update()               # window events still queued from before (e.g. it just came back) go first
         except tk.TclError:
             pass
+        if not self._backing_up():      # checked after that: the backup may have ended inside it
+            self.quit_app()
+            return
         self._closed_while_busy = True
         self._away = True
         self.log("The window was closed; the backup carries on.")

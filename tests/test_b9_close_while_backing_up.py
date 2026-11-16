@@ -237,6 +237,26 @@ pump(lambda: not a.busy, 20, "the stand-in backup to finish")
 settle(1.5)
 check(not notes and not quits, f"the window brought back before the end: no notification, no quitting ({notes}, {quits})")
 
+# the backup ends in the very moment the window is closed (inside the events it runs first): it quits, as with
+# nothing running, rather than hiding a window with no backup
+notes.clear()
+quits.clear()
+gate.clear()
+a.backup_and_export()
+pump(lambda: a.prog.winfo_manager() and a.busy, 10, "the card")
+real_update = a.update
+
+
+def update_while_it_ends():
+    a.update = real_update
+    gate.set()
+    pump(lambda: not a.busy, 20, "the stand-in backup to finish")
+a.update = update_while_it_ends
+a.close_window()
+a.update = real_update
+check(quits == [1] and not a._window_away() and not notes,
+      f"a backup ending just as the window closes: PhoneKeep quits, nothing is left hidden ({quits}, {a._window_away()}, {notes})")
+
 # Quit while it backs up, answered OK: the backup stops and PhoneKeep quits
 appmod.messagebox.askokcancel = lambda *x, **k: True
 stopped = []
