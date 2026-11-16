@@ -683,7 +683,7 @@ class App(_dnd_root()):
         self.cancel_btn.pack_forget()
         self.go.configure_text("Back up again" if not err and self.last_index else "Back up now")
         self.passcode_notice(None)
-        self._end_progress()           # L2: the window comes back; a problem shows in the banner at the top
+        card = self._end_progress()    # L2: the window comes back; a problem shows in the banner at the top
         if err is not None:
             pr = self.problem_of(err)
             for r in self.steps.values():
@@ -691,11 +691,18 @@ class App(_dnd_root()):
                     r.set("error", detail=pr.message)
             self.log("ERROR: " + pr.message + (f"  [{pr.details.splitlines()[0]}]" if pr.details else ""))   # full text: Show details
             if not quiet:
-                self.show_problem(pr, retry=(lambda: self._run(fn, done)) if fn else None)
+                self.show_problem(pr, retry=(lambda: self._retry(fn, done, card)) if fn else None)
         else:
             self.hide_problem()
         if done:
             done(None if err is not None else result)
+
+    def _retry(self, fn, done, card):
+        """The banner's Try again (or Back up now after a cancel): the same job, with its progress card back if it
+        had one, so the retry shows its percentage and Cancel (reviewer, #73)."""
+        if card is not None and not self._reset_progress(*card):
+            return
+        self._run(fn, done)
 
     # ------------------------------------------------------------------ problems (E3)
     @staticmethod
@@ -1502,6 +1509,7 @@ class App(_dnd_root()):
         self.done.pack_forget()
         self.hide_problem()
         self._show_steps(rows)
+        self._card_for = (rows, kicker)          # a retry from the banner brings back the same card
         d = self.device or {}
         self.prog_kicker.configure(text=kicker)
         self.prog_name.configure(text=d.get("DeviceName") or ("Your iPhone" if rows is not EXPORT_STEPS else "Your backup"))
@@ -1520,15 +1528,17 @@ class App(_dnd_root()):
         return True
 
     def _end_progress(self):
-        """Put the window back as it was before the job (the finished card, if any, goes under it)."""
+        """Put the window back as it was before the job (the finished card, if any, goes under it).
+        Returns the card's (rows, kicker) if it was up, else None."""
         if not self.prog.winfo_manager():
-            return
+            return None
         self.prog.pack_forget()
         self.attn.pack_forget()
         for w, info in getattr(self, "_hidden", []):
             info.pop("in", None)
             w.pack(**info)
         self._hidden = []
+        return getattr(self, "_card_for", None)
 
     def _set_pct(self, pct, right: str):
         """The big percentage, the bar and the time left (None: nothing to show yet)."""

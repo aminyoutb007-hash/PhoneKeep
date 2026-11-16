@@ -131,6 +131,17 @@ check(after == before, "the window comes back as it was")
 check(a.bar_frame.winfo_manager() and a.bar_text.cget("text").startswith("Backup cancelled."),
       f"  saying the backup was cancelled ({a.bar_text.cget('text')[:40]!r})")
 
+# the banner's "Back up now" (after a cancel) runs the backup again with the card, fresh steps and Cancel
+check(a.bar_btn is not None, "  the banner offers to back up again")
+a.bar_btn.command()
+pump(lambda: a.prog.winfo_manager() and a.cancel_btn.winfo_manager(), 20, "the retried backup's card and Cancel")
+check([w for w in a.body.winfo_children() if w.winfo_manager()] == [a.prog] and a.prog_kicker.cget("text") == "Backing up"
+      and list(a.steps) == [k for k, _t in appmod.STEPS] and a.steps["snapshot"].state == "pending"
+      and bool(a.cancel_btn.winfo_manager()), "backing up again from the banner shows the card, fresh steps and Cancel")
+a.cancel_btn.command()
+pump(lambda: not a.busy, 30, "the second backup to stop")
+check([w for w in a.body.winfo_children() if w.winfo_manager()] == before, "  and Cancel brings the window back again")
+
 # the last phase and building the archive, from what the backup reports (straight to the window's handlers)
 a._reset_progress(appmod.STEPS, "Backing up")
 a._backup_status("12 MB copied from the iPhone")
