@@ -18,8 +18,8 @@ Common rules for L1-L3 and the E1 refresh:
 - The search box in the mockup ("Search everything") is E4; it isn't part of L1.
 
 **Done when**
-- [ ] Side by side with `Phone.png` (invented test phone): the same structure, in the same order.
-- [ ] Every section opens from its tile, and every card opens its details (test).
+- [x] Side by side with `Phone.png` (invented test phone): the same structure, in the same order. *(15 Nov: [screenshot](../evidence/l1-phone-window/phone-window.png).)*
+- [x] Every section opens from its tile, and the Battery and Storage cards open their details (`tests/test_l1_phone_window.py`; the This iPhone card has no details screen, as today).
 
 ## L2. Backup progress screen
 
