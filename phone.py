@@ -366,6 +366,13 @@ class PhoneWindow(tk.Toplevel):
         self._storage_for = None            # the overview the running second try is for
         self._connecting = False
         self._reload_when_connected = False
+        self.find_q = tk.StringVar()        # E4: "Search everything", shared by the home screen and the results
+        self.find_q.trace_add("write", self._find_typed)
+        self._find_after = None
+        self.searcher = None                # search.PhoneSearch for self.data, built on the first search
+        self.search_runner = Runner(self)
+        self.find_hook = None               # (key, its search box's StringVar, select(ref)) of the open app view
+        self.pending_find = None            # (key, query, ref): what to show once that app's view is up
 
         self._build()
         saved = wv.phone_picture(self.udid) if self.udid else None
@@ -998,6 +1005,7 @@ class PhoneWindow(tk.Toplevel):
 
     # home screen --------------------------------------------------------------
     def _clear(self):
+        self.find_hook = None               # E4: the view it belonged to is going
         for w in self.content.winfo_children():
             w.destroy()
 
@@ -1012,8 +1020,10 @@ class PhoneWindow(tk.Toplevel):
                 last = f"Last backup {wv.backup_info(self.backup_path).get('date') or '?'}"
             self.overview_strip = overview_ui.cards(self, self.content, self.overview, last, self.overview_problem)
             self.overview_strip.pack(fill="x", pady=(0, 18))
-        tk.Label(self.content, text="What's on this iPhone", bg=BG, fg=INK, font=font(19, "bold"), anchor="w").pack(
-            fill="x", pady=(0, 10))
+        row = tk.Frame(self.content, bg=BG)
+        row.pack(fill="x", pady=(0, 10))
+        tk.Label(row, text="What's on this iPhone", bg=BG, fg=INK, font=font(19, "bold"), anchor="w").pack(side="left")
+        self._find_box(row).pack(side="right")
         grid = tk.Frame(self.content, bg=BG)
         grid.pack(fill="x")
         self.tile_count, self.tiles = {}, {}
@@ -1046,6 +1056,180 @@ class PhoneWindow(tk.Toplevel):
         self.src_line = tk.Label(self.content, text=self.src_text, bg=BG, fg=MUTED, font=font(11), anchor="w",
                                  justify="left", wraplength=760)
         self.src_line.pack(fill="x", pady=(12, 0))
+
+    # one search across the phone (E4) --------------------------------------------------------------------------
+    def _find_box(self, parent) -> tk.Frame:
+        """The "Search everything" box: a magnifier, the shared search text and a grey hint while it's empty."""
+        box = tk.Frame(parent, bg=CARD, highlightthickness=1, highlightbackground=LINE)
+        tk.Label(box, text="🔍", bg=CARD, fg=MUTED, font=font(12)).pack(side="left", padx=(10, 2))
+        ent = tk.Entry(box, textvariable=self.find_q, width=26, relief="flat", bd=0, bg=CARD, fg=INK,
+                       insertbackground=INK, highlightthickness=0, font=font(13))
+        ent.pack(side="left", padx=(2, 10), pady=7)
+        # the grey hint is packed after the entry while it's empty (not placed over it: Tk on Linux crashed when a
+        # window placed inside the entry was torn down with it; #80 CI)
+        hint = tk.Label(box, text="Search everything", bg=CARD, fg=MUTED, font=font(13), cursor="xterm")
+        hint.bind("<Button-1>", lambda e: ent.focus_set())
+        tid = None
+
+        def show_hint(*_):
+            if not hint.winfo_exists():
+                self.find_q.trace_remove("write", tid)        # this box is gone
+                return
+            if self.find_q.get():
+                hint.pack_forget()
+                ent.configure(width=26)
+            else:                           # an empty entry just wide enough for the cursor, the hint after it
+                ent.configure(width=1)
+                if not hint.winfo_manager():
+                    hint.pack(side="left", after=ent, padx=(0, 10))
+        tid = self.find_q.trace_add("write", show_hint)
+        show_hint()
+        box.entry = ent
+        return box
+
+    def _find_typed(self, *_):
+        if self._find_after is not None:
+            self.after_cancel(self._find_after)
+        self._find_after = self.after(250, self._find_now)
+
+    def _find_now(self):
+        self._find_after = None
+        import search
+        q = search.fold(self.find_q.get()).strip()
+        if len(q) >= search.MIN_CHARS:
+            self.show_search()
+        elif self.current == "search":
+            self.show_home()
+            self._focus_find()
+
+    def _focus_find(self):
+        for w in self.content.winfo_children():
+            for box in w.winfo_children():
+                if hasattr(box, "entry"):
+                    box.entry.focus_set()
+                    box.entry.icursor("end")
+                    return
+
+    def show_search(self):
+        """The results of the search box, grouped by app; building the search first if it's the first time."""
+        import search
+        first = self.current != "search"
+        self.current = "search"
+        if first:
+            self._clear()
+            top = tk.Frame(self.content, bg=BG)
+            top.pack(fill="x", pady=(0, 8))
+            RoundButton(top, "‹  Home", self._leave_search, "secondary", 100, 32, 12).pack(side="left")
+            self._find_box(top).pack(side="left", padx=(12, 0))
+            self.find_status = tk.Label(top, text="", bg=BG, fg=MUTED, font=font(12), anchor="w")
+            self.find_status.pack(side="left", padx=(12, 0))
+            frame = card(self.content)
+            frame.pack(fill="both", expand=True)
+            self.find_text = tk.Text(frame, wrap="word", relief="flat", bg=CARD, fg=INK, font=font(13), padx=16,
+                                     pady=12, highlightthickness=0, cursor="arrow")
+            sb = ttk.Scrollbar(frame, orient="vertical", command=self.find_text.yview)
+            self.find_text.configure(yscrollcommand=sb.set, state="disabled")
+            self.find_text.pack(side="left", fill="both", expand=True)
+            sb.pack(side="right", fill="y")
+            self._focus_find()
+        if self.data is None:
+            self.find_status.configure(text="Search looks through the backup: "
+                                       + ("unlock it first." if self.data_error else "it's still opening… one moment."))
+            return
+        if self.searcher is None or self.searcher.get != self.data.get:
+            self.searcher = search.PhoneSearch(self.data.get)
+        s = self.searcher
+        if not s.ready:
+            if not getattr(self, "_find_building", False):
+                self._find_building = True
+
+                def progress(label):
+                    self.search_runner.on_ui(lambda: self._find_status(f"Getting everything ready to search… {label}"))
+
+                def built(_r=None):
+                    self._find_building = False
+                    if self.current == "search":
+                        self.show_search()
+
+                self.search_runner.submit(lambda: s.build(progress), built, built)
+            return
+        self._show_results(self.find_q.get())
+
+    def _find_status(self, text):
+        try:
+            if self.current == "search":
+                self.find_status.configure(text=text)
+        except (AttributeError, tk.TclError):
+            pass
+
+    def _leave_search(self):
+        self.find_q.set("")
+        self.show_home()
+
+    def _show_results(self, query: str):
+        import search
+        t0 = time.perf_counter()
+        groups = self.searcher.find(query)
+        self.find_seconds = time.perf_counter() - t0
+        t = self.find_text
+        t.configure(state="normal")
+        t.delete("1.0", "end")
+        for tag in t.tag_names():
+            if tag.startswith("h"):
+                t.tag_delete(tag)
+        t.tag_configure("app", font=font(15, "bold"), spacing1=10, spacing3=4)
+        t.tag_configure("title", font=font(13, "bold"))
+        t.tag_configure("when", foreground=MUTED, font=font(11))
+        t.tag_configure("snip", foreground=MUTED, lmargin1=0, spacing3=8)
+        t.tag_configure("match", background=theme.HIT, foreground=INK)
+        t.tag_configure("more", foreground=theme.LINK)
+        total = sum(n for _k, n, _h in groups)
+        if not groups:
+            t.insert("end", f"Nothing found for “{query.strip()}”.", "snip")
+        n = 0
+        for key, count, hits in groups:
+            t.insert("end", f"{search.LABELS[key]}  ", "app")
+            t.insert("end", f"{count:,} result{'s' if count != 1 else ''}\n", ("app", "when"))
+            for h in hits[:search.SHOWN]:
+                tag = f"h{n}"
+                n += 1
+                before, match, after = search.snippet(h.text, query)
+                t.insert("end", h.title, ("title", tag))
+                t.insert("end", (f"   {h.when}" if h.when else "") + "\n", ("when", tag))
+                t.insert("end", before, ("snip", tag))
+                t.insert("end", match, ("snip", "match", tag))
+                t.insert("end", after + "\n", ("snip", tag))
+                t.tag_bind(tag, "<Button-1>", lambda e, h=h: self.open_hit(h, query))
+                t.tag_bind(tag, "<Enter>", lambda e: t.configure(cursor="hand2"))
+                t.tag_bind(tag, "<Leave>", lambda e: t.configure(cursor="arrow"))
+            if count > search.SHOWN:
+                tag = f"h{n}"
+                n += 1
+                t.insert("end", f"Show all {count:,} in {search.LABELS[key]}  ›\n", ("more", tag))
+                t.tag_bind(tag, "<Button-1>", lambda e, k=key: self.open_hit(search.Hit(k, "", ""), query))
+        t.configure(state="disabled")
+        left = [search.LABELS[k] for k in self.searcher.missing]
+        self._find_status((f"{total:,} result{'s' if total != 1 else ''}" if total else "")
+                          + (f" · not in this backup: {', '.join(left)}" if left else ""))
+        self.find_hits = groups
+
+    def open_hit(self, hit, query: str):
+        """Open the app with that item: its own search box shows the same words, and the item is chosen."""
+        self.pending_find = (hit.key, query.strip(), hit.ref)
+        self.open_app(hit.key)
+
+    def _apply_find(self, key: str):
+        pending, self.pending_find = self.pending_find, None
+        hook = self.find_hook
+        if not pending or pending[0] != key or not hook or hook[0] != key:
+            return
+        _k, query, ref = pending
+        hook[1].set(query)
+        if ref is not None:
+            try:
+                hook[2](ref)
+            except (tk.TclError, LookupError):
+                pass
 
     def _paint_count(self, key):
         lab = getattr(self, "tile_count", {}).get(key)
@@ -1179,6 +1363,8 @@ class PhoneWindow(tk.Toplevel):
          "calendar": self.v_calendar, "voicemail": self.v_voicemail, "voicememos": self.v_voicememos,
          "safari": self.v_safari, "apps": self.v_apps, "allfiles": self.v_allfiles, "music": self.v_music, "books": self.v_books,
          "files": self.v_files, "photos": self.v_photos}[key](key, value)
+        if self.pending_find:
+            self._apply_find(key)
 
     # saving -------------------------------------------------------------------
     def out_dir(self, key: str) -> Path:
@@ -1318,6 +1504,7 @@ class PhoneWindow(tk.Toplevel):
                                      f" · backup of {self.data.info.get('date') or '?'}")
         panel = ui.ChatPanel(self.content, lists, self.data.preview, select_all=False, preview_limit=600)
         panel.pack(fill="both", expand=True)
+        self.find_hook = (key, panel.q, lambda ref: panel.show_chat(key, ref[0], ref[1]))
 
         def export(fmts):
             sel = panel.selection(confirm_empty=False)
@@ -1505,7 +1692,7 @@ class PhoneWindow(tk.Toplevel):
 
     # tables -----------------------------------------------------------------------
     def table_view(self, key, headers: list, rows: list, widths: Optional[list] = None, actions=(),
-                   on_double=None, multi=True, title_extra="", preview=None):
+                   on_double=None, multi=True, title_extra="", preview=None, find_row=lambda ref: ref):
         """A searchable, sortable table with Excel/CSV saving. actions: [(label, fn(selected rows))].
         preview(row) -> quicklook.Item: Space previews the selected row; the arrows go through the list (Q1)."""
         top = tk.Frame(self.content, bg=BG)
@@ -1530,9 +1717,11 @@ class PhoneWindow(tk.Toplevel):
 
         ncol = len(headers)
 
+        import search
+
         def shown() -> list:
-            t = q.get().strip().lower()
-            return [r for r in state["rows"] if not t or any(t in str(x).lower() for x in r[:ncol])]
+            t = search.fold(q.get()).strip()
+            return [r for r in state["rows"] if not t or any(t in search.fold(str(x)) for x in r[:ncol])]
 
         def fill(*_):
             tree.delete(*tree.get_children())
@@ -1550,6 +1739,13 @@ class PhoneWindow(tk.Toplevel):
         q.trace_add("write", fill)
         fill()
         by_id = {str(id(r)): r for r in state["rows"]}
+
+        def pick(ref):                      # E4: a search result chose this row (find_row: its place in `rows`)
+            iid = str(id(rows[find_row(ref)]))
+            if tree.exists(iid):
+                tree.selection_set(iid)
+                tree.see(iid)
+        self.find_hook = (key, q, pick)
 
         def selected() -> list:
             return [by_id[i] for i in tree.selection() if i in by_id]
@@ -1625,7 +1821,8 @@ class PhoneWindow(tk.Toplevel):
                 if str(r[3]).startswith(("http://", "https://")):
                     webbrowser.open(r[3])
         self.table_view(key, ["Kind", "Folder", "Title", "Address"], rows, [150, 120, 260, 360],
-                        on_double=open_url, actions=[("Open in browser", open_url)])
+                        on_double=open_url, actions=[("Open in browser", open_url)],
+                        find_row=lambda ref: ref[1] if ref[0] == "bookmark" else len(bm) + ref[1])
 
     def v_apps(self, key, apps):
         self.view_sub.configure(text=f"{len(apps):,} apps")
@@ -1830,11 +2027,13 @@ class PhoneWindow(tk.Toplevel):
         txt.pack(fill="both", expand=True, padx=2, pady=6)
         pane.add(rf, minsize=320)
 
+        import search
+
         def fill(*_):
-            t = q.get().strip().lower()
+            t = search.fold(q.get()).strip()
             tree.delete(*tree.get_children())
             for i, n in enumerate(notes):
-                if t and t not in (n["title"] + " " + (n["text"] or "")).lower():
+                if t and t not in search.fold(n["title"] + " " + (n["text"] or "")):
                     continue
                 tree.insert("", "end", iid=str(i), values=(("🔒 " if n["locked"] else "") + n["title"],
                                                            n["folder"], sx.fmt(n["modified"])))
@@ -1853,6 +2052,7 @@ class PhoneWindow(tk.Toplevel):
         q.trace_add("write", fill)
         tree.bind("<<TreeviewSelect>>", show)
         fill()
+        self.find_hook = (key, q, lambda ref: (tree.selection_set(str(ref)), tree.see(str(ref))))
         kids = tree.get_children()
         if kids:
             tree.selection_set(kids[0])
@@ -2200,7 +2400,7 @@ class PhoneWindow(tk.Toplevel):
                 wv.APP_NAME, "A backup is still running. Close anyway? It will carry on next time.", parent=self):
             return
         for r in (self.backup_runner, self.live_runner, self.info_runner, self.apps_runner, self.watch_runner,
-                  self.storage_runner):
+                  self.storage_runner, self.search_runner):
             r.stop()
         self._storage_tick_cancel()
         if quicklook.Viewer.current is not None:

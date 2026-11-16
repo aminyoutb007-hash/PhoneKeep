@@ -59,12 +59,16 @@ See also the journeys and patterns in [00-user-experience.md](00-user-experience
 **What the user sees and does:** a search box at the top of the phone window. Typing shows results grouped by app (Messages, WhatsApp, WhatsApp Business, Notes, Contacts, Calls, Files, Safari) with the matching words highlighted and dates. Clicking opens the item at that spot.
 
 **Requirements**
-- A local search index per snapshot, built in the background after each backup, stored encrypted with the backup.
+- ~~A local search index per snapshot, built in the background after each backup, stored encrypted with the backup.~~ **Decided (owner, 16 Nov): in-memory only, by design (nothing decrypted outlives the app).** No index is saved.
 - Finds partial words, ignores accents and case, supports Arabic and French text.
 
+**How it's built (16 Nov):** "Search everything" sits on the phone window's home screen, beside "What's on this iPhone", as in the L1 mockup. Typing two letters or more shows the results in place of the tiles. They are grouped by app (Messages, WhatsApp, WhatsApp Business, Notes, Contacts, Calls, Safari), five per app with "Show all N in …", each with its chat, note or name, its date, and the matching words highlighted. A click opens that app with the item chosen and the same words in its own search box; a chat opens at the message that was clicked. The screens' own searches now match the same way. Files isn't searched: in PhoneKeep it lists the iPhone's apps live, and there is no text in it to search.
+
+The first search reads each app from the open backup once (a few seconds on a large phone, "Getting everything ready to search…"). After that everything stays in memory while the window is open. **Nothing is written to disk**, by the owner's decision (16 Nov): no index file exists, so no copy of the chats sits next to the backup, encrypted or not, and nothing decrypted outlives the app. The in-memory search meets the speed target.
+
 **Done when**
-- [ ] On a backup with 200,000 messages, first results show in under 1 second.
-- [ ] Usability test task 3 passes.
+- [x] On a backup with 200,000 messages, first results show in under 1 second. *(16 Nov: 200,000 invented messages, French and Arabic among them; once the search is ready, every query answers in well under 1 second; getting ready took under a second on the owner's Mac (`tests/test_e4_search.py`). Screenshots on the tests' backup after X2 redaction: [home](../evidence/e4-search/home.png), [results](../evidence/e4-search/results.png).)*
+- [ ] Usability test task 3 passes. *(The owner's usability test, moved to 5.3.)*
 
 ## E5. All phones and backups in one list
 

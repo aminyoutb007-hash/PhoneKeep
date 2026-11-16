@@ -151,13 +151,23 @@ check(icon.picture is not None and icon.itemcget(icon.find_withtag("picture")[0]
       "not connected: the last phone's picture dimmed, with a small 'not connected' badge")
 
 # over a cable: a fresh home screen quietly replaces the saved one
-before = Image.open(wv.phone_picture(UD)).getpixel((5, 5))
+def corner():
+    """The saved picture's corner colour; the file is closed at once (Windows can't replace a file held open)."""
+    try:
+        with Image.open(wv.phone_picture(UD)) as im:
+            return im.getpixel((5, 5))
+    except OSError:                          # caught between the app's write and its rename
+        return None
+
+
+before = corner()
 reach["devs"] = [PHONE]
 a.detect(silent=True)
-pump(lambda: reads and Image.open(wv.phone_picture(UD)).getpixel((5, 5)) != before, 10)
+pump(lambda: reads and corner() not in (before, None), 10)
 pump(lambda: False, 0.3)
-check(reads == [UD] and Image.open(wv.phone_picture(UD)).getpixel((5, 5)) == (30, 90, 200),
-      "over a cable: a fresh home screen is read from this phone and replaces the saved one")
+check(reads == [UD] and corner() == (30, 90, 200),
+      f"over a cable: a fresh home screen is read from this phone and replaces the saved one (reads {reads}, "
+      f"corner {corner()})")
 check(icon.state == "ok" and icon.picture == wv.phone_picture(UD), "  and the small phone shows the fresh one")
 a.detect(silent=True)
 pump(lambda: False, 0.5)
@@ -200,5 +210,24 @@ check(win.wall_img is not None, "the phone window shows the saved home screen at
 win.live_runner.stop()
 win.destroy()
 a.destroy()
+
+# Windows refuses to replace a file someone is reading at that moment (a phone card, the window): it tries again
+real_replace, tries = Path.replace, []
+
+
+def busy_twice(self, target):
+    tries.append(1)
+    if len(tries) <= 2:
+        raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+    return real_replace(self, target)
+
+
+Path.replace = busy_twice
+try:
+    got = wv.keep_phone_picture(UD, invented((10, 200, 60), "busy.png"))
+finally:
+    Path.replace = real_replace
+check(got == wv.phone_picture(UD) and len(tries) == 3 and corner() == (10, 200, 60),
+      f"the saved home screen is replaced even if it's being read just then (Windows; tries: {len(tries)})")
 print("\nMAIN WALLPAPER TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)), flush=True)
 os._exit(1 if failures else 0)

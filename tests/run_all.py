@@ -56,6 +56,7 @@ STEPS = [
     ("Backup progress screen (L2): percentage, steps, Look at your iPhone, Cancel; the window comes back (5.2)", "test_l2_backup_progress.py", True),
     ("Settings layout (L3): the list on the left reaches every card; every setting kept; Activity and About (5.2)", "test_l3_settings.py", True),
     ("Closing the window while backing up (B9): the backup carries on, notifies, then quits; Quit asks first (5.3)", "test_b9_close_while_backing_up.py", True),
+    ("One search across the phone (E4): every app at once, accents and Arabic marks ignored, 200,000 messages in under 1 s", "test_e4_search.py", True),
     ("Closing a phone window while it reads its backup: the read finishes, then the files are let go (no crash)", "test_close_while_reading.py", True),
     ("All phones in one list (E5): a card for each phone backed up here or connected; each opens its own window", "test_e5_all_phones.py", True),
 ]

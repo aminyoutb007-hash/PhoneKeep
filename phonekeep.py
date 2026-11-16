@@ -638,8 +638,14 @@ def keep_phone_picture(udid: Optional[str], src) -> Optional[Path]:
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(".tmp")
         shutil.copyfile(src, tmp)
-        tmp.replace(dest)
-        return dest
+        for i in range(20):
+            try:
+                tmp.replace(dest)
+                return dest
+            except PermissionError:         # Windows: the saved one is being read right now (a phone card, the window)
+                if i == 19:
+                    raise
+                time.sleep(0.1)
     except OSError:
         return None
 
