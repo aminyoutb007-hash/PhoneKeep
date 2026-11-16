@@ -119,6 +119,16 @@ def pump(until, timeout=10):
     return until()
 
 
+def close_windows():
+    """Close the phone windows as the close button does (it lets go of the backup's files: Windows can't delete
+    an open Manifest.db), once a window's backup has finished loading."""
+    for w in a.open_phone_windows():
+        if w.backup_path is not None:
+            pump(lambda: w.data is not None or w.data_error is not None, 30)
+        w.close()
+    a.update()
+
+
 def detect():
     a.detecting = False
     gen = a._all_gen
@@ -164,8 +174,7 @@ check(set(order) == {A, B, C} and order[-1] == C, f"a connected phone never back
 tb = a.phone_tiles[B].texts()
 check("● Wi-Fi" in tb and "Not backed up yet" in tb and not any("ncrypted" in t for t in tb), f"  it says it's connected and not backed up: {tb}")
 check("● Cable" in a.phone_tiles[A].texts(), "  the cable phone says so too")
-for w in a.open_phone_windows():
-    w.destroy()
+close_windows()
 check(a.udid == A, "phone A is the chosen one (B8)")
 a.phone_tiles[B].click()
 pump(lambda: len(opened) == 3)
@@ -207,8 +216,7 @@ messagebox.showinfo = real_info
 check(told and len(opened) == before, "a phone with no backup left and not connected: it says so and opens nothing")
 
 # -- one phone: no list --------------------------------------------------------------------------------------
-for w in a.open_phone_windows():
-    w.destroy()
+close_windows()
 shutil.rmtree(BD / C)
 shutil.rmtree(BD / A)
 reach["devs"] = [DA]
