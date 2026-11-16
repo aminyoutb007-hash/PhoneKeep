@@ -356,6 +356,7 @@ class PhoneWindow(tk.Toplevel):
         self.info_runner = Runner(self)
         self.apps_runner = Runner(self)     # 5.1.3: the app list, read only when it's needed
         self._apps_state = ""               # "" / "loading" / "done"
+        self._apps_failed = False           # the last ask failed: asked again only when Storage is opened again
         self._apps_list = None
         self._apps_shown_at = 0.0
         self.phone_here = True          # 5.1.3: False while the iPhone is unplugged / out of reach
@@ -928,12 +929,13 @@ class PhoneWindow(tk.Toplevel):
         except tk.TclError:
             pass
 
-    def load_apps(self):
+    def load_apps(self, again: bool = True):
         """5.1.3: the app list, in the background: the names at once, then the sizes a few apps at a time, each
-        shown as it arrives; the full list is saved for next time. Once per window."""
-        if self._apps_state or self.live is None:
+        shown as it arrives; the full list is saved for next time. Once per window. again=False (Storage redrawn,
+        not opened): after a failed ask, don't ask again (a quick failure would redraw and ask for ever)."""
+        if self._apps_state or self.live is None or (self._apps_failed and not again):
             return
-        self._apps_state = "loading"
+        self._apps_state, self._apps_failed = "loading", False
         live, udid, wifi = self.live, self.udid, self.wifi
         known = list(self.overview.apps) if self.overview is not None else phoneapps.load_saved(udid)[0]
         if self.overview is not None:
@@ -953,7 +955,7 @@ class PhoneWindow(tk.Toplevel):
             self._apps_arrived(apps, False)
 
         def err(e):
-            self._apps_state = ""               # asked again next time it's opened
+            self._apps_state, self._apps_failed = "", True      # asked again the next time Storage is opened
             if self.overview is not None:
                 self.overview.apps_updating = False
             self._apps_refresh(force=True)

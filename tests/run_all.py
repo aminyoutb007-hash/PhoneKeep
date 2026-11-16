@@ -53,6 +53,7 @@ STEPS = [
     ("Main window: the iPhone's home screen in the small phone picture (5.1.3)", "test_main_wallpaper.py", True),
     ("Storage timeout: one slow answer never blanks the rest; storage asked again, then 'Try again' (5.1.3)", "test_storage_timeout.py", True),
     ("Closed connection: reads on a let-go connection fail at once and plainly; the app list reconnects once (5.1.3)", "test_closed_connection.py", False),
+    ("Storage: a quick failing app list doesn't make the screen ask and redraw for ever (5.2)", "test_storage_loop.py", True),
     ("Storage tips (V6): how to free each of the largest apps' space, steps only (5.2)", "test_storage_tips.py", True),
     ("Phone window layout (L1): header, Snapshot card, cards, four columns of tiles; every tile opens (5.2)", "test_l1_phone_window.py", True),
     ("Backup progress screen (L2): percentage, steps, Look at your iPhone, Cancel; the window comes back (5.2)", "test_l2_backup_progress.py", True),
