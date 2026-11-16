@@ -304,7 +304,8 @@ class FirstRunGuide(tk.Frame):
             return
         if not udid or not self.trusted or self.app.busy:
             self.wifi_var.set(False)
-            self.wifi_note.configure(text="" if udid and self.trusted else "Plug in your iPhone and tap Trust first.")
+            self.wifi_note.configure(text="PhoneKeep is busy; try again in a moment." if udid and self.trusted
+                                     else "Plug in your iPhone and tap Trust first.")
             return
         name = (self.app.device or {}).get("DeviceName", "your iPhone")
         if not messagebox.askokcancel(f"Turn on Wi-Fi backups for {name}?",
@@ -319,10 +320,17 @@ class FirstRunGuide(tk.Frame):
             return
         self.wifi_note.configure(text="Turning on…")
         self._wifi_writing = True
+        self.continue_btn.set_enabled(False)          # one conversation with the phone at a time
 
         def work():
-            phone_write.turn_on_wifi_sync(udid, name, confirmed=True, log=self.app.log)
-            return True
+            # a problem shows next to the switch, not as the window's banner: its "Try again" would repeat the
+            # write without the switch and the named OK (reviewer, #75)
+            try:
+                phone_write.turn_on_wifi_sync(udid, name, confirmed=True, log=self.app.log)
+                return True
+            except Exception as e:
+                self._wifi_problem = self.app.problem_of(e).message
+                return False
 
         def done(r):
             self._wifi_writing = False
@@ -332,11 +340,13 @@ class FirstRunGuide(tk.Frame):
             try:
                 on = self._wifi_on()
                 self.wifi_var.set(on)
-                self.wifi_note.configure(text="Wi-Fi backups are on for this iPhone." if on
-                                         else "" if r else "Not done")
+                self.wifi_note.configure(text="Wi-Fi backups are on for this iPhone." if on else "" if r else
+                                         "Not done: " + getattr(self, "_wifi_problem", "the iPhone didn't answer."),
+                                         fg=theme.ACCENT if on else RED)
+                self.continue_btn.set_enabled(self.trusted)
             except tk.TclError:
                 pass
-        self.app._run(work, done)
+        self.app._run(work, done, quiet=True)
 
     def _s_password(self):
         already = getattr(self, "phone_encrypts", None)

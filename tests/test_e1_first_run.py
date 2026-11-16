@@ -175,6 +175,17 @@ a.guide.wifi_var.set(True); a.guide.wifi_switched()
 check(len(asked) == 1 and a.guide.wifi_var.get() is False and not wifi_calls(),
       "  with no phone connected, switching on asks nothing and writes nothing")
 a.udid = real_udid
+a.guide.trusted = False                         # connected but not trusted (yet, or any more)
+a.guide.wifi_var.set(True); a.guide.wifi_switched()
+check(len(asked) == 1 and a.guide.wifi_var.get() is False and not wifi_calls(),
+      "  with the phone connected but not trusted, switching on asks nothing and writes nothing")
+a.guide.trusted = True
+mb.askokcancel = lambda title, *x, **k: (asked.append(title), setattr(a.guide, "trusted", False), True)[2]
+a.guide.wifi_var.set(True); a.guide.wifi_switched()
+check(len(asked) == 2 and a.guide.wifi_var.get() is False and not wifi_calls(),
+      "  if the phone stops trusting while asking, OK writes nothing")
+a.guide.trusted = True
+asked.pop()
 mb.askokcancel = lambda title, *x, **k: (asked.append(title), setattr(a, "udid", "00008030-OTHER"), True)[2]
 a.guide.wifi_var.set(True); a.guide.wifi_switched()
 a.update()
@@ -185,6 +196,8 @@ mb.askokcancel = lambda title, *x, **k: (asked.append(title), True)[1]          
 a.guide.wifi_var.set(True); a.guide.wifi_switched()
 check(pump(lambda: "are on" in a.guide.wifi_note.cget("text"), 20, "wifi"), "  OK: Wi-Fi backups turned on")
 check(len(wifi_calls()) == 1 and wifi_calls()[0]["argv"][:2] == ["--pk-wifi", "on"], f"  exactly one write to the phone ({len(wifi_calls())})")
+argv = wifi_calls()[0]["argv"]
+check("--udid" in argv and argv[argv.index("--udid") + 1] == real_udid, f"  to this phone, by its ID ({argv})")
 acts = [json.loads(l) for l in phone_write.ACTIVITY_FILE.read_text(encoding="utf-8").splitlines()]
 check(sum(x["summary"] == "Turned on Wi-Fi backups" for x in acts) == 1, "  the write is in the activity log")
 check(a.guide.wifi_var.get() is True, "  the switch shows on")
