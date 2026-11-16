@@ -4,6 +4,8 @@ See also the journeys and patterns in [00-user-experience.md](00-user-experience
 
 ## E1. First-run guide
 
+*5.2: laid out as in [14-layouts.md](14-layouts.md#e1-refresh-first-run-guide-layout): four steps on the left; the Wi-Fi question moved to the Trust step; "done" is step 4's other side.*
+
 **What the user sees and does:** on first launch, a short guide in the main window (not a separate wizard window), one step at a time, each with a picture:
 
 1. **Connect your iPhone** with a cable (Wi-Fi can be set up later). Picture of a phone and cable.
