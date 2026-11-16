@@ -433,6 +433,8 @@ def save_battery_details(win, history: list, ov, path: Optional[Path] = None) ->
     if ov is not None:
         import deviceinfo as di
         path.with_suffix(".json").write_text(di.details_json(ov), encoding="utf-8")
+    import activity
+    activity.log(f"Saved the battery history to {activity.where(path.parent)}", name, kind="save")
     return path
 
 

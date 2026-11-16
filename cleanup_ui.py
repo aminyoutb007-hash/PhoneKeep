@@ -12,6 +12,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 
+import activity
 import checkup_ui
 import cleanup as cl
 import quicklook
@@ -400,6 +401,7 @@ def summary(win, st: State, res: cl.SaveResult, folder):
     box = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
     box.pack(fill="x")
     n = len(res.saved)
+    activity.saved(n, "photo or video", folder, getattr(win, "name", None), plural="photos and videos")
     tk.Label(box, text=f"Saved {items_text(n)} to your archive.", bg=CARD, fg=INK, font=font(19, "bold"),
              anchor="w").pack(fill="x", padx=18, pady=(16, 2))
     tk.Label(box, text=str(folder), bg=CARD, fg=MUTED, font=font(11), anchor="w").pack(fill="x", padx=18)

@@ -38,9 +38,10 @@ def check(cond, what):
 
 wv.list_devices = lambda: []
 import phone_write
+import activity
 
-phone_write.ACTIVITY_FILE = W / "activity.jsonl"
-phone_write.ACTIVITY_FILE.write_text("".join(json.dumps({"when": f"2026-11-1{d}T10:00:00", "kind": "settings", "phone": None,
+activity.ACTIVITY_FILE = W / "activity.jsonl"
+activity.ACTIVITY_FILE.write_text("".join(json.dumps({"when": f"2026-11-1{d}T10:00:00", "kind": "settings", "phone": None,
                                                         "summary": f"Test change {d}"}) + "\n" for d in range(7)),
                                      encoding="utf-8")
 import app as appmod
@@ -140,15 +141,16 @@ win.update()
 check(win.canvas.yview()[0] == 0.0, "  Backups goes back to the top")
 
 # activity: the newest lines, newest first
-act = win.activity_lines.cget("text").splitlines()
-check(len(act) == 5 and act[0].endswith("Test change 6") and act[-1].endswith("Test change 2") and act[0].startswith("2026-11-16 10:00"),
-      f"Activity shows the 5 newest lines of the record, newest first: {act[:2]}")
-with open(phone_write.ACTIVITY_FILE, "a", encoding="utf-8") as f:     # damaged lines are skipped
+act = win.activity_lines.get("1.0", "end").strip().splitlines()
+check(len(act) == 7 and act[0].endswith("Test change 6") and act[-1].endswith("Test change 0")
+      and act[0].startswith("16 Nov 2026 10:00 · "),
+      f"Activity lists the record (S7: the last 12 months), newest first: {act[:2]}")
+with open(activity.ACTIVITY_FILE, "a", encoding="utf-8") as f:     # damaged lines are skipped
     f.write('{"when": 5, "summary": "x"}\nnot json\n["a list"]\n')
 check(appmod.activity_summary().splitlines()[0].endswith("Test change 6"), "  a damaged line in the record is skipped")
-phone_write.ACTIVITY_FILE.write_bytes(b"\xff\xfe not utf-8")
+activity.ACTIVITY_FILE.write_bytes(b"\xff\xfe not utf-8")
 check(appmod.activity_summary() == "Nothing recorded yet.", "  an unreadable record doesn't stop Settings opening")
-phone_write.ACTIVITY_FILE.unlink()
+activity.ACTIVITY_FILE.unlink()
 check(appmod.activity_summary() == "Nothing recorded yet.", "  and says so when there's nothing yet")
 
 win.destroy()
