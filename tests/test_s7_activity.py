@@ -60,6 +60,28 @@ check(activity.line(es[0]) == "4 Mar 2026 21:04 · Backed up Sam's iPhone (encry
       f"each line in plain words, with its date: {activity.line(es[0])!r}")
 check(activity.prune(now) == 2 and len(lines()) == 1, "older than 12 months (and damaged) is dropped from the file")
 check(activity.prune(now) == 0, "  and nothing more the next time")
+# the menu bar helper (another process) adds a line while the window trims: the line is never lost
+activity.ACTIVITY_FILE.write_text(json.dumps(old[0]) + "\n" + json.dumps(old[1]) + "\n", encoding="utf-8")
+_real_parse = activity._parse
+
+
+def parse_while_helper_writes(rows, since):
+    with open(activity.ACTIVITY_FILE, "a", encoding="utf-8") as f:     # not through log(): another process
+        f.write(json.dumps({"when": "2026-11-16T19:59:00", "kind": "backup", "phone": None,
+                            "summary": "Backed up by the helper"}) + "\n")
+    return _real_parse(rows, since)
+
+
+activity._parse = parse_while_helper_writes
+dropped = activity.prune(now)
+activity._parse = _real_parse
+check(dropped == 0 and "Backed up by the helper" in activity.ACTIVITY_FILE.read_text(encoding="utf-8")
+      and not activity.ACTIVITY_FILE.with_suffix(".tmp").exists(),
+      "a line written by another process while trimming is kept (that trim waits for the next start-up)")
+check(activity.prune(now) == 1 and [d["summary"] for d in lines()] == ["Backed up Sam's iPhone (encrypted)",
+                                                                        "Backed up by the helper"],
+      "  and the next trim drops only the old line")
+activity.ACTIVITY_FILE.write_text(json.dumps(old[1]) + "\n", encoding="utf-8")      # back to one line
 activity.saved(12, "photo", Path.home() / "Desktop", "Sam's iPhone")
 activity.saved(1, "photo/video", W, plural="photos/videos")
 activity.saved(3, "photo/video", W, plural="photos/videos")
@@ -69,6 +91,9 @@ check(got[0] == f"Saved 12 photos to ~{os.sep}Desktop" and got[1].startswith("Sa
       and got[2].startswith("Saved 3 photos/videos to ") and len(got) == 3,
       f"a save is counted, with its folder (home as ~); nothing saved, nothing recorded: {got}")
 check(lines()[1]["phone"] == "Sam's iPhone" and lines()[1]["kind"] == "save", "  with the phone, as a save")
+check(activity.where(Path.home().as_posix() + "/Documents/Saved") == os.path.join("~", "Documents", "Saved")
+      and activity.where(Path.home()) == "~" and activity.where(str(Path.home()) + "x") == str(Path.home()) + "x",
+      "a folder typed with / (as Windows' folder box gives it) is shown under ~ too; a look-alike isn't")
 activity.log("=HYPERLINK(\"http://x\")", kind="settings")
 out = activity.save_csv(W / "activity.csv", now=dt.datetime.now())
 with open(out, encoding="utf-8-sig", newline="") as f:
@@ -97,11 +122,18 @@ elif args[0] == "--pk-backup":
 wv._launcher_cmd = lambda: [sys.executable, str(stub)]
 wv.check_pmd3 = lambda: None
 wv.phone_used_bytes = lambda udid: 1_000_000
+# an invented phone only: nothing here may reach a real iPhone (reviewer, #84)
+wv.list_devices = lambda: [{"DeviceName": "Test iPhone", "UniqueDeviceID": UD, "ConnectionType": "USB"}]
+asked_phone = []
+wv.device_overview = lambda *a, **k: asked_phone.append("overview")
+wv.read_crash_reports = lambda *a, **k: asked_phone.append("crashes")
+wv.read_security = lambda *a, **k: asked_phone.append("security")
 path = wv.make_backup(W / "Backups", UD, log=lambda m: None)
 backups = [d for d in lines() if d["kind"] == "backup"]
 check(Path(path).exists() and len(backups) == 1
       and backups[0]["summary"] == f"Backed up {wv.backup_info(path)['name']} (not encrypted)",
       f"a backup is recorded once, with the phone's name and whether it's encrypted: {[d['summary'] for d in backups]}")
+check(asked_phone == ["overview", "crashes", "security"], "  (the after-backup reads went to stand-ins, not a phone)")
 
 # -- saves in a phone window -----------------------------------------------------------------------------------
 import tkinter as tk
@@ -117,6 +149,9 @@ class NoDevice:
 devmod.LiveDevice = NoDevice
 wv.list_devices = lambda: []
 appmod.SETTINGS_FILE = W / "settings.json"
+with open(activity.ACTIVITY_FILE, "a", encoding="utf-8") as f:
+    f.write(json.dumps({"when": "2024-01-01T09:00:00", "kind": "backup", "phone": None,
+                        "summary": "Backed up a phone long ago"}) + "\n")
 a = appmod.App()
 a.withdraw()
 a.after_cancel(a._timers.pop("first"))
@@ -134,6 +169,9 @@ def pump(until, timeout=60):
     return until()
 
 
+check(pump(lambda: "long ago" not in activity.ACTIVITY_FILE.read_text(encoding="utf-8"), 10)
+      and "Test iPhone (not encrypted)" in activity.ACTIVITY_FILE.read_text(encoding="utf-8"),
+      "at start-up PhoneKeep drops lines older than 12 months and keeps the rest")
 BK = W / "open" / "00008030-S7OPEN0000000000"
 shutil.copytree(fake, BK)
 activity.ACTIVITY_FILE.unlink()
@@ -167,6 +205,62 @@ check(pump(lambda: len(lines()) > n0), "Save everything ...")
 check([d["summary"] for d in lines()[n0:]] == [f"Saved everything to {activity.where(W / 'Everything')}"],
       "  is recorded once")
 
+# the chats' PDF save: ticked chats, one PDF each, saved to the folder chosen
+from tkinter import messagebox as _mb
+import ui as _ui
+n0 = len(lines())
+win.open_app("messages")
+check(pump(lambda: any(isinstance(w, _ui.ChatPanel) for w in win.content.winfo_children())), "Messages opens")
+panel = next(w for w in win.content.winfo_children() if isinstance(w, _ui.ChatPanel))
+panel.selected = {("messages", c["id"]) for _k, _l, c in panel.rows[:2]}
+win.out_dir = lambda key: (W / "ChatPDFs").mkdir(exist_ok=True) or W / "ChatPDFs"     # as the folder dialog would
+_mb.askyesnocancel = lambda *a, **k: False             # one PDF per chat
+_open = sys.modules["phone"].reveal
+sys.modules["phone"].reveal = lambda *a, **k: None     # don't open Finder in a test
+
+
+def find_button(w, text):
+    for c in w.winfo_children():
+        if isinstance(c, _ui.RoundButton) and c.text == text:
+            return c
+        r = find_button(c, text)
+        if r is not None:
+            return r
+
+
+find_button(panel, "Save ticked as PDF").command()
+check(pump(lambda: len(lines()) > n0, 90), "saving ticked chats as PDF ...")
+got = [d["summary"] for d in lines()[n0:]]
+check(got == [f"Saved 2 PDFs to {activity.where(W / 'ChatPDFs')}"],
+      f"  is recorded once, counted, never by the chats' names: {got}")
+sys.modules["phone"].reveal = _open
+
+# the iPhone's details, the battery history, Photo clean-up's summary
+import deviceinfo as di, overview_ui, checkup_ui, cleanup_ui, cleanup as cl
+n0 = len(lines())
+(W / "Details").mkdir()
+overview_ui.save_details(win, di.Overview(name="Test iPhone"), W / "Details" / "Test iPhone.json")
+checkup_ui.save_battery_details(win, [], None, W / "Details" / "battery.csv")
+got = [d["summary"] for d in lines()[n0:]]
+check(got == [f"Saved the iPhone's details to {activity.where(W / 'Details')}",
+              f"Saved the battery history to {activity.where(W / 'Details')}"],
+      f"the iPhone's details and the battery history files: once each: {got}")
+n0 = len(lines())
+
+
+class _St:
+    result = type("R", (), {"items": [], "cards": []})()
+    runner = None
+
+
+try:
+    cleanup_ui.summary(win, _St(), cl.SaveResult(saved=[object(), object(), object()]), W / "Cleanup")
+except Exception:                                       # the summary screen itself needs more than this stand-in
+    pass
+got = [d["summary"] for d in lines()[n0:]]
+check(got == [f"Saved 3 photos and videos to {activity.where(W / 'Cleanup')}"],
+      f"Photo clean-up's save: once, counted: {got}")
+
 # never message text, never a password: the fixture's chats, notes and the backup password stay out
 record = activity.ACTIVITY_FILE.read_text(encoding="utf-8")
 check(not any(t in record for t in ("Dinner Friday?", "Milk", "Salam! WhatsApp test", "test-password")),
@@ -194,9 +288,6 @@ sw.destroy()
 win.close()
 a.destroy()
 
-# start-up trims the record (in the background, so a long record never slows the window)
-check("threading.Thread(target=activity.prune" in (HERE.parent / "app.py").read_text(encoding="utf-8"),
-      "PhoneKeep trims the record to 12 months at start-up")
 
 print("\nS7 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)
