@@ -84,7 +84,7 @@ The usability test (five people, five tasks; P1's task 2 is one of them) and Q1'
 | S7 | Activity log | Not available | To build | [04-security.md](04-security.md#s7-activity-log) |
 | S8 | Tamper check for backups | Not available | To build | [04-security.md](04-security.md#s8-tamper-check) |
 | E4 | One search across the whole phone | Per-screen search only | Partial | [05-ease-of-use.md](05-ease-of-use.md#e4-one-search-across-the-phone) |
-| E5 | All phones and backups in one list | One phone at a time | Partial | [05-ease-of-use.md](05-ease-of-use.md#e5-all-phones-and-backups-in-one-list) |
+| E5 | All phones and backups in one list | One phone at a time | Done | [05-ease-of-use.md](05-ease-of-use.md#e5-all-phones-and-backups-in-one-list) |
 | E6 | Dark mode | Light only | To build | [05-ease-of-use.md](05-ease-of-use.md#e6-dark-mode) |
 | E7 | Fast with very large phones | Lists slow above ~20,000 items | Partial | [05-ease-of-use.md](05-ease-of-use.md#e7-fast-with-very-large-phones) |
 | M4 | Full detail in Excel and CSV | Basic columns | Partial | [06-messages.md](06-messages.md#m4-full-detail-in-excel-and-csv) |

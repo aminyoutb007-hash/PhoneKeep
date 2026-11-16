@@ -286,7 +286,8 @@ a.open_phone = lambda: opened.append(1)
 a.guide.do_open()
 a.update()
 check(opened and a.guide is None, "Open iPhone ends the guide and opens the phone window")
-check(all(w.winfo_manager() for w in a.main_cards[:2]), "the normal cards are back")
+check(all(w.winfo_manager() for w in [w for w in a.main_cards if w not in (a.prog, a.done, a.all_phones)][:2]),
+      "the normal cards are back (E5's list comes back with the next search, when there's more than one phone)")
 check(a.s["first_run_done"] and json.loads(appmod.SETTINGS_FILE.read_text(encoding="utf-8"))["first_run_done"], "first run recorded")
 a.destroy()
 

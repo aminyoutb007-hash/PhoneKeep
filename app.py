@@ -95,6 +95,33 @@ def known_backed_up_phones(backup_dir: Path) -> list:
         return []
 
 
+def phone_summaries(backup_dir: Path, devices: list) -> list:
+    """E5: every phone connected now and every phone with a backup in this backup folder, one dict each: udid, name,
+    model, last (the last backup's date), size (of the newest snapshot, if known), encrypted, how (cable / Wi-Fi /
+    None) and picture (its saved home screen or wallpaper). Connected phones first, then the newest backup.
+    Reads only files on this computer."""
+    import models
+    import snapshots as _snaps
+    here = {(d.get("UniqueDeviceID") or d.get("Identifier")): d for d in devices or []}
+    out = []
+    for udid in dict.fromkeys(list(here) + known_backed_up_phones(backup_dir)):
+        d = here.get(udid) or {}
+        snaps = _snaps.list_snapshots(backup_dir, udid)
+        latest = snaps[0].path if snaps else _snaps.latest_backup_path(backup_dir, udid)
+        info = wv.backup_info(latest) if latest else {}
+        pictures = [wv.phone_picture(udid), wv.phone_cache(udid) / "wallpaper.png"]
+        out.append({"udid": udid, "name": d.get("DeviceName") or info.get("name") or "iPhone",
+                    "model": models.model_name(d.get("ProductType") or (snaps[0].model if snaps else None)
+                                               or info.get("product")),
+                    "last": info.get("date"), "size": snaps[0].size if snaps else None,
+                    "encrypted": info.get("encrypted") if latest else None,
+                    "how": None if not d else "cable" if d.get("ConnectionType") == "USB" else "Wi-Fi",
+                    "picture": next((p for p in pictures if p.exists()), None)})
+    out.sort(key=lambda x: x["last"] or "", reverse=True)
+    out.sort(key=lambda x: x["how"] is None)                # stable: connected first, each part newest first
+    return out
+
+
 class Settings:
     DEFAULTS = {
         "preset": "chats",
@@ -407,7 +434,7 @@ class App(_dnd_root()):
         self.body.pack(fill="both", expand=True, padx=22, pady=16)
 
         # device card
-        dc = ui.card(self.body)
+        dc = self.device_card = ui.card(self.body)
         dc.pack(fill="x")
         inner = tk.Frame(dc, bg=CARD)
         inner.pack(fill="x", padx=18, pady=14)
@@ -434,6 +461,21 @@ class App(_dnd_root()):
         for w in (self.phone, self.dev_name):
             w.configure(cursor="hand2")
             w.bind("<Button-1>", lambda e: self.open_phone())
+
+        # E5: every phone backed up here or connected now, when there's more than one; each opens its own window
+        self.all_phones = tk.Frame(self.body, bg=BG)
+        top = tk.Frame(self.all_phones, bg=BG)
+        top.pack(fill="x")
+        tk.Label(top, text="Your iPhones · click one to open it", bg=BG, fg=MUTED, font=font(11, "bold"),
+                 anchor="w").pack(side="left")
+        self.add_link = tk.Label(top, text="+ Add another iPhone", bg=BG, fg=GREEN, font=font(12), cursor="hand2")
+        self.add_link.pack(side="right")
+        self.add_link.bind("<Button-1>", lambda e: self.add_phone())
+        self.all_grid = tk.Frame(self.all_phones, bg=BG)
+        self.all_grid.pack(fill="x", pady=(6, 0))
+        self.phone_tiles = {}
+        self._all_key = None
+        self._all_gen = 0
 
         # what to keep
         wc = ui.card(self.body)
@@ -961,8 +1003,9 @@ class App(_dnd_root()):
             if self.open_backup(Path(p)):
                 return
 
-    def open_backup(self, path: Path) -> bool:
-        """Open any backup folder in a phone window (PhoneKeep snapshot, phone folder, Finder or iTunes backup)."""
+    def open_backup(self, path: Path, udid: str = None) -> bool:
+        """Open any backup folder in a phone window (PhoneKeep snapshot, phone folder, Finder or iTunes backup).
+        `udid`: the phone it belongs to, when known (else the window works it out from the folder)."""
         import snapshots as _snaps
         path = Path(path)
         if path.is_dir() and not (path / "Manifest.db").exists():
@@ -976,7 +1019,7 @@ class App(_dnd_root()):
             return False
         def go():
             import phone
-            win = phone.PhoneWindow(self, {}, None, backup=path)
+            win = phone.PhoneWindow(self, {}, udid, backup=path)
             self.phone_windows = getattr(self, "phone_windows", []) + [win]
             phone_write.log_activity(f"Opened the backup {path}", kind="backup")
         self.require_unlock(go, "open this backup in PhoneKeep")
@@ -999,9 +1042,10 @@ class App(_dnd_root()):
             return
         self.guide.destroy()
         self.guide = None
+        self._all_key = None
         for w in self.main_cards:
-            if w is self.prog or w is self.done:
-                continue
+            if w is self.prog or w is self.done or w is self.all_phones:
+                continue                            # "Your iPhones" comes back with the next search, if it's wanted
             w.pack(fill="x", pady=(0, 0) if w is self.main_cards[0] else (14, 0))
         self.detect(silent=True)
 
@@ -1214,11 +1258,13 @@ class App(_dnd_root()):
         import models
         for w in self.phone_list.winfo_children():
             w.destroy()
+        self._fill_all_phones()
         devs = getattr(self, "devices", [])
         if len(devs) < 2 and (len(devs) == 0 or self.udid is not None):
             self.phone_list.pack_forget()
             return
         self.phone_list.pack(fill="x", padx=18, pady=(0, 14))
+        self.after_idle(self._fit_height)
         tk.Label(self.phone_list, text="iPhones nearby · click one to back it up", bg=CARD, fg=MUTED,
                  font=font(11, "bold"), anchor="w").pack(fill="x")
         row = tk.Frame(self.phone_list, bg=CARD)
@@ -1239,6 +1285,90 @@ class App(_dnd_root()):
             if self._should_read_extra(udid):
                 self._phone_extra.setdefault(udid, {})["reading"] = time.time()
                 threading.Thread(target=self._read_phone_extra, args=(udid,), daemon=True).start()
+
+    # E5: all phones in one list -------------------------------------------------------------------------------
+    def _fill_all_phones(self):
+        """Read the list in the background (the backup folder may be on a slow disk); the newest read wins."""
+        self._all_gen += 1
+        gen, devs, bdir = self._all_gen, list(getattr(self, "devices", [])), Path(self.s["backup_dir"])
+
+        def work():
+            try:
+                phones = phone_summaries(bdir, devs)
+            except Exception:
+                return
+            self.call(lambda: gen == self._all_gen and self._show_all_phones(phones))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_all_phones(self, phones: list):
+        if len(phones) < 2:
+            self.all_phones.pack_forget()
+        if self.prog.winfo_manager() or self.guide is not None:
+            self._all_key = None                    # a job's card or the first-run guide fills the window: the next
+            return                                  # search after it shows the list
+        key = repr(phones)
+        if key == self._all_key:
+            return                                  # nothing changed: no flicker on every search for phones
+        self._all_key = key
+        for w in self.all_grid.winfo_children():
+            w.destroy()
+        self.phone_tiles = {}
+        if len(phones) < 2:
+            return
+        for i, p in enumerate(phones):
+            tile = ui.PhoneTile(self.all_grid, p, lambda u=p["udid"]: self.open_phone_for(u))
+            tile.grid(row=i // 3, column=i % 3, sticky="nsew", padx=(0 if i % 3 == 0 else 6, 0), pady=(0, 6))
+            self.phone_tiles[p["udid"]] = tile
+        for col in (0, 1, 2):
+            self.all_grid.columnconfigure(col, weight=1, uniform="p")
+        self.all_phones.pack(fill="x", pady=(14, 0), after=self.device_card)
+        self._fit_height()
+
+    def _fit_height(self):
+        """Grow the window when a list makes it taller than it is (never past the screen), so Back up now stays in view."""
+        try:
+            self.update_idletasks()
+            need = self.winfo_reqheight()
+            have = self.winfo_height()
+            if need <= getattr(self, "_fitted", 0):
+                return                              # grown for this much once: the user's own size wins after that
+            self._fitted = need
+            if self.state() == "normal" and 1 < have < need:
+                self.geometry(f"{self.winfo_width()}x{min(need, self.winfo_screenheight() - 80)}")
+        except tk.TclError:
+            pass
+
+    def open_phone_for(self, udid: str):
+        """E5: a phone's own window: the open one if there is one, else live when it's connected, else its latest
+        backup on this computer (as B5 opens any backup). Choosing which phone to back up (B8) doesn't change."""
+        for w in self.open_phone_windows():
+            if getattr(w, "udid", None) == udid:
+                w.deiconify()
+                w.lift()
+                w.focus_force()
+                return
+        d = next((x for x in getattr(self, "devices", []) if (x.get("UniqueDeviceID") or x.get("Identifier")) == udid), None)
+        if d is not None and udid == self.udid:
+            self.open_phone()
+        elif d is not None:
+            def go():
+                import phone
+                self.phone_windows = getattr(self, "phone_windows", []) + [phone.PhoneWindow(self, d, udid)]
+            self.require_unlock(go)
+        else:
+            import snapshots as _snaps
+            latest = _snaps.latest_backup_path(Path(self.s["backup_dir"]), udid)
+            if latest is None:
+                messagebox.showinfo(wv.APP_NAME, "This iPhone's backup isn't in the backup folder any more. "
+                                    "Connect the iPhone to open it.", parent=self)
+            else:
+                self.open_backup(latest, udid)
+
+    def add_phone(self):
+        """E5: "Add another iPhone": how to connect it, then look for it. Nothing is written to any phone."""
+        messagebox.showinfo("Add another iPhone", "Plug the other iPhone into this computer with a cable, unlock it "
+                            "and tap Trust on it. It shows up here; choose it above to back it up.", parent=self)
+        self.detect()
 
     # A phone on Wi-Fi comes and goes from the computer's list as it dozes, so a read can find nothing.
     # Read again (at most every 20 s) until both the picture and the battery came back, and keep the last

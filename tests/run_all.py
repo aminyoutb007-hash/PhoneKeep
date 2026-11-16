@@ -55,6 +55,7 @@ STEPS = [
     ("Backup progress screen (L2): percentage, steps, Look at your iPhone, Cancel; the window comes back (5.2)", "test_l2_backup_progress.py", True),
     ("Settings layout (L3): the list on the left reaches every card; every setting kept; Activity and About (5.2)", "test_l3_settings.py", True),
     ("Closing the window while backing up (B9): the backup carries on, notifies, then quits; Quit asks first (5.3)", "test_b9_close_while_backing_up.py", True),
+    ("All phones in one list (E5): a card for each phone backed up here or connected; each opens its own window", "test_e5_all_phones.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
