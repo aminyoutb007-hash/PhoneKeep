@@ -51,7 +51,7 @@ P1 ships as two releases so features can be tested in batches: **5.0** then **5.
 | L1 | Phone window in the Direction A layout (mockups approved 15 Nov, owner) | Tiles in a list, no snapshot card | Done | [14-layouts.md](14-layouts.md#l1-phone-window-layout) |
 | L2 | Backup progress screen in the Direction A layout | Progress in a banner | Done | [14-layouts.md](14-layouts.md#l2-backup-progress-screen) |
 | L3 | Settings in the Direction A layout (left list, cards) | One long page | Done | [14-layouts.md](14-layouts.md#l3-settings-layout) |
-| E1 (refresh) | First-run guide in the Direction A layout, with the "Use over Wi-Fi" step (off by default) | Five steps in the main window | To build (refresh; E1 itself is Done) | [14-layouts.md](14-layouts.md#e1-refresh-first-run-guide-layout) |
+| E1 (refresh) | First-run guide in the Direction A layout, with the "Use over Wi-Fi" step (off by default) | Five steps in the main window | Done (refresh 16 Nov; E1 itself was Done) | [14-layouts.md](14-layouts.md#e1-refresh-first-run-guide-layout) |
 | V6 | Storage tips: under Largest apps, how to free each app's space (owner, 15 Nov) | Not available | Done | [10-device.md](10-device.md#v6-storage-tips) |
 | S5 | Spyware check (part of H5; out of 5.1 on 14 Nov, owner: revisit after 5.1, with the MVT licence decision) | Not available | To build | [04-security.md](04-security.md#s5-spyware-check) |
 
