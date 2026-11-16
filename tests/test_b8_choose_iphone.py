@@ -97,9 +97,9 @@ try:
           f"two iPhones and none chosen yet: the card says so and nothing is picked ({a.dev_name.cget('text')!r})")
     texts = {u: " ".join(r.itemcget(i, "text") for i in r.find_all() if r.type(i) == "text") for u, r in rows.items()}
     check(set(rows) == {A["UniqueDeviceID"], B["UniqueDeviceID"]} and "Cable" in texts[A["UniqueDeviceID"]]
-          and "Wi-Fi" in texts[B["UniqueDeviceID"]] and "iPhone 14 Pro Max iOS 26.5" in texts[A["UniqueDeviceID"]]
-          and "iPhone 17 Pro Max iOS 18.6" in texts[B["UniqueDeviceID"]],
-          f"both are shown as phones with their name, model, iOS and connection: {list(texts.values())}")
+          and "Wi-Fi" in texts[B["UniqueDeviceID"]] and "iPhone 14 Pro Max  ·  iOS 26.5" in texts[A["UniqueDeviceID"]]
+          and "iPhone 17 Pro Max  ·  iOS 18.6" in texts[B["UniqueDeviceID"]],
+          f"both are shown with their name, model, iOS and connection: {list(texts.values())}")
     _pc = rows[A["UniqueDeviceID"]]
     from PIL import Image as _Im
     _Im.new("RGB", (300, 600), (40, 90, 160)).save(W / "wall.png")
@@ -111,11 +111,41 @@ try:
     check("80%" in _t and "⚡" in _t and not any("🔋" in t or "📶" in t or "🔌" in t for t in _t),
           "the battery level and charging show on the card, as drawn icons (no emoji)")
     _pc.update_idletasks()
-    _boxes = sorted((_pc.bbox(i) for i in _pc.find_all() if _pc.type(i) == "text" and _pc.itemcget(i, "anchor") == "n"),
-                    key=lambda b: b[1])
-    check(len(_boxes) == 3 and all(b1[3] <= b2[1] + 1 for b1, b2 in zip(_boxes, _boxes[1:])),
-          "the name, model and iOS lines never overlap")
-
+    _boxes = sorted((_pc.bbox(i) for i in _pc.find_all() if _pc.type(i) == "text" and _pc.itemcget(i, "text") != "⚡"),
+                    key=lambda b: b[0])
+    _mid = [(b[1] + b[3]) / 2 for b in _boxes]
+    check(len(_boxes) >= 4 and max(_mid) - min(_mid) <= 3 and all(b1[2] <= b2[0] + 1 for b1, b2 in zip(_boxes, _boxes[1:])),
+          f"one line per phone (owner, 16 Nov): name, model and iOS, connection, battery side by side, never overlapping")
+    _rows = list(rows.values())
+    check(all(r.winfo_height() <= 64 for r in _rows) and _rows[0].winfo_width() > 400
+          and _rows[1].winfo_rooty() > _rows[0].winfo_rooty(),
+          f"each phone is a short row across the card, one under the other ({[r.winfo_height() for r in _rows]} px high)")
+    a.update_idletasks()
+    check(a.phone_list.winfo_reqheight() <= 2 * 64 + 40,
+          f"the two phones take {a.phone_list.winfo_reqheight()} px (were over 300 as drawn phones)")
+    # still taller than a small screen: the window scrolls, and Back up now can be reached
+    a.deiconify()
+    a.geometry("820x640")
+    for _ in range(5):
+        a.update(); time.sleep(0.05)
+    _vis = lambda: a.go.winfo_rooty() + a.go.winfo_height() <= a.scroller.winfo_rooty() + a.scroller.winfo_height()
+    check(a.vbar.winfo_ismapped() and not _vis(),
+          "a window too short for it all shows a scrollbar (Back up now is below the fold)")
+    a.scroller.yview_moveto(1.0)
+    a.update()
+    check(_vis(), "scrolled down, Back up now is in view")
+    reach["devs"] = [A]                         # less to show: it fits, so no scrollbar, back at the top
+    detect()
+    a.geometry(f"820x{a.winfo_screenheight() - 100}")
+    for _ in range(5):
+        a.update(); time.sleep(0.05)
+    check(a.body.winfo_reqheight() + 32 > a.scroller.winfo_height() or (not a.vbar.winfo_ismapped() and _vis()
+          and a.scroller.canvasy(0) == 0),
+          f"a window tall enough for everything has no scrollbar and starts at the top (fits here: "
+          f"{a.body.winfo_reqheight() + 32 <= a.scroller.winfo_height()})")
+    reach["devs"] = [A, B]
+    detect()
+    a.withdraw()
     # a phone on Wi-Fi that dozes: the first read finds nothing, a later one gets its picture, which is kept
     import device as _devmod
     reachable = {"on": False}
