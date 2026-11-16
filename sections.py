@@ -1238,16 +1238,19 @@ class ChatPreview:
         loaded = self.ctx.cache.get(key)
         return loaded if key == "messages" else (loaded or {}).get("chats", [])
 
-    def messages(self, key: str, chat_id, limit: int = 80, around: Optional[str] = None) -> tuple[list[dict], int]:
+    def messages(self, key: str, chat_id, limit: int = 80, around: Optional[str] = None,
+                 at: Optional[str] = None) -> tuple[list[dict], int]:
         """The latest `limit` messages of a chat; with `around`, the window that starts at the first
-        message containing that text (so a search result is on screen, not the last 80 messages)."""
+        message containing that text (so a search result is on screen, not the last 80 messages);
+        with `at` too, the first such message sent at that time (E4: the one result that was clicked)."""
+        import search
         for c in self._chats(key):
             if c["id"] == chat_id:
                 msgs = c["messages"]
                 if around:
-                    q = around.lower()
+                    q = search.fold(around).strip()
                     for i, m in enumerate(msgs):
-                        if q in _msg_text(m):
+                        if q in _msg_text(m) and (at is None or m.get("time") == at):
                             start = max(0, i - 3)
                             return msgs[start:start + limit], len(msgs)
                 return msgs[-limit:], len(msgs)
@@ -1255,7 +1258,8 @@ class ChatPreview:
 
     def matching(self, key: str, query: str) -> dict:
         """{chat id: number of messages containing query} for one app (case-insensitive, text and captions)."""
-        q = (query or "").strip().lower()
+        import search
+        q = search.fold(query).strip()
         if not q:
             return {}
         if not hasattr(self, "_index"):
@@ -1293,7 +1297,8 @@ class ChatPreview:
 
 
 def _msg_text(m: dict) -> str:
-    return ((m.get("text") or "") + "\n" + (m.get("caption") or "")).lower()
+    import search
+    return search.fold((m.get("text") or "") + "\n" + (m.get("caption") or ""))
 
 
 def _chat_summary(c: dict) -> dict:

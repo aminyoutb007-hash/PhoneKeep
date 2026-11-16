@@ -721,7 +721,8 @@ class ChatPanel(tk.Frame):
 
     # list ---------------------------------------------------------------
     def _fill(self):
-        q = self.q.get().strip().lower()
+        import search
+        q = search.fold(self.q.get()).strip()
         app = self.app_var.get()
         self.tree.delete(*self.tree.get_children())
         # the search finds chats by name AND by what was said in them (usability test, 12 Nov:
@@ -733,7 +734,7 @@ class ChatPanel(tk.Frame):
                     self.hits[(key, cid)] = n
         n_hit_chats = 0
         for i, (key, label, c) in enumerate(self.rows):
-            if q and q not in c["name"].lower() and (key, c["id"]) not in self.hits:
+            if q and q not in search.fold(c["name"]) and (key, c["id"]) not in self.hits:
                 continue
             if (key, c["id"]) in self.hits:
                 n_hit_chats += 1
@@ -754,7 +755,7 @@ class ChatPanel(tk.Frame):
             self.search_hint.configure(text=(f"“{self.q.get().strip()}” is in {total:,} message{'s' if total != 1 else ''} "
                                              f"across {n_hit_chats:,} chat{'s' if n_hit_chats != 1 else ''}") if q and total
                                        else (f"No message contains “{self.q.get().strip()}”" if q and len(q) >= 2 and not
-                                             any(q in c['name'].lower() for _k, _l, c in self.rows) else ""))
+                                             any(q in search.fold(c['name']) for _k, _l, c in self.rows) else ""))
         self.current = None
         self._update_count()
 
@@ -838,6 +839,18 @@ class ChatPanel(tk.Frame):
         self._fill()
 
     # preview ------------------------------------------------------------
+    def show_chat(self, key: str, chat_id, at: Optional[str] = None) -> None:
+        """E4: choose that chat and show its messages from the one sent `at` (a search result)."""
+        iid = next((str(i) for i, (k, _l, c) in enumerate(self.rows) if k == key and c["id"] == chat_id), None)
+        if iid is None or not self.tree.exists(iid):
+            return
+        self.at_for, self.at_time = (key, chat_id), at
+        self.current = None
+        self.tree.selection_set(iid)
+        self.tree.focus(iid)
+        self.tree.see(iid)
+        self._show(iid)
+
     def _show(self, iid):
         if not iid or self.preview is None:
             return
@@ -848,7 +861,8 @@ class ChatPanel(tk.Frame):
         self.worker.clear()
         q = self.q.get().strip()
         around = q if (key, c["id"]) in getattr(self, "hits", {}) else None
-        msgs, total = self.preview.messages(key, c["id"], self.preview_limit, around=around)
+        at = self.at_time if getattr(self, "at_for", None) == (key, c["id"]) else None
+        msgs, total = self.preview.messages(key, c["id"], self.preview_limit, around=around, at=at)
         self.pv_title.configure(text=c["name"])
         shown = f"latest {len(msgs)} of {total:,} messages" if total > len(msgs) else f"{total:,} messages"
         self.pv_sub.configure(text=f"{label} · {shown}" + (" · group" if c["group"] else ""))
