@@ -134,7 +134,9 @@ Related: [E5](05-ease-of-use.md#e5-all-phones-and-backups-in-one-list) (a card p
 
 **Done when**
 - [ ] With a real iPhone: start a backup, close the window; the backup finishes and the notification says so; the snapshot is there.
-- [ ] Closing the window while nothing runs works as today.
+- [x] Closing the window while nothing runs works as today (`tests/test_b9_close_while_backing_up.py`, which also covers the backup carrying on, Quit asking first, the passcode bringing the window back, and the notifications when it finishes or doesn't).
+
+**How it's built (5.3):** the close button (`App.close_window`) hides the window while a backup's progress card is up (Mac: withdrawn, the Dock icon brings it back; Windows and Linux: minimised to the taskbar); anything else quits as before. When the backup needs the user (the passcode, choosing chats or photos, a password), a notification says so and the window comes back. At the end, if the window is still away: done → "Backup finished · *name* is backed up.", then PhoneKeep quits unless another of its windows is open; not done → "Backup didn't finish" with the plain reason, and the window comes back with the problem and its button. Quit (Cmd+Q, the Dock's Quit) while backing up asks "Stop the backup and quit?" first. Notifications are the helper's local ones (`helper_ui.notify_system`). On Windows the main window can't show a notification yet, so at the end it comes back from the taskbar instead; the line under the card says so there.
 
 ## B6. Restore a backup to an iPhone
 

@@ -57,7 +57,7 @@ The usability test (five people, five tasks; P1's task 2 is one of them) and Q1'
 
 | ID | Feature | Today | Status | Details |
 | --- | --- | --- | --- | --- |
-| B9 | Keep backing up after the window closes, with a notification when it's done (owner, 16 Nov) | Closing the main window quits PhoneKeep; the progress screen says "Keep PhoneKeep open until it's done" | To build | [03-backup.md](03-backup.md#b9-keep-backing-up-after-the-window-closes) |
+| B9 | Keep backing up after the window closes, with a notification when it's done (owner, 16 Nov) | Closing the main window quits PhoneKeep; the progress screen says "Keep PhoneKeep open until it's done" | Partial (the real-iPhone check to do) | [03-backup.md](03-backup.md#b9-keep-backing-up-after-the-window-closes) |
 | S4 | Signed and notarised installers (moved from 5.1 on 14 Nov, then to 5.3 on 16 Nov, owner: needs the certificates) | Ad-hoc signed; users must click Open Anyway. Workflow signs when the secrets exist | Partial | [04-security.md](04-security.md#s4-signed-and-notarised-installers) |
 | S5 | Spyware check (part of H5; out of 5.1 on 14 Nov, then to 5.3 on 16 Nov, owner: with the MVT licence decision) | Not available | To build | [04-security.md](04-security.md#s5-spyware-check) |
 | B6 | Restore a backup to an iPhone (moved from P2 into 5.1 on 13 Nov, then to 5.2 on 14 Nov, then to 5.3 on 16 Nov: 5.2 shipped without it, owner; needs a spare iPhone) | Not available | To build | [03-backup.md](03-backup.md#b6-restore-a-backup-to-an-iphone) |
