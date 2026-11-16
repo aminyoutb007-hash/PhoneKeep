@@ -1249,10 +1249,12 @@ class ChatPreview:
                 msgs = c["messages"]
                 if around:
                     q = search.fold(around).strip()
-                    for i, m in enumerate(msgs):
-                        if q in _msg_text(m) and (at is None or m.get("time") == at):
-                            start = max(0, i - 3)
-                            return msgs[start:start + limit], len(msgs)
+                    found = [i for i, m in enumerate(msgs) if q in _msg_text(m)]
+                    # the one sent `at` that time if it matches, else the first match
+                    i = next((i for i in found if msgs[i].get("time") == at), found[0] if found else None)
+                    if i is not None:
+                        start = max(0, i - 3)
+                        return msgs[start:start + limit], len(msgs)
                 return msgs[-limit:], len(msgs)
         return [], 0
 

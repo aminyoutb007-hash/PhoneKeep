@@ -723,6 +723,7 @@ class ChatPanel(tk.Frame):
     def _fill(self):
         import search
         q = search.fold(self.q.get()).strip()
+        self.at_for = None                  # E4: other words: no longer the one message a search result chose
         app = self.app_var.get()
         self.tree.delete(*self.tree.get_children())
         # the search finds chats by name AND by what was said in them (usability test, 12 Nov:

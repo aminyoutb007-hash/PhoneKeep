@@ -202,14 +202,31 @@ asked_at = []
 real_messages = win.data.preview.messages
 win.data.preview.messages = lambda *a, **k: (asked_at.append(k.get("at")), real_messages(*a, **k))[1]
 type_("dinner")
+# TEMP (Linux CI crash on #80): log every PhoneKeep call around the click
+_ROOT = str(HERE.parent)
+
+
+def _tr(frame, event, arg):
+    if event == "call" and frame.f_code.co_filename.startswith(_ROOT):
+        print(f"TRACE {Path(frame.f_code.co_filename).name}:{frame.f_lineno} {frame.f_code.co_name}", file=sys.stderr, flush=True)
+    return None
+
+
+sys.settrace(_tr)
+import threading as _th
+_th.settrace(_tr)
 h = click_first("Messages")
 check(pump(lambda: win.current == "messages" and win.find_hook is not None, 30), "clicking a message opens Messages")
+sys.settrace(None)
+_th.settrace(None)
 panel = next(w for w in win.content.winfo_children() if isinstance(w, phone.ui.ChatPanel))
 check(panel.q.get() == "dinner" and panel.current == ("messages", h.ref[0]),
       f"  with the same words in its search box and that chat chosen ({panel.q.get()!r}, {panel.current})")
 shown = panel.text.get("1.0", "end")
 check("Dinner Friday?" in shown and h.ref[1] and asked_at and asked_at[-1] == h.ref[1],
       f"  showing the message that was clicked (the chat is asked for the one sent at {h.ref[1]})")
+panel.q.set("land")                         # other words typed in the chat screen's own search
+check(getattr(panel, "at_for", None) is None, "  other words in the chat's own search forget the clicked message")
 win.data.preview.messages = real_messages
 
 win.find_q.set("")
@@ -275,6 +292,8 @@ check(pv.matching("messages", "ecole") == {1: 1} and pv.matching("messages", "É
       "a chat's own search ignores accents and case, whichever side has them")
 msgs, _n = pv.messages("messages", 1, 20, around="l'ecole")
 check(any("ÉCOLE" in m["text"] for m in msgs), "  and the chat opens at that message")
+msgs, _n = pv.messages("messages", 1, 20, around="filler 150", at="2026-01-02T09:00:00")
+check(any(m["text"] == "filler 150" for m in msgs), "  a time that doesn't match the words falls back to the first match")
 
 # "Show all N in …": the app opens with the same words in its search box, nothing chosen for the user
 win.show_home()
