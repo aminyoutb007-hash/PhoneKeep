@@ -271,6 +271,10 @@ try:
             # connection (stood in for) reconnects to the same iPhone and the read works
             import reconnect as rc
             pump(app, lambda: False, 2 * phone.WATCH_MS / 1000 + 1)
+        if photo and not hasattr(src, "generation"):          # photos came from the backup (a locked iPhone)
+            check(False, "the reconnect check needs the photos from the iPhone itself, but they came from the "
+                         "backup (is the iPhone locked?)")
+        elif photo:
             check(rc.where(win.udid) == "USB" and win.phone_here and win.sub.cget("text").endswith("connected by USB cable"),
                   "the iPhone on the cable is found by its UDID and the header says so")
             (src.cache / "full" / photo.id).unlink(missing_ok=True)
