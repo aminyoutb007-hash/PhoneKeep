@@ -12,7 +12,7 @@ See also the journeys and patterns in [00-user-experience.md](00-user-experience
 2. **Tap Trust on your iPhone and enter your passcode.** Picture of the Trust prompt. Advances by itself when trusted.
 3. **Choose a backup password** (S1).
 4. **Back up now.** Progress, with "You can close this window; we'll tell you when it's done."
-5. **Done.** "Back up automatically every day?" (B2) and "Back up over Wi-Fi from now on?" (turns on Wi-Fi sync on the phone, through `phone_write.py` with a named confirmation: "Turn on Wi-Fi backups for *Amin's iPhone*?"). On a Mac without Touch ID, also "Lock PhoneKeep with your computer password?" (S2).
+5. **Done.** "Back up automatically every day?" (B2) and "Back up over Wi-Fi from now on?" (turns on Wi-Fi sync on the phone, through `phone_write.py` with a named confirmation: "Turn on Wi-Fi backups for *Sam's iPhone*?"). On a Mac without Touch ID, also "Lock PhoneKeep with your computer password?" (S2).
 
 **Requirements**
 - Each step detects completion itself; no Next button where detection is possible.
@@ -25,7 +25,7 @@ See also the journeys and patterns in [00-user-experience.md](00-user-experience
 
 ## E2. Menu bar and system tray helper
 
-**What the user sees and does:** a small PhoneKeep icon in the Mac menu bar / Windows tray. Its menu: "Amin's iPhone · backed up 2 hours ago 🔒 · next tonight ~9 pm", **Back up now**, **Open iPhone**, **Open PhoneKeep**, **Pause automatic backups**, **Quit**. The icon shows a subtle progress ring during a backup. After a missed day the first line turns amber and carries the same one-line fix as the phone card (B2).
+**What the user sees and does:** a small PhoneKeep icon in the Mac menu bar / Windows tray. Its menu: "Sam's iPhone · backed up 2 hours ago 🔒 · next tonight ~9 pm", **Back up now**, **Open iPhone**, **Open PhoneKeep**, **Pause automatic backups**, **Quit**. The icon shows a subtle progress ring during a backup. After a missed day the first line turns amber and carries the same one-line fix as the phone card (B2).
 
 **Requirements**
 - Starts at login if the user agreed (asked once, in E1 step 5).

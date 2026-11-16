@@ -41,7 +41,7 @@ db = sqlite3.connect(root / fid[:2] / fid)
 db.execute("CREATE TABLE IF NOT EXISTS ZWAMEDIAITEM(Z_PK INTEGER PRIMARY KEY, ZMESSAGE, ZMEDIALOCALPATH, ZTITLE, ZLATITUDE, ZLONGITUDE, ZVCARDNAME)")
 t0 = dt.datetime(2026, 11, 9, 9, 15).timestamp() - pk.APPLE_EPOCH
 conv = [(0, "Hi! Do you have the blue sofa in stock?"), (1, "Yes we do 😊 here's a photo"), (1, "@img1"),
-        (0, "Lovely. What's the delivery time to Cheshunt?"), (1, "2–3 working days. Delivery is £25."),
+        (0, "Lovely. What's the delivery time to Exampleton?"), (1, "2–3 working days. Delivery is £25."),
         (0, "Great, I'll take it. Can I pay by card on delivery?"), (1, "Of course. Order #4471 confirmed ✅"),
         (0, "@img2"), (0, "This is the space where it'll go"), (1, "Perfect, it'll fit nicely!")]
 for i, (me, txt) in enumerate(conv):

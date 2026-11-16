@@ -36,7 +36,7 @@
 
 ## P4. Copy photos and music to the iPhone
 
-**P3. Writes to the phone.** Drag photos or songs onto the phone window → confirmation "Add 24 photos to Photos on Amin's iPhone?" → they appear in the Photos / Music app with original dates and tags. Logged in the activity log.
+**P3. Writes to the phone.** Drag photos or songs onto the phone window → confirmation "Add 24 photos to Photos on Sam's iPhone?" → they appear in the Photos / Music app with original dates and tags. Logged in the activity log.
 
 ## P6. Ringtones
 

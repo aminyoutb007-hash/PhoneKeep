@@ -96,7 +96,7 @@ Main window
 | **Loading** | Skeleton rows or placeholder tiles immediately, filled in as data arrives; never a blank area |
 | **Empty states** | Never just empty: say why ("No voicemails on this iPhone") and what to do, if anything |
 | **Errors** | Inline banner at the top of the screen, red only for real failures: what happened + one button to fix or retry |
-| **Confirmations** | Only for actions that delete or change the phone. Title = the action ("Restore Amin's iPhone?"); the main button repeats the verb ("Restore"), never "OK" |
+| **Confirmations** | Only for actions that delete or change the phone. Title = the action ("Restore Sam's iPhone?"); the main button repeats the verb ("Restore"), never "OK" |
 | **Progress** | Percentage + time left + what is happening now ("Copying photos · 1.2 GB of 4.8 GB") + Cancel |
 | **Undo** | Settings changes apply instantly and can be changed back; deletions go to the Trash first |
 

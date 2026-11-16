@@ -58,7 +58,7 @@ except OSError as e:
     check(False, f"internet connection refused by PhoneKeep, not by the network ({e})")
 check(socket.socket().connect_ex(("8.8.8.8", 53)) == 111, "connect_ex refuses too")
 check(netguard._is_local("127.0.0.1") and netguard._is_local("192.168.1.20") and netguard._is_local("fe80::1")
-      and netguard._is_local("Amins-iPhone.local"), "the phone's addresses (loopback, Wi-Fi, Bonjour) are allowed")
+      and netguard._is_local("Sams-iPhone.local"), "the phone's addresses (loopback, Wi-Fi, Bonjour) are allowed")
 check(not netguard._is_local("93.184.216.34") and not netguard._is_local("2606:2800:220:1:248:1893:25c8:1946"),
       "public addresses are not")
 

@@ -103,13 +103,13 @@
 
 **Why (owner, 13 Nov):** with two iPhones nearby, PhoneKeep takes the one on the cable, or else the first one the computer reports over Wi-Fi, without saying so. Unplugging one phone silently switched the window to the other phone over Wi-Fi.
 
-**What the user sees and does (owner, 13 Nov, evening):** the device area at the top of the main window lists **every reachable iPhone**, by cable or Wi-Fi: name, model, **cable** or **Wi-Fi**, last backup. The owner clicks one; the backup options below ("What do you want to keep?", Back up now, Open iPhone) are then for that phone. The window shows that phone until the owner picks another or it disappears. The phone in the window never changes by itself: if the chosen phone goes away, the window says "*iPhone Amin* is no longer connected" and lists the others to pick from. Settings → Automatic backups has a tick box per phone ("Back up automatically"); the menu bar helper backs up each ticked phone in turn and names the phone in its notifications.
+**What the user sees and does (owner, 13 Nov, evening):** the device area at the top of the main window lists **every reachable iPhone**, by cable or Wi-Fi: name, model, **cable** or **Wi-Fi**, last backup. The owner clicks one; the backup options below ("What do you want to keep?", Back up now, Open iPhone) are then for that phone. The window shows that phone until the owner picks another or it disappears. The phone in the window never changes by itself: if the chosen phone goes away, the window says "*Sam's iPhone* is no longer connected" and lists the others to pick from. Settings → Automatic backups has a tick box per phone ("Back up automatically"); the menu bar helper backs up each ticked phone in turn and names the phone in its notifications.
 
 **Requirements**
 - A phone reachable over both cable and Wi-Fi is listed once, as **cable**.
 - With one phone reachable, nothing changes from today (no list, no extra click).
 - The choice is remembered by the phone's ID; a phone seen for the first time is never backed up automatically until it is ticked.
-- A backup always names its phone at the start ("Backing up *iPhone Amin* (cable)…").
+- A backup always names its phone at the start ("Backing up *Sam's iPhone* (cable)…").
 - Two backups never run at once; the second waits for the first and says so.
 
 **Done when**
@@ -140,7 +140,7 @@ Related: [E5](05-ease-of-use.md#e5-all-phones-and-backups-in-one-list) (a card p
 
 ## B6. Restore a backup to an iPhone
 
-**What the user sees and does:** in the snapshot list, **Restore to iPhone…** → choose the phone → a confirmation: "Restore *Amin's iPhone* from 3 Nov? Everything on this iPhone will be replaced with the data from that day." The main button says **Restore**. Progress, then "Restore finished. Your iPhone will restart."
+**What the user sees and does:** in the snapshot list, **Restore to iPhone…** → choose the phone → a confirmation: "Restore *Sam's iPhone* from 3 Nov? Everything on this iPhone will be replaced with the data from that day." The main button says **Restore**. Progress, then "Restore finished. Your iPhone will restart."
 
 **Requirements**
 - Checks Find My is off first and explains how to turn it off if not.
