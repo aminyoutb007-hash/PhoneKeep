@@ -1399,7 +1399,7 @@ class PhoneWindow(tk.Toplevel):
         self._clear()
         self.view_header(key)
         if key == "apps":
-            self.load_apps()                # 5.1.3: the phone's app list, in the background
+            self.load_apps(again=True)      # 5.1.3: the phone's app list, in the background (always opened, never redrawn)
         where = next(w for k, *_r, w in APPS if k == key)
         if where == "backup":
             if self.data is None:

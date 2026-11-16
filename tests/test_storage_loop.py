@@ -6,7 +6,8 @@ window stopped responding. With a fake iPhone whose app list always fails (nothi
 - a failed ask redraws Storage once and doesn't ask again: the window keeps answering;
 - redrawing Storage (sizes arriving, the overview coming back) doesn't ask again either;
 - opening Storage again (from another screen) asks again, and a list that now answers is shown;
-- the same for the Check-up's Storage card, whose suggestions ask for the app list too.
+- the same for the Check-up's Storage card, whose suggestions ask for the app list too;
+- opening Apps after a failure asks again (opening it is always the user's choice).
 """
 import copy, os, sys, time
 from pathlib import Path
@@ -96,6 +97,17 @@ asked["fail"] = False
 checkup_ui.details(win, "storage")                       # opened again
 pump(app, lambda: win._apps_state == "done", 30, "list")                                 # noqa: F821
 check(asked["n"] == 2 and win._apps_state == "done", f"  opening it again asks again ({asked['n']} asks)")  # noqa: F821
+
+# opening Apps (always the user's choice, never a redraw) asks again after a failure too
+win.show_home()
+asked.update(n=0, fail=True)
+win._apps_state, win._apps_list = "", None
+overview_ui.storage_view(win, win.overview)
+settle(1)
+win.show_home()
+win.open_app("apps")
+settle(1)
+check(asked["n"] == 2, f"after a failed app list, opening Apps asks again ({asked['n']} asks)")             # noqa: F821
 
 faulthandler.cancel_dump_traceback_later()                                              # noqa: F821
 win.destroy()
