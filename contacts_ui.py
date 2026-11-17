@@ -331,9 +331,11 @@ class ContactsView:
 
         def go():
             import tables as tb
+            tmp = path.with_name(path.name + ".part")     # never a half-written file under the real name
             if kind == "excel":
-                tb.write_table_xlsx(path, "Contacts", sx.CONTACT_HEADERS, rows)
+                tb.write_table_xlsx(tmp, "Contacts", sx.CONTACT_HEADERS, rows)
             else:
-                tb.write_csv_rows(path, sx.CONTACT_HEADERS, rows)
+                tb.write_csv_rows(tmp, sx.CONTACT_HEADERS, rows)
+            tmp.replace(path)
             return [path]
         self.win.run_save(f"{len(people):,} contacts", go, folder, "file")
