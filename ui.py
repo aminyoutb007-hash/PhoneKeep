@@ -1053,10 +1053,7 @@ class ChatPanel(tk.Frame):
             return
         if self.people_win is not None and self.people_win.winfo_exists():
             self.people_win.destroy()
-        w = self.people_win = tk.Toplevel(self)
-        w.title(f"People in {c['name']}")
-        w.configure(bg=BG)
-        w.transient(self.winfo_toplevel())
+        w = self.people_win = PeopleWindow(self, f"People in {c['name']}")
         tk.Label(w, text=f"People in {c['name']}", bg=BG, fg=INK, font=font(15, "bold"),
                  anchor="w").pack(fill="x", padx=16, pady=(14, 2))
         tk.Label(w, text="Tick one or more people to see only their messages. Saving this chat keeps the same choice.",
@@ -1124,6 +1121,16 @@ class ChatPanel(tk.Frame):
         if people:
             out["_people"] = people
         return out
+
+
+class PeopleWindow(tk.Toplevel):
+    """M5: the small window listing a group chat's people (filled by ChatPanel.open_people)."""
+
+    def __init__(self, parent, title: str):
+        super().__init__(parent)
+        self.title(title)
+        self.configure(bg=BG)
+        self.transient(parent.winfo_toplevel())
 
 
 class Eta:
