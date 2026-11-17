@@ -1444,10 +1444,12 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
                     binfo: Optional[dict] = None, name_for=None, hub: bool = False,
                     strict: bool = False, only_chats: Optional[set] = None,
                     formats: Optional[set] = None, loaded: Optional[dict] = None,
-                    dates=None, pdf_combined: bool = False, search: str = "") -> dict:
+                    dates=None, pdf_combined: bool = False, search: str = "",
+                    people: Optional[dict] = None) -> dict:
     """Build the WhatsApp (or WhatsApp Business) archive in `out` from an open backup.
     loaded: the result of load_whatsapp(), when the chats were already read (e.g. for the picker).
-    dates: (from, to) to keep only messages in that period."""
+    dates: (from, to) to keep only messages in that period.
+    people (M5): {chat id: names}: those group chats keep only those people's messages."""
     out = Path(out)
     loaded = loaded or load_whatsapp(reader, business, strict, name_for, log)
     domain, files = loaded["domain"], loaded["files"]
@@ -1458,6 +1460,7 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
         if not chats:
             raise PhoneKeepError("No chats selected for this app.")
     import exportfilter
+    chats = exportfilter.only_people(chats, people)
     flt = exportfilter.Filter(tuple(dates) if dates else None, search)
     if flt.on:
         chats = flt.chats(chats)

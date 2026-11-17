@@ -19,6 +19,7 @@ What it does, all read-only for the phone:
   * Save everything: notes and calls of the last 30 days, and checks the contents page; D9: the last 30 days
     mentioning "invoice" saves exactly the matching messages, notes and files (worked out from the backup on its own);
   * M4: every reply, reaction, edit and read time in Messages reaches the saved Excel file (counts only).
+  * M5: a group chat saved for one person keeps only their messages, in Excel and PDF (counts only).
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
 and PhoneKeep's own folder and settings aren't changed.
 """
@@ -570,6 +571,64 @@ try:
           f"M4 on real data: every reply, reaction, edit and read time in sms.db (counted on its own) is read and in "
           f"the Excel file ({n['reply_to']} replies, {n['reactions']} messages with reactions, {n['edited']} edited, "
           f"{n['read']} with a read time; reading the same: {read_in == db}, Excel the same: {got == want})")
+
+    # -- M5: a group chat saved for one person keeps only their messages, in Excel and PDF ------------------------
+    # The person's messages are worked out here on their own, straight from sms.db (by handle); then the phone
+    # window's own save is run with that person chosen, into this check's temporary folder. Only counts are printed.
+    import exportfilter
+    pick = None
+    con = ctx.db(sx.HOME, "Library/SMS/sms.db")
+    if con is not None and chats:
+        addr = dict(con.execute("SELECT ROWID, id FROM handle"))
+        for c in (c for c in chats if c["group"]):
+            per: dict = {}
+            for rid, h in con.execute("SELECT m.ROWID, m.handle_id FROM message m JOIN chat_message_join j ON "
+                                      "j.message_id = m.ROWID WHERE j.chat_id = ? AND m.is_from_me = 0 AND "
+                                      "IFNULL(m.item_type, 0) = 0 AND IFNULL(m.associated_message_type, 0) = 0",
+                                      (c["id"],)):
+                per.setdefault(h, set()).add(rid)
+            labels = {h: ctx.label(addr.get(h)) for h in per}
+            if len(per) >= 2 and len(set(labels.values())) == len(labels):     # two or more people, told apart
+                h = max(per, key=lambda h: len(per[h]))
+                pick = (c, labels[h], per[h], [v for k, v in labels.items() if k != h])
+                break
+    if con is not None:
+        con.close()
+    if pick is None:
+        note("M5: no group chat with two or more people in the latest backup's Messages; not tested on real data")
+    else:
+        c, who, rowids, others = pick
+        kept = [m for m in c["messages"] if exportfilter.sender_of(m) == who]
+        read_ids = {int(str(m["id"]).split("-")[0]) for m in kept}
+        done = []
+        win.bar_text.configure(text="")
+        win.export_section("messages", {"excel", "pdf"}, out=WORK / "m5",
+                           chooser=lambda lists, pv: {"messages": {c["id"]}, "_people": {"messages": {c["id"]: {who}}}},
+                           then=lambda index: done.append(index))
+        pump(app, lambda: done or "Couldn't" in win.bar_text.cget("text"), 600)
+        rows = []
+        book_path = WORK / "m5" / "Messages" / "Messages chats.xlsx"
+        if book_path.exists():
+            book = load_workbook(book_path, read_only=True)
+            it = book.worksheets[1].iter_rows(values_only=True)
+            head = list(next(it))
+            rows = [r[head.index("Sender")] for r in it]
+            book.close()
+        pdfs = list((WORK / "m5" / "Messages" / "PDF").glob("*.pdf"))
+        ptext = ""
+        if len(pdfs) == 1:
+            import pypdfium2 as pdfium
+            doc = pdfium.PdfDocument(str(pdfs[0]))
+            ptext = "\n".join(doc[i].get_textpage().get_text_range() for i in range(len(doc)))
+            doc.close()
+        words = " ".join((m.get("text") or "") + " " + (m.get("caption") or "") for m in kept)
+        absent = [o for o in others if o not in words]          # names a kept message doesn't itself mention
+        check(read_ids == rowids and len(rows) == len(kept) and set(rows) == {who} and len(pdfs) == 1
+              and not any(o in ptext for o in absent),
+              f"M5 on real data: a group saved for one person keeps only their messages ({len(rowids)} of the group's "
+              f"messages, {len(others) + 1} people; reading them the same: {read_ids == rowids}; Excel rows "
+              f"{len(rows)} of {len(kept)}, all theirs: {set(rows) <= {who}}; one PDF with no one else's name: "
+              f"{len(pdfs) == 1 and not any(o in ptext for o in absent)})")
 finally:
     try:
         win.close()

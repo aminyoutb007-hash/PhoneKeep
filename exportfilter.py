@@ -99,3 +99,42 @@ class Filter:
 
 
 NONE = Filter()
+
+
+# M5: one person (or a few) in a group chat --------------------------------------------------------------------
+def sender_of(m: dict) -> Optional[str]:
+    """Who a chat message is from, the way the chat shows it ("You" for your own); None for a group update."""
+    if m.get("type") == "system":
+        return None
+    return "You" if m.get("from_me") else (m.get("sender") or "Unknown")
+
+
+def people_in(messages: list) -> list[dict]:
+    """A group chat's participants: [{"name", "count", "days"}], most messages first ("days": sorted dates)."""
+    got: dict = {}
+    for m in messages:
+        who = sender_of(m)
+        if who is None:
+            continue
+        p = got.setdefault(who, {"name": who, "count": 0, "days": []})
+        p["count"] += 1
+        if m.get("time"):
+            p["days"].append(m["time"][:10])
+    for p in got.values():
+        p["days"].sort()
+    return sorted(got.values(), key=lambda p: (-p["count"], p["name"].casefold()))
+
+
+def only_people(chats: list[dict], people: Optional[dict]) -> list[dict]:
+    """people: {chat id: set of names}; those chats keep only those people's messages (no group updates).
+    Chats left with nothing are dropped. Returns new chat dicts for the filtered chats."""
+    if not people:
+        return chats
+    out = []
+    for c in chats:
+        names = people.get(c["id"])
+        if names:
+            c = dict(c, messages=[m for m in c["messages"] if sender_of(m) in names])
+        if c["messages"]:
+            out.append(c)
+    return out

@@ -725,8 +725,15 @@ class ChatPanel(tk.Frame):
         body.add(left, minsize=420, width=560)
 
         right = card(body)
-        self.pv_title = tk.Label(right, text="Preview", bg=CARD, fg=INK, font=font(15, "bold"), anchor="w")
-        self.pv_title.pack(fill="x", padx=14, pady=(10, 0))
+        head = tk.Frame(right, bg=CARD)
+        head.pack(fill="x", padx=14, pady=(10, 0))
+        self.pv_title = tk.Label(head, text="Preview", bg=CARD, fg=INK, font=font(15, "bold"), anchor="w")
+        self.pv_title.pack(side="left", fill="x", expand=True)
+        # M5: in a group chat, see (and save) only some people's messages
+        self.people = {}                   # (app key, chat id) -> names whose messages are shown and saved
+        self.people_win = self.people_tree = None
+        self.shown_chat = None
+        self.people_btn = RoundButton(head, "People", self.open_people, "secondary", 120, 30, 12, bg=CARD)
         self.pv_sub = tk.Label(right, text="Click a chat on the left to see its latest messages.",
                                bg=CARD, fg=MUTED, font=font(11), anchor="w")
         self.pv_sub.pack(fill="x", padx=14, pady=(0, 6))
@@ -787,11 +794,10 @@ class ChatPanel(tk.Frame):
                 n_hit_chats += 1
             if app != "All apps" and label != app:
                 continue
-            n_in = self._n_in(c)
+            n_in = self._n_in(c, key)
             if n_in == 0 and self.hide_empty.get() and (self.lo or self.hi):
                 continue
-            vals = ("☑" if (key, c["id"]) in self.selected else "☐",
-                    ("👥 " if c["group"] else "") + c["name"])
+            vals = ("☑" if (key, c["id"]) in self.selected else "☐", self._name_cell(key, c))
             if len(self.apps) > 1:
                 vals += (label,)
             vals += (f"{n_in:,}", c["last"])
@@ -832,7 +838,13 @@ class ChatPanel(tk.Frame):
             (self.selected.add if on else self.selected.discard)((key, c["id"]))
         self._fill()
 
-    def _n_in(self, c) -> int:
+    def _n_in(self, c, key: Optional[str] = None) -> int:
+        names = self.people.get((key, c["id"])) if key else None
+        if names:                          # M5: only these people's messages
+            ps = [p for p in self._people_of(key, c) if p["name"] in names]
+            if not (self.lo or self.hi):
+                return sum(p["count"] for p in ps)
+            return sum(count_in_range(p["days"], self.lo, self.hi) for p in ps)
         if not (self.lo or self.hi):
             return c["messages"]
         days = c.get("days")
@@ -841,14 +853,14 @@ class ChatPanel(tk.Frame):
         return count_in_range(days, self.lo, self.hi)
 
     def _update_count(self):
-        sel = [c for k, _l, c in self.rows if (k, c["id"]) in self.selected]
-        msgs = sum(self._n_in(c) for c in sel)
+        sel = [(k, c) for k, _l, c in self.rows if (k, c["id"]) in self.selected]
+        msgs = sum(self._n_in(c, k) for k, c in sel)
         text = f"{len(sel):,} of {len(self.rows):,} chats ticked · {msgs:,} messages"
         if self.lo or self.hi:
             f = lambda d: d.strftime("%d %b %Y")
             when = (f"{f(self.lo)} – {f(self.hi)}" if self.lo and self.hi else
                     f"from {f(self.lo)}" if self.lo else f"up to {f(self.hi)}")
-            with_msgs = sum(1 for c in sel if self._n_in(c) > 0)
+            with_msgs = sum(1 for k, c in sel if self._n_in(c, k) > 0)
             text += f" in {with_msgs:,} chat{'s' if with_msgs != 1 else ''} · {when}"
         self.count.configure(text=text)
         shown = len(self.tree.get_children())
@@ -909,10 +921,21 @@ class ChatPanel(tk.Frame):
         q = self.q.get().strip()
         around = q if (key, c["id"]) in getattr(self, "hits", {}) else None
         at = self.at_time if getattr(self, "at_for", None) == (key, c["id"]) else None
-        msgs, total = self.preview.messages(key, c["id"], self.preview_limit, around=around, at=at)
+        names = self.people.get((key, c["id"]))
+        if names:
+            msgs, total = self.preview.messages(key, c["id"], self.preview_limit, around=around, at=at, people=names)
+        else:
+            msgs, total = self.preview.messages(key, c["id"], self.preview_limit, around=around, at=at)
+        self.shown_chat = (key, c["id"])
         self.pv_title.configure(text=c["name"])
         shown = f"latest {len(msgs)} of {total:,} messages" if total > len(msgs) else f"{total:,} messages"
-        self.pv_sub.configure(text=f"{label} · {shown}" + (" · group" if c["group"] else ""))
+        self.pv_sub.configure(text=f"{label} · {shown}" + (" · group" if c["group"] else "")
+                              + (f" · only {self._who(names)}" if names else ""))
+        if c["group"] and hasattr(self.preview, "people"):
+            self.people_btn.configure_text(f"People · {len(names)}" if names else "People")
+            self.people_btn.pack(side="right")
+        else:
+            self.people_btn.pack_forget()
         t = self.text
         t.configure(state="normal")
         t.delete("1.0", "end")
@@ -979,12 +1002,110 @@ class ChatPanel(tk.Frame):
         t.configure(state="disabled")
         t.see("end")
 
+    # people in a group chat (M5) ---------------------------------------
+    def _people_of(self, key, c) -> list:
+        if self.preview is None or not hasattr(self.preview, "people"):
+            return []
+        return self.preview.people(key, c["id"])
+
+    @staticmethod
+    def _who(names) -> str:
+        names = sorted(names, key=str.casefold)
+        return names[0] if len(names) == 1 else f"{len(names)} people"
+
+    def _name_cell(self, key, c) -> str:
+        names = self.people.get((key, c["id"]))
+        return ("👥 " if c["group"] else "") + c["name"] + (f"  · only {self._who(names)}" if names else "")
+
+    def _row_of(self, key, cid):
+        return next(((str(i), c) for i, (k, _l, c) in enumerate(self.rows) if k == key and c["id"] == cid), (None, None))
+
+    def set_people(self, key: str, cid, names) -> None:
+        """Show and save only these people's messages in this chat (no one ticked = the whole chat)."""
+        iid, c = self._row_of(key, cid)
+        if c is None:
+            return
+        names = set(names or ())
+        if not names:
+            self.people.pop((key, cid), None)
+        else:
+            self.people[(key, cid)] = names
+        if self.tree.exists(iid):
+            self.tree.set(iid, "name", self._name_cell(key, c))
+            self.tree.set(iid, "messages", f"{self._n_in(c, key):,}")
+        self._update_count()
+        if self.shown_chat == (key, cid):
+            self.current = None
+            self._show(iid)
+        if self.people_tree is not None and self.people_tree.winfo_exists():
+            chosen = self.people.get((key, cid), set())
+            for p_iid in self.people_tree.get_children():
+                self.people_tree.set(p_iid, "tick", "☑" if self.people_tree.item(p_iid, "text") in chosen else "☐")
+
+    def open_people(self) -> None:
+        """M5: the shown group chat's participants with their message counts; tick one or more to see only
+        their messages. Save, Print and the exports use the same choice."""
+        if self.shown_chat is None:
+            return
+        key, cid = self.shown_chat
+        iid, c = self._row_of(key, cid)
+        if c is None or not c["group"]:
+            return
+        if self.people_win is not None and self.people_win.winfo_exists():
+            self.people_win.destroy()
+        w = self.people_win = tk.Toplevel(self)
+        w.title(f"People in {c['name']}")
+        w.configure(bg=BG)
+        w.transient(self.winfo_toplevel())
+        tk.Label(w, text=f"People in {c['name']}", bg=BG, fg=INK, font=font(15, "bold"),
+                 anchor="w").pack(fill="x", padx=16, pady=(14, 2))
+        tk.Label(w, text="Tick one or more people to see only their messages. Saving this chat keeps the same choice.",
+                 bg=BG, fg=MUTED, font=font(11), anchor="w", justify="left", wraplength=380).pack(fill="x", padx=16, pady=(0, 8))
+        people = self._people_of(key, c)
+        frm = tk.Frame(w, bg=BG)
+        frm.pack(fill="both", expand=True, padx=16)
+        tree = self.people_tree = ttk.Treeview(frm, columns=("tick", "name", "messages"), show="headings",
+                                               selectmode="browse", height=min(12, max(3, len(people))))
+        for col, title, width in (("tick", "✓", 36), ("name", "Person", 240), ("messages", "Messages", 90)):
+            tree.heading(col, text=title)
+            tree.column(col, width=width, stretch=(col == "name"), anchor="w" if col == "name" else "center")
+        sb = ttk.Scrollbar(frm, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=sb.set)
+        tree.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        chosen = self.people.get((key, cid), set())
+        for i, p in enumerate(people):
+            tree.insert("", "end", iid=f"p{i}", text=p["name"],
+                        values=("☑" if p["name"] in chosen else "☐", p["name"], f"{p['count']:,}"))
+
+        def flip(p_iid):
+            if not p_iid:
+                return
+            names = set(self.people.get((key, cid), ()))
+            names.symmetric_difference_update({tree.item(p_iid, "text")})
+            self.set_people(key, cid, names)
+        tree.bind("<ButtonRelease-1>", lambda e: flip(tree.identify_row(e.y))
+                  if tree.identify_region(e.x, e.y) == "cell" else None)
+        tree.bind("<space>", lambda e: (flip(tree.focus()), "break")[1])
+        bar = tk.Frame(w, bg=BG)
+        bar.pack(fill="x", padx=16, pady=12)
+        RoundButton(bar, "Done", w.destroy, "primary", 90, 34, 12, bg=BG).pack(side="right")
+        RoundButton(bar, "Everyone", lambda: self.set_people(key, cid, set()), "secondary", 110, 34, 12,
+                    bg=BG).pack(side="right", padx=6)
+        w.bind("<Escape>", lambda e: w.destroy())
+        tree.focus_set()
+
     # result -------------------------------------------------------------
     def selection(self, confirm_empty: bool = True):
-        """{app key: set(chat ids)} plus "_dates": (from, to) when a range is set; None if not ready."""
+        """{app key: set(chat ids)} plus "_dates": (from, to) when a range is set and "_people": {app key: {chat id:
+        names}} for ticked group chats shown for only some people (M5); None if not ready."""
         out = {key: set() for key, _l, _c in self.rows}
         for key, cid in self.selected:
             out[key].add(cid)
+        people = {}
+        for (key, cid), names in self.people.items():     # M5: ticked chats keep their people choice
+            if (key, cid) in self.selected:
+                people.setdefault(key, {})[cid] = set(names)
         if confirm_empty and not self.selected and not messagebox.askyesno(
                 "PhoneKeep", "No chats are ticked, so no chats will be exported. Continue?", parent=self):
             return None
@@ -994,12 +1115,14 @@ class ChatPanel(tk.Frame):
         if self.lo or self.hi:
             out["_dates"] = (self.lo, self.hi)
             for key, _l, c in self.rows:   # ticked chats with nothing in these dates are left out
-                if self._n_in(c) == 0:
+                if self._n_in(c, key) == 0:
                     out[key].discard(c["id"])
-            if self.selected and not any(out[k] for k in out if k != "_dates"):
+            if self.selected and not any(out[k] for k in out if not k.startswith("_")):
                 if not messagebox.askyesno("PhoneKeep", "The ticked chats have no messages in these dates, "
                                            "so nothing will be exported from them. Continue?", parent=self):
                     return None
+        if people:
+            out["_people"] = people
         return out
 
 

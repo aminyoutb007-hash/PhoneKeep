@@ -181,6 +181,7 @@ class Ctx:
         self.progress = progress
         self.names: dict[str, str] = {}
         self.chat_filter: dict[str, set] = {}  # section key -> chat ids to export (absent = all)
+        self.people: dict[str, dict] = {}      # M5: section key -> {chat id: names}: only their messages
         self.formats: set = {"web"}            # chat exports: web, excel, csv, pdf
         self.pdf_combined: bool = False         # PDF: one file with all chosen chats, or one per chat (M3)
         self.cache: dict = {}                  # section key -> chats already read (for the picker)
@@ -611,6 +612,8 @@ def sec_messages(ctx: Ctx) -> dict:
     if only is not None:
         chats = [c for c in chats if c["id"] in only]
         ctx.log(f"Exporting the {len(chats)} conversation{'s' if len(chats) != 1 else ''} you selected.")
+    import exportfilter
+    chats = exportfilter.only_people(chats, ctx.people.get("messages"))
     flt = ctx.filter
     if flt.on:
         chats = flt.chats(chats)
@@ -673,7 +676,7 @@ def sec_whatsapp(ctx: Ctx) -> dict:
                            None, ctx.binfo, ctx.name_for, hub=True, strict=True,
                            only_chats=ctx.chat_filter.get("whatsapp"), formats=ctx.formats,
                            loaded=ctx.cache.get("whatsapp"), dates=ctx.dates, pdf_combined=ctx.pdf_combined,
-                           search=ctx.search)
+                           search=ctx.search, people=ctx.people.get("whatsapp"))
     r["link"] = "WhatsApp/" + r.pop("main")
     return r
 
@@ -683,7 +686,7 @@ def sec_whatsapp_business(ctx: Ctx) -> dict:
                            None, ctx.binfo, ctx.name_for, hub=True, strict=True,
                            only_chats=ctx.chat_filter.get("whatsappbusiness"), formats=ctx.formats,
                            loaded=ctx.cache.get("whatsappbusiness"), dates=ctx.dates, pdf_combined=ctx.pdf_combined,
-                           search=ctx.search)
+                           search=ctx.search, people=ctx.people.get("whatsappbusiness"))
     r["link"] = "WhatsApp Business/" + r.pop("main")
     return r
 
@@ -1315,15 +1318,29 @@ class ChatPreview:
         loaded = self.ctx.cache.get(key)
         return loaded if key == "messages" else (loaded or {}).get("chats", [])
 
+    def people(self, key: str, chat_id) -> list[dict]:
+        """M5: a chat's participants with their message counts and dates (exportfilter.people_in)."""
+        import exportfilter
+        cache = self.__dict__.setdefault("_people", {})
+        if (key, chat_id) not in cache:
+            c = next((c for c in self._chats(key) if c["id"] == chat_id), None)
+            cache[(key, chat_id)] = exportfilter.people_in(c["messages"]) if c else []
+        return cache[(key, chat_id)]
+
     def messages(self, key: str, chat_id, limit: int = 80, around: Optional[str] = None,
-                 at: Optional[str] = None) -> tuple[list[dict], int]:
+                 at: Optional[str] = None, people: Optional[set] = None) -> tuple[list[dict], int]:
         """The latest `limit` messages of a chat; with `around`, the window that starts at the first
         message containing that text (so a search result is on screen, not the last 80 messages);
-        with `at` too, the first such message sent at that time (E4: the one result that was clicked)."""
+        with `at` too, the first such message sent at that time (E4: the one result that was clicked);
+        with `people` (M5), only those people's messages."""
         import search
         for c in self._chats(key):
             if c["id"] == chat_id:
                 msgs = c["messages"]
+                if people:
+                    import exportfilter
+                    msgs = exportfilter.only_people([c], {chat_id: people})
+                    msgs = msgs[0]["messages"] if msgs else []
                 if around:
                     q = search.fold(around).strip()
                     found = [i for i, m in enumerate(msgs) if q in _msg_text(m)]
@@ -1460,8 +1477,13 @@ def export_all(backup_path, out_dir=wv.DEFAULT_ARCHIVE_DIR, password: Optional[s
                     picked = sel.pop("_dates", None)
                     if picked and any(picked):
                         ctx.dates = tuple(picked)
+                    ctx.people = {k: v for k, v in (sel.pop("_people", None) or {}).items() if v}
                 if ctx.dates:
                     log(f"Chat messages: {wv.describe_dates(ctx.dates)}.")
+                for k, chosen in ctx.people.items():
+                    n = len(chosen)
+                    log(f"{dict(CHAT_SECTIONS).get(k, k)}: only some people's messages in "
+                        f"{n:,} group chat{'s' if n != 1 else ''}.")
                 ctx.chat_filter = sel
                 labels = dict(CHAT_SECTIONS)
                 for k, ids in sel.items():
