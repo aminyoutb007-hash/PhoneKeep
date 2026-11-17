@@ -73,6 +73,19 @@ def message_times(m: dict) -> tuple:
     return (None if x else _apple(e)), x, _apple(rd)
 
 
+def json_message(m: dict) -> dict:
+    """The message for the web archive's JSON: its "times" become "edited" / "deleted" / "read" dates in "detail"."""
+    if not m.get("times"):
+        return m
+    out = {k: v for k, v in m.items() if k != "times"}
+    detail = dict(m.get("detail") or {})
+    for k, v in zip(("edited", "deleted", "read"), message_times(m)):
+        if v is not None:
+            detail[k] = v.isoformat(timespec="seconds")
+    out["detail"] = detail
+    return out
+
+
 def _apple(v) -> Optional[dt.datetime]:
     """Seconds or nanoseconds since 2001 -> local time to the second (None for none or a time no computer shows)."""
     if not v or not isinstance(v, (int, float)):

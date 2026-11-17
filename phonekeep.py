@@ -1779,7 +1779,10 @@ def write_archive(chats: list[dict], out: Path, binfo: dict, log: Log = _print,
                          '<script src="../assets/chat.js"></script>')
             (out / "chats" / c["file"]).write_text(page, encoding="utf-8")
             with open(out / "data" / "chats" / (c["file"][:-5] + ".json"), "w", encoding="utf-8") as fj:
-                json.dump({k: v for k, v in c.items() if k != "file"}, fj, ensure_ascii=False, indent=1)
+                import tables                # M4: edited / deleted / read as dates, not Messages' raw times
+                json.dump({**{k: v for k, v in c.items() if k != "file"},
+                           "messages": [tables.json_message(m) for m in c["messages"]]},
+                          fj, ensure_ascii=False, indent=1)
 
     with open(out / "data" / "search.js", "w", encoding="utf-8") as fs:
         fs.write("window.WV=")

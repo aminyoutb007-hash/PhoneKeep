@@ -184,6 +184,17 @@ ahead, arows = csv_rows(W / "CSV" / "_All chats.csv")
 check(ahead == ["Chat"] + tb.HEADERS and any(r["Group sender number"] == "'" + ROBIN for r in arows),
       "CSV: all chats in one file, with the group sender's number (a leading + gets the apostrophe, as before)")
 
+import json
+wv.write_archive(chats, W / "web", {}, lambda m: None, title="Messages")
+saved = [m for f in (W / "web" / "data" / "chats").glob("*.json")
+         for m in json.loads(f.read_text(encoding="utf-8"))["messages"]]
+jby = {m["text"]: m for m in saved}
+check(not any("times" in m for m in saved)
+      and jby["Running ten minutes late"]["detail"]["edited"] == "2026-03-01T10:12:00"
+      and jby[""]["detail"]["deleted"] == "2026-03-01T10:14:00" and jby[FORMULA]["detail"]["read"] == "2026-03-01T10:05:00"
+      and jby[FORMULA]["detail"]["reactions"] == "🎉 (Alex Example)",
+      "the web archive's JSON has edited, deleted and read as dates in the detail (not Messages' raw times)")
+
 kept = ef.Filter(None, "HYPERLINK").chats(chats)
 check([m["text"] for c in kept for m in c["messages"]] == [FORMULA],
       "the search word filter matches a message's own words, not the text a reply quotes")
