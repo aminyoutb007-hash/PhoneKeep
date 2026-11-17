@@ -164,6 +164,8 @@ class NoteView:
         self.pending += 1
 
         def load():
+            if gen != self.gen:                      # another note is shown already: nothing to read
+                return None
             if key in self.cache:
                 return self.cache[key]
             try:
@@ -177,6 +179,8 @@ class NoteView:
 
         def put(im):
             if gen != self.gen:                      # another note is shown now
+                if mark in self.txt.mark_names():
+                    self.txt.mark_unset(mark)
                 return
             self.pending -= 1
             t = self.txt

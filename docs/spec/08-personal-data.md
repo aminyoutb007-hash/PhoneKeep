@@ -41,7 +41,7 @@
 - **Decided: a link in a note is shown, never opened.** Nothing leaves the computer.
 - **Save:** this note as PDF or as text, the notes shown as one PDF (each note on its own page; a locked note left out), and Save all notes (the web export, now with checklists and tables in its text, plus one PDF of every note when PDF is chosen). The PDF has the same fonts, colour emoji, right-to-left Arabic and "Page N of M" as the chat PDFs (M3). Images are scaled in PhoneKeep's private temp folder, removed as soon as the PDF is made, and a PDF is written next to its name and then renamed, so a stopped save leaves nothing half-written.
 - **Pictures load in the background:** a note's images, drawings and scanned pages are read and decoded on the window's backup reader, never on the screen's own thread, and each goes into the note when it's ready; one for a note no longer shown is dropped.
-- **Damaged notes:** a body that can't be read (cut short, wrong field types, a far too deep indent, a varint over 10 bytes, or a blob that would unpack to more than 32 MB) shows as plain text, or as the phone's snippet; the other notes load as usual.
+- **Damaged notes:** a body that can't be read (cut short, wrong field types, a far too deep indent, a varint over 10 bytes, or a blob that would unpack to more than 32 MB) shows as plain text, or as the phone's snippet; the other notes load as usual. Tables and galleries are read in one pass however big they are (UUIDs and pages looked up by dictionary, each table object read once, at most 100,000 cells), so a hostile one can't hold the backup.
 
 ## D5. Call history
 

@@ -362,6 +362,22 @@ bad = {
 GALPARENT, GALPAGE = U(), U()
 bad_gallery_note = note_blob([run("Odd gallery\n", "title"), run(notes_doc.OBJ, att=(GALPARENT, "com.apple.notes.gallery")),
                               run("\nafter")])
+
+
+def hostile_table(n: int) -> bytes:
+    """A table whose UUID list is long and whose rows' ordering names `n` UUIDs that aren't in it."""
+    uuids = [uuid.uuid4().bytes for _ in range(n)]
+    arr = msg((1, msg((2, ""))), *[(2, msg((1, i), (2, uuid.uuid4().bytes))) for i in range(n)])
+    rows_e = msg((16, msg((1, msg((1, arr), (2, b""))), (2, b""))))
+    root = msg((13, msg((1, 0), (3, msg((1, 0), (2, msg((6, 1))))), (3, msg((1, 1), (2, msg((6, 1))))))))
+    data = msg((3, root), (3, rows_e), (4, "crRows"), (4, "crColumns"), (5, "com.apple.notes.ICTable"),
+               *[(6, u) for u in uuids])
+    return gzip.compress(msg((2, msg((2, 0), (3, data)))))
+
+
+BIGTABLE, BIGGAL = U(), U()
+GAL_PAGES = [U() for _ in range(20_000)]
+big_gallery_data = gzip.compress(("".join(reversed(GAL_PAGES[:3])) + "0" * (30 << 20)).encode())
 p2 = W / "NoteStore2.sqlite"
 c2 = sqlite3.connect(p2)
 c2.executescript("""
@@ -378,6 +394,12 @@ rows2.append((41, "Odd gallery", None, 1, 141, t0 + 98, U(), None, None, None, N
 data2.append((141, 41, bad_gallery_note))
 rows2.append((50, None, None, None, None, None, GALPARENT, None, None, None, None, None, bomb(200)))   # no type
 rows2.append((51, None, None, None, None, None, GALPAGE, "public.jpeg", None, None, 50, None, None))
+rows2.append((60, None, None, None, None, None, BIGTABLE, "com.apple.notes.table", None, None, None, None,
+              hostile_table(60_000)))
+rows2.append((61, None, None, None, None, None, BIGGAL, "com.apple.notes.gallery", None, None, None, None,
+              big_gallery_data))
+rows2 += [(1000 + k, None, None, None, None, None, pg, "public.jpeg", None, None, 61, None, None)
+          for k, pg in enumerate(GAL_PAGES)]
 c2.executemany("INSERT INTO ZICCLOUDSYNCINGOBJECT VALUES (" + ",".join("?" * 13) + ")", rows2)
 c2.executemany("INSERT INTO ZICNOTEDATA VALUES (?,?,?)", data2)
 c2.commit()
@@ -400,7 +422,12 @@ got: dict = {}
 def load_bad():
     try:
         r2 = wv.BackupReader(BK2, None, lambda m: None)
-        got["notes"] = sx.load_notes(sx.Ctx(r2, W / "out2", lambda m: None, False, {}))
+        ctx2 = sx.Ctx(r2, W / "out2", lambda m: None, False, {})
+        got["notes"] = sx.load_notes(ctx2)
+        con2 = sqlite3.connect(p2)
+        con2.row_factory = sqlite3.Row
+        got["atts"] = sx._note_attachments(con2, DOM, [])
+        con2.close()
     except BaseException as e:            # noqa: BLE001 - reported below
         got["error"] = e
 
@@ -424,6 +451,12 @@ check(all(bn[k]["blocks"] is None for k in ("0xFF varint", "0xFF varint, not com
 check("Still here\n☑ Fine".startswith(bn["truncated gzip"]["text"]), "  one cut short shows the part that could be read")
 check(bn.get("Odd gallery", {}).get("blocks") is not None and "[Scanned pages]" in bn["Odd gallery"]["text"],
       "  a gallery whose parent has no type is still a gallery line, with no error")
+ga = got.get("atts") or {}
+check(BIGTABLE in ga and ga[BIGTABLE]["rows"] is None,
+      "  a big table whose rows name UUIDs it doesn't have is read in one pass and shows as a table it can't read")
+check(BIGGAL in ga and [k["id"] for k in ga[BIGGAL]["items"][:3]] == list(reversed(GAL_PAGES[:3]))
+      and len(ga[BIGGAL]["items"]) == len(GAL_PAGES),
+      "  a gallery of 20,000 pages in 30 MB of data is put in order in one pass")
 deep = notes_doc.paragraphs("Deep\n", [{"len": 5, "style": "bullet", "indent": 10 ** 9, "done": None, "bold": False,
                                         "italic": False, "underline": False, "strike": False, "link": None,
                                         "attachment": None}])

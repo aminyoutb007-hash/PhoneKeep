@@ -14,6 +14,7 @@ apple_cloud_notes_parser uses. Anything not understood is kept as plain text, ne
 """
 from __future__ import annotations
 
+import re
 import zlib
 from typing import Optional
 
@@ -25,6 +26,8 @@ OBJ = "￼"
 
 MAX_UNZIP = 32 * 1024 * 1024    # a note body or table is a few KB; more than this is a damaged or hostile blob
 MAX_INDENT = 8                  # Notes goes no deeper; a bigger number would build huge margins and strings
+MAX_CELLS = 100_000             # a table's rows x columns; a bigger one is damaged (and the grid alone would be huge)
+_UUID = re.compile(rb"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 
 
 def unzip(data) -> Optional[bytes]:
@@ -239,25 +242,30 @@ def _objid(b) -> dict:
 
 
 def table(data) -> Optional[list[list[str]]]:
-    """A table attachment's cells, row by row, as on the phone; None if it can't be read."""
+    """A table attachment's cells, row by row, as on the phone; None if it can't be read. Every step is linear in
+    the blob (UUIDs by a dict, each object read once), so a damaged or hostile table can't hold the backup long."""
     md = _mergeable(data)
     if not md:
         return None
     entries, keys, types, uuids = md["entries"], md["keys"], md["types"], md["uuids"]
+    uuid_at: dict[bytes, int] = {}
+    for n, u in enumerate(uuids):
+        uuid_at.setdefault(u, n)                                  # the first, as list.index would
 
     def custom(e):
         cm = _one(e, 13)
         return fields(cm) if isinstance(cm, bytes) else None
 
+    stands_for: dict[int, Optional[int]] = {}
+
     def uuid_index(i) -> Optional[int]:
         """The UUID an object stands for: its custom map's first value (an index into the UUID list)."""
         if not isinstance(i, int) or not 0 <= i < len(entries):
             return None
-        cm = custom(entries[i])
-        if not cm or not cm.get(3):
-            return None
-        me = fields(cm[3][0])
-        return _one(_objid(_one(me, 2)), 2)
+        if i not in stands_for:
+            cm = custom(entries[i])
+            stands_for[i] = _one(_objid(_one(fields(cm[3][0]), 2)), 2) if cm and cm.get(3) else None
+        return stands_for[i]
 
     def dict_elements(msg) -> list[tuple[dict, dict]]:
         return [(_objid(_one(fields(el), 1)), _objid(_one(fields(el), 2))) for el in msg.get(1, [])]
@@ -287,8 +295,8 @@ def table(data) -> Optional[list[list[str]]]:
         pos: dict[int, int] = {}
         for n, a in enumerate(arr.get(2, [])):
             u = _one(fields(a), 2)
-            if isinstance(u, bytes) and u in uuids:
-                pos[uuids.index(u)] = n
+            if isinstance(u, bytes) and u in uuid_at:
+                pos[uuid_at[u]] = n
         contents = fields(_one(ordering, 2, b"") or b"")
         for k, v in dict_elements(contents):
             ku, vu = uuid_index(_one(k, 6)), uuid_index(_one(v, 6))
@@ -299,30 +307,47 @@ def table(data) -> Optional[list[list[str]]]:
     rows, cols = order(parts.get("crRows")), order(parts.get("crColumns"))
     if not rows or not cols:
         return None
-    grid = [["" for _ in range(max(cols.values()) + 1)] for _ in range(max(rows.values()) + 1)]
+    nr, nc = max(rows.values()) + 1, max(cols.values()) + 1
+    if nr * nc > MAX_CELLS:
+        return None
+    grid = [["" for _ in range(nc)] for _ in range(nr)]
+    columns_of: dict[int, list[int]] = {}                         # a column's cells (a dictionary) -> its columns
     cc = parts.get("cellColumns")
     if isinstance(cc, int) and 0 <= cc < len(entries):
         for k, v in dict_elements(fields(_one(entries[cc], 6, b"") or b"")):
             col = cols.get(uuid_index(_one(k, 6)))
             vi = _one(v, 6)
-            if col is None or not isinstance(vi, int) or not 0 <= vi < len(entries):
-                continue
-            for rk, rv in dict_elements(fields(_one(entries[vi], 6, b"") or b"")):
-                row = rows.get(uuid_index(_one(rk, 6)))
-                ci = _one(rv, 6)
-                if row is None or not isinstance(ci, int) or not 0 <= ci < len(entries):
-                    continue
+            if col is not None and isinstance(vi, int) and 0 <= vi < len(entries):
+                columns_of.setdefault(vi, []).append(col)
+    texts: dict[int, Optional[str]] = {}
+    for vi, cs in columns_of.items():
+        in_rows: dict[int, int] = {}                              # row -> its cell, the last one as before
+        for rk, rv in dict_elements(fields(_one(entries[vi], 6, b"") or b"")):
+            row = rows.get(uuid_index(_one(rk, 6)))
+            ci = _one(rv, 6)
+            if row is not None and isinstance(ci, int) and 0 <= ci < len(entries):
+                in_rows[row] = ci
+        for row, ci in in_rows.items():
+            if ci not in texts:
                 cell = _one(entries[ci], 10)
-                if isinstance(cell, bytes):
-                    grid[row][col] = _str(_one(fields(cell), 2)).replace(OBJ, "").strip("\n")
+                texts[ci] = _str(_one(fields(cell), 2)).replace(OBJ, "").strip("\n") if isinstance(cell, bytes) else None
+            if texts[ci] is not None:
+                for col in set(cs):
+                    grid[row][col] = texts[ci]
     return grid
 
 
 def gallery_order(data, ids: list[str]) -> list[str]:
-    """A gallery's pages in its own order (the order their identifiers appear in its data); the rest after."""
+    """A gallery's pages in its own order (the order their identifiers appear in its data); the rest after. One
+    pass over the data, whatever the number of pages."""
     raw = unzip(data) or b""
-    pos = {i: raw.find(i.encode()) for i in ids}
-    return sorted(ids, key=lambda i: (pos[i] < 0, pos[i] if pos[i] >= 0 else 0))
+    want = {i.upper() for i in ids}
+    first: dict[str, int] = {}
+    for m in _UUID.finditer(raw):
+        u = m.group().decode().upper()
+        if u in want and u not in first:
+            first[u] = m.start()
+    return sorted(ids, key=lambda i: (i.upper() not in first, first.get(i.upper(), 0)))
 
 
 # -- plain text --------------------------------------------------------------------------------------------------

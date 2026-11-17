@@ -1230,7 +1230,8 @@ def _note_attachments(con, dom: str, rels) -> dict[str, dict]:
         g = out.get(str(r["ZIDENTIFIER"]).upper())
         if g and g.get("items"):
             order = notes_doc.gallery_order(r["ZMERGEABLEDATA1"], [k["id"] for k in g["items"]])
-            g["items"].sort(key=lambda k: order.index(k["id"]))
+            place = {i: n for n, i in reversed(list(enumerate(order)))}
+            g["items"].sort(key=lambda k: place[k["id"]])
     return out
 
 
