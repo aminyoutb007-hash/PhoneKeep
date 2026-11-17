@@ -573,9 +573,17 @@ try:
           f"{n['read']} with a read time; reading the same: {read_in == db}, Excel the same: {got == want})")
 
     # -- M5: a group chat saved for one person keeps only their messages, in Excel and PDF ------------------------
-    # The person's messages are worked out here on their own, straight from sms.db (by handle); then the phone
-    # window's own save is run with that person chosen, into this check's temporary folder. Only counts are printed.
+    # The group's messages are sorted by person here on their own, straight from the database (sms.db by handle;
+    # WhatsApp by group member), in the first app that has a group of two or more other people; then the phone
+    # window's own save is run with the busiest person chosen, into this check's temporary folder. Counts only.
     import exportfilter
+
+    def told_apart(c, per, label):
+        labels = {k: label(k) for k in per}
+        if len(per) >= 2 and None not in labels.values() and len(set(labels.values())) == len(labels):
+            k = max(per, key=lambda k: len(per[k]))
+            return c, labels[k], per[k], [v for j, v in labels.items() if j != k]
+        return None
     pick = None
     con = ctx.db(sx.HOME, "Library/SMS/sms.db")
     if con is not None and chats:
@@ -587,34 +595,63 @@ try:
                                       "IFNULL(m.item_type, 0) = 0 AND IFNULL(m.associated_message_type, 0) = 0",
                                       (c["id"],)):
                 per.setdefault(h, set()).add(rid)
-            labels = {h: ctx.label(addr.get(h)) for h in per}
-            if len(per) >= 2 and len(set(labels.values())) == len(labels):     # two or more people, told apart
-                h = max(per, key=lambda h: len(per[h]))
-                pick = (c, labels[h], per[h], [v for k, v in labels.items() if k != h])
+            pick = told_apart(c, per, lambda h: ctx.label(addr.get(h)))
+            if pick:
+                pick = ("messages", "Messages", "Messages chats.xlsx") + pick
                 break
     if con is not None:
         con.close()
+    for key, label, business in (("whatsapp", "WhatsApp", False), ("whatsappbusiness", "WhatsApp Business", True)):
+        if pick:
+            break
+        try:
+            loaded = wv.load_whatsapp(win.data.reader, business, True, ctx.name_for, lambda m: None)
+        except wv.PhoneKeepError:
+            continue
+        con = ctx.db(loaded["domain"], "ChatStorage.sqlite")
+        if con is None:
+            continue
+        for c in (c for c in loaded["chats"] if c["group"]):
+            sender = {m["id"]: m.get("sender") for m in c["messages"]}
+            per = {}
+            # a person by their WhatsApp ID: one person can have several member rows in a group
+            for pk_, member, jid, kind in con.execute(
+                    "SELECT m.Z_PK, g.ZMEMBERJID, m.ZFROMJID, m.ZMESSAGETYPE FROM ZWAMESSAGE m LEFT JOIN "
+                    "ZWAGROUPMEMBER g ON g.Z_PK = m.ZGROUPMEMBER WHERE m.ZCHATSESSION = ? AND m.ZISFROMME = 0",
+                    (c["id"],)):
+                if wv.MSG_TYPES.get(kind) != "system":
+                    per.setdefault(member or jid, set()).add(pk_)
+
+            def one_label(k):
+                names = {sender.get(i) for i in per[k]}
+                return names.pop() if len(names) == 1 else None
+            pick = told_apart(c, per, one_label)
+            if pick:
+                pick = (key, label, f"{label} chats.xlsx") + pick
+                break
+        con.close()
     if pick is None:
-        note("M5: no group chat with two or more people in the latest backup's Messages; not tested on real data")
+        note("M5: no group chat with two or more people in the latest backup's Messages or WhatsApp; "
+             "not tested on real data")
     else:
-        c, who, rowids, others = pick
+        key, label, xlsx_name, c, who, rowids, others = pick
         kept = [m for m in c["messages"] if exportfilter.sender_of(m) == who]
         read_ids = {int(str(m["id"]).split("-")[0]) for m in kept}
         done = []
         win.bar_text.configure(text="")
-        win.export_section("messages", {"excel", "pdf"}, out=WORK / "m5",
-                           chooser=lambda lists, pv: {"messages": {c["id"]}, "_people": {"messages": {c["id"]: {who}}}},
+        win.export_section(key, {"excel", "pdf"}, out=WORK / "m5",
+                           chooser=lambda lists, pv: {key: {c["id"]}, "_people": {key: {c["id"]: {who}}}},
                            then=lambda index: done.append(index))
         pump(app, lambda: done or "Couldn't" in win.bar_text.cget("text"), 600)
         rows = []
-        book_path = WORK / "m5" / "Messages" / "Messages chats.xlsx"
+        book_path = WORK / "m5" / label / xlsx_name
         if book_path.exists():
             book = load_workbook(book_path, read_only=True)
             it = book.worksheets[1].iter_rows(values_only=True)
             head = list(next(it))
             rows = [r[head.index("Sender")] for r in it]
             book.close()
-        pdfs = list((WORK / "m5" / "Messages" / "PDF").glob("*.pdf"))
+        pdfs = list((WORK / "m5" / label / "PDF").glob("*.pdf"))
         ptext = ""
         if len(pdfs) == 1:
             import pypdfium2 as pdfium
@@ -622,10 +659,11 @@ try:
             ptext = "\n".join(doc[i].get_textpage().get_text_range() for i in range(len(doc)))
             doc.close()
         words = " ".join((m.get("text") or "") + " " + (m.get("caption") or "") for m in kept)
-        absent = [o for o in others if o not in words]          # names a kept message doesn't itself mention
+        # names a kept message doesn't itself mention (not the chat's own name: it's the PDF's title)
+        absent = [o for o in others if o not in words and o != c["name"]]
         check(read_ids == rowids and len(rows) == len(kept) and set(rows) == {who} and len(pdfs) == 1
               and not any(o in ptext for o in absent),
-              f"M5 on real data: a group saved for one person keeps only their messages ({len(rowids)} of the group's "
+              f"M5 on real data ({label}): a group saved for one person keeps only their messages ({len(rowids)} of the group's "
               f"messages, {len(others) + 1} people; reading them the same: {read_ids == rowids}; Excel rows "
               f"{len(rows)} of {len(kept)}, all theirs: {set(rows) <= {who}}; one PDF with no one else's name: "
               f"{len(pdfs) == 1 and not any(o in ptext for o in absent)})")

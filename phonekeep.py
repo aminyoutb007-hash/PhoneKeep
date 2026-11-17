@@ -1236,10 +1236,22 @@ def parse_whatsapp(db_path: Path, log: Log = _print,
     members: dict[int, str] = {}
     member_jid: dict[int, str] = {}
     if "ZWAGROUPMEMBER" in tables:
-        for r in _select(con, "ZWAGROUPMEMBER", ["Z_PK", "ZMEMBERJID", "ZCONTACTNAME", "ZFIRSTNAME"]):
+        rows = _select(con, "ZWAGROUPMEMBER", ["Z_PK", "ZMEMBERJID", "ZCONTACTNAME", "ZFIRSTNAME", "ZCHATSESSION"])
+        # a name several different members of one group share names none of them (seen on a real phone: every
+        # member's ZFIRSTNAME was the same number), so it's skipped for them (M5: People must tell them apart)
+        shared: dict = {}
+        for r in rows:
+            for col in ("ZCONTACTNAME", "ZFIRSTNAME"):
+                if r[col]:
+                    shared.setdefault((r["ZCHATSESSION"], col, r[col]), set()).add(r["ZMEMBERJID"])
+
+        def own(r, col):
+            v = r[col]
+            return v if v and len(shared[(r["ZCHATSESSION"], col, v)]) == 1 else None
+        for r in rows:
             jid = r["ZMEMBERJID"]
             member_jid[r["Z_PK"]] = jid or ""
-            members[r["Z_PK"]] = (names.get(jid) or r["ZCONTACTNAME"] or r["ZFIRSTNAME"]
+            members[r["Z_PK"]] = (names.get(jid) or own(r, "ZCONTACTNAME") or own(r, "ZFIRSTNAME")
                                   or name_for(jid_label(jid))
                                   or (("~" + push[jid]) if jid in push else None) or jid_label(jid))
 

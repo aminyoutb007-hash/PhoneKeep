@@ -113,16 +113,27 @@ WALK = [(0, 1, "Sam: the walk starts at nine"), (1, 2, "Jo: I'll bring the map")
 def whatsapp(c):
     c.executescript("""
 CREATE TABLE ZWACHATSESSION(Z_PK INTEGER PRIMARY KEY, ZCONTACTJID, ZPARTNERNAME, ZSESSIONTYPE, ZARCHIVED);
-CREATE TABLE ZWAGROUPMEMBER(Z_PK INTEGER PRIMARY KEY, ZMEMBERJID, ZCONTACTNAME, ZFIRSTNAME);
+CREATE TABLE ZWAGROUPMEMBER(Z_PK INTEGER PRIMARY KEY, ZMEMBERJID, ZCONTACTNAME, ZFIRSTNAME, ZCHATSESSION);
+CREATE TABLE ZWAPROFILEPUSHNAME(Z_PK INTEGER PRIMARY KEY, ZJID, ZPUSHNAME);
 CREATE TABLE ZWAMESSAGE(Z_PK INTEGER PRIMARY KEY, ZCHATSESSION, ZISFROMME, ZMESSAGEDATE, ZTEXT, ZMESSAGETYPE,
  ZGROUPMEMBER, ZMEDIAITEM, ZFROMJID, ZSTARRED);""")
     c.execute("INSERT INTO ZWACHATSESSION VALUES (1, '120363000000000001@g.us', 'Walking group', 1, 0)")
-    c.executemany("INSERT INTO ZWAGROUPMEMBER VALUES (?,?,?,?)",
-                  [(1, "447700900444@s.whatsapp.net", "Sam Example", None), (2, "447700900555@s.whatsapp.net", "Jo Test", None)])
+    c.execute("INSERT INTO ZWACHATSESSION VALUES (2, '120363000000000002@g.us', 'Choir', 1, 0)")
+    # Choir: like a real phone, where every member's ZFIRSTNAME was the same number; Lee has a push name
+    c.executemany("INSERT INTO ZWAGROUPMEMBER VALUES (?,?,?,?,?)",
+                  [(1, "447700900444@s.whatsapp.net", "Sam Example", None, 1),
+                   (2, "447700900555@s.whatsapp.net", "Jo Test", None, 1),
+                   (3, "100000000000001@lid", None, "+44 7700 900999", 2), (4, "100000000000002@lid", None, "+44 7700 900999", 2),
+                   (5, "100000000000002@lid", None, "+44 7700 900999", 2)])     # one person, two member rows
+    c.execute("INSERT INTO ZWAPROFILEPUSHNAME VALUES (1, '100000000000001@lid', 'Lee')")
     t0 = T0.timestamp() - wv.APPLE_EPOCH
     for k, (mins, member, text) in enumerate(WALK, 1):
         c.execute("INSERT INTO ZWAMESSAGE VALUES (?,1,?,?,?,0,?,NULL,'120363000000000001@g.us',0)",
                   (k, int(member == 0), t0 + mins * 60, text, member or None))
+    for k, (member, text) in enumerate(((3, "Lee: rehearsal at six"), (4, "Other: I'll be there"),
+                                        (5, "Other: and I'll bring the music")), 100):
+        c.execute("INSERT INTO ZWAMESSAGE VALUES (?,2,0,?,?,0,?,NULL,'120363000000000002@g.us',0)",
+                  (k, t0 + k * 60, text, member))
 
 
 add(wv.WA_DOMAIN, "ChatStorage.sqlite", whatsapp)
@@ -380,6 +391,20 @@ pump(lambda: set(dest_dir.glob("*.pdf")) - before, 120)
 new = sorted(set(dest_dir.glob("*.pdf")) - before)
 wtxt = pdf_text(new[0]) if new else ""
 check(new and "Jo: and snacks" in wtxt and "Sam: bring water" not in wtxt, "WhatsApp PDF: only that person")
+wp.people_win.destroy()
+
+# a group where every member's first name is the same (as on a real phone): people are still told apart
+ciid = next(str(i) for i, (_k, _l, c) in enumerate(wp.rows) if c["name"] == "Choir")
+wp.tree.selection_set(ciid)
+wp.tree.focus(ciid)
+wp._show(ciid)
+a.update()
+wp.people_btn.command()
+pump(lambda: wp.people_tree is not None and wp.people_tree.winfo_ismapped(), 10)
+cl = {wp.people_tree.item(i, "text"): wp.people_tree.set(i, "messages") for i in wp.people_tree.get_children()}
+check(cl == {"~Lee": "1", "100000000000002": "2"},
+      f"WhatsApp: a first name every member shares names none of them, so people are told apart; one person's two "
+      f"member rows are one person: {cl}")
 wp.people_win.destroy()
 
 a.destroy()
