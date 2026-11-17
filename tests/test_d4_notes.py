@@ -375,6 +375,42 @@ def hostile_table(n: int) -> bytes:
     return gzip.compress(msg((2, msg((2, 0), (3, data)))))
 
 
+def one_column_table(nrows: int, repeats: int) -> bytes:
+    """A real 1-column table of `nrows` rows (every cell "x") whose cellColumns names its one column `repeats`
+    times, each time with the same cells."""
+    rows_u = [uuid.uuid4().bytes for _ in range(nrows)]
+    col_u = uuid.uuid4().bytes
+    uuids = rows_u + [col_u]
+    entries: list[bytes] = [b""]                                   # 0: the root, filled in below
+
+    def uuid_entry(n):
+        entries.append(msg((13, msg((1, 0), (3, msg((1, 3), (2, msg((2, n)))))))))
+        return len(entries) - 1
+    row_e = [uuid_entry(n) for n in range(nrows)]
+    col_e = uuid_entry(nrows)
+
+    def ordered(us):
+        arr = msg((1, msg((2, ""))), *[(2, msg((1, i), (2, u))) for i, u in enumerate(us)])
+        entries.append(msg((16, msg((1, msg((1, arr), (2, b""))), (2, b"")))))
+        return len(entries) - 1
+    rows_at, cols_at = ordered(rows_u), ordered([col_u])
+    entries.append(msg((10, msg((2, "x")))))
+    cell = len(entries) - 1
+    entries.append(msg((6, msg(*[(1, msg((1, msg((6, e))), (2, msg((6, cell))))) for e in row_e]))))
+    col_cells = len(entries) - 1
+    el = msg((1, msg((1, msg((6, col_e))), (2, msg((6, col_cells))))))
+    entries.append(msg((6, el * repeats)))
+    cells_at = len(entries) - 1
+    entries[0] = msg((13, msg((1, 1), (3, msg((1, 0), (2, msg((6, rows_at))))), (3, msg((1, 1), (2, msg((6, cols_at))))),
+                              (3, msg((1, 2), (2, msg((6, cells_at))))))))
+    data = msg(*[(3, e) for e in entries], (4, "crRows"), (4, "crColumns"), (4, "cellColumns"),
+               (5, "com.apple.CRDT.NSUUID"), (5, "com.apple.notes.ICTable"), *[(6, u) for u in uuids])
+    return gzip.compress(msg((2, msg((2, 0), (3, data)))))
+
+
+TALL, TALL_ROWS = U(), 50_000
+tall_note = note_blob([run("Tall table\n", "title")] +
+                      [run(notes_doc.OBJ, att=(TALL, "com.apple.notes.table")) for _ in range(3_000)])
 BIGTABLE, BIGGAL = U(), U()
 GAL_PAGES = [U() for _ in range(20_000)]
 big_gallery_data = gzip.compress(("".join(reversed(GAL_PAGES[:3])) + "0" * (30 << 20)).encode())
@@ -398,6 +434,10 @@ rows2.append((60, None, None, None, None, None, BIGTABLE, "com.apple.notes.table
               hostile_table(60_000)))
 rows2.append((61, None, None, None, None, None, BIGGAL, "com.apple.notes.gallery", None, None, None, None,
               big_gallery_data))
+rows2.append((62, None, None, None, None, None, TALL, "com.apple.notes.table", None, None, None, None,
+              one_column_table(TALL_ROWS, 200_000)))
+rows2.append((42, "Tall table", None, 1, 142, t0 + 97, U(), None, None, None, None, None, None))
+data2.append((142, 42, tall_note))
 rows2 += [(1000 + k, None, None, None, None, None, pg, "public.jpeg", None, None, 61, None, None)
           for k, pg in enumerate(GAL_PAGES)]
 c2.executemany("INSERT INTO ZICCLOUDSYNCINGOBJECT VALUES (" + ",".join("?" * 13) + ")", rows2)
@@ -457,6 +497,12 @@ check(BIGTABLE in ga and ga[BIGTABLE]["rows"] is None,
 check(BIGGAL in ga and [k["id"] for k in ga[BIGGAL]["items"][:3]] == list(reversed(GAL_PAGES[:3]))
       and len(ga[BIGGAL]["items"]) == len(GAL_PAGES),
       "  a gallery of 20,000 pages in 30 MB of data is put in order in one pass")
+check(TALL in ga and ga[TALL]["rows"] == [["x"]] * TALL_ROWS,
+      "  a 1-column table of 50,000 rows whose column is named 200,000 times reads each row once")
+tn = bn.get("Tall table", {})
+check([b["id"] for b in tn.get("blocks") or [] if b["kind"] == "attachment"] == [TALL]
+      and tn["text"].count("\n") < TALL_ROWS + 5,
+      "  a note that names the same table 3,000 times shows it once")
 deep = notes_doc.paragraphs("Deep\n", [{"len": 5, "style": "bullet", "indent": 10 ** 9, "done": None, "bold": False,
                                         "italic": False, "underline": False, "strike": False, "link": None,
                                         "attachment": None}])

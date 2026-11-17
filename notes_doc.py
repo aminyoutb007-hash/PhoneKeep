@@ -27,6 +27,7 @@ OBJ = "￼"
 MAX_UNZIP = 32 * 1024 * 1024    # a note body or table is a few KB; more than this is a damaged or hostile blob
 MAX_INDENT = 8                  # Notes goes no deeper; a bigger number would build huge margins and strings
 MAX_CELLS = 100_000             # a table's rows x columns; a bigger one is damaged (and the grid alone would be huge)
+_BREAKS = re.compile("(\n|" + OBJ + ")")
 _UUID = re.compile(rb"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 
 
@@ -161,6 +162,7 @@ def paragraphs(text: str, runs: list[dict]) -> list[dict]:
     blocks: list[dict] = []
     spans: list = []
     style = {"style": "body", "indent": 0, "done": None}
+    seen: set[str] = set()                                      # attachments already in the note
 
     def close():
         nonlocal spans
@@ -175,7 +177,10 @@ def paragraphs(text: str, runs: list[dict]) -> list[dict]:
             if part == "\n":
                 style = {"style": r["style"], "indent": r["indent"], "done": r["done"]}
                 close()
+            elif part == OBJ and r["attachment"] and r["attachment"][0] in seen:
+                continue                                         # named again: shown once (a damaged body)
             elif part == OBJ and r["attachment"]:
+                seen.add(r["attachment"][0])
                 if spans:
                     style = {"style": r["style"], "indent": r["indent"], "done": r["done"]}
                     close()
@@ -206,17 +211,7 @@ def paragraphs(text: str, runs: list[dict]) -> list[dict]:
 
 def _split_keep(s: str):
     """Split on newlines and U+FFFC, keeping them as their own pieces."""
-    cur = ""
-    for ch in s:
-        if ch in ("\n", OBJ):
-            if cur:
-                yield cur
-                cur = ""
-            yield ch
-        else:
-            cur += ch
-    if cur:
-        yield cur
+    return (p for p in _BREAKS.split(s) if p)
 
 
 # -- mergeable data: tables and galleries ---------------------------------------------------------------------
@@ -311,29 +306,35 @@ def table(data) -> Optional[list[list[str]]]:
     if nr * nc > MAX_CELLS:
         return None
     grid = [["" for _ in range(nc)] for _ in range(nr)]
-    columns_of: dict[int, list[int]] = {}                         # a column's cells (a dictionary) -> its columns
+    vi_of: dict[int, int] = {}                                    # a column -> its cells (a dictionary), last wins
     cc = parts.get("cellColumns")
     if isinstance(cc, int) and 0 <= cc < len(entries):
         for k, v in dict_elements(fields(_one(entries[cc], 6, b"") or b"")):
             col = cols.get(uuid_index(_one(k, 6)))
             vi = _one(v, 6)
             if col is not None and isinstance(vi, int) and 0 <= vi < len(entries):
-                columns_of.setdefault(vi, []).append(col)
+                vi_of[col] = vi
+    cells_of: dict[int, dict[int, int]] = {}                       # a dictionary -> {row: its cell}, read once
+
+    def cells(vi) -> dict[int, int]:
+        if vi not in cells_of:
+            in_rows: dict[int, int] = {}
+            for rk, rv in dict_elements(fields(_one(entries[vi], 6, b"") or b"")):
+                row = rows.get(uuid_index(_one(rk, 6)))
+                ci = _one(rv, 6)
+                if row is not None and isinstance(ci, int) and 0 <= ci < len(entries):
+                    in_rows[row] = ci                              # the last one, as before
+            cells_of[vi] = in_rows
+        return cells_of[vi]
+
     texts: dict[int, Optional[str]] = {}
-    for vi, cs in columns_of.items():
-        in_rows: dict[int, int] = {}                              # row -> its cell, the last one as before
-        for rk, rv in dict_elements(fields(_one(entries[vi], 6, b"") or b"")):
-            row = rows.get(uuid_index(_one(rk, 6)))
-            ci = _one(rv, 6)
-            if row is not None and isinstance(ci, int) and 0 <= ci < len(entries):
-                in_rows[row] = ci
-        for row, ci in in_rows.items():
+    for col, vi in vi_of.items():                                 # at most rows x columns writes (MAX_CELLS)
+        for row, ci in cells(vi).items():
             if ci not in texts:
                 cell = _one(entries[ci], 10)
                 texts[ci] = _str(_one(fields(cell), 2)).replace(OBJ, "").strip("\n") if isinstance(cell, bytes) else None
             if texts[ci] is not None:
-                for col in set(cs):
-                    grid[row][col] = texts[ci]
+                grid[row][col] = texts[ci]
     return grid
 
 

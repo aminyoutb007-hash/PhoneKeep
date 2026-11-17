@@ -1176,7 +1176,14 @@ def _note_attachments(con, dom: str, rels) -> dict[str, dict]:
     def newest(rs: list[str]) -> Optional[str]:
         return sorted(rs, key=lambda x: (x.count("/"), x))[-1] if rs else None
 
+    previews: dict[str, Optional[tuple[str, str]]] = {}
+
     def preview(ident: str) -> Optional[tuple[str, str]]:
+        if ident not in previews:                            # once per identifier, however many rows share it
+            previews[ident] = _best_preview(ident)
+        return previews[ident]
+
+    def _best_preview(ident: str) -> Optional[tuple[str, str]]:
         best = None
         for rel in files.get(("Previews", ident), []):
             m = _PREVIEW_SIZE.search(rel)
@@ -1219,16 +1226,22 @@ def _note_attachments(con, dom: str, rels) -> dict[str, dict]:
             a["url"] = r["ZURLSTRING"] or ""
             a["name"] = r["ZTITLE"] or a["url"]
         out[ident] = a
+    have: dict[str, set] = {}                                # a gallery's pages so far, each page once
     for r in rows:                                           # a gallery's pages, in the gallery's own order
         if r["ZPARENTATTACHMENT"] and not r["ZMARKEDFORDELETION"]:
             parent = by_pk.get(r["ZPARENTATTACHMENT"])
             kid = out.get(str(r["ZIDENTIFIER"]).upper())
             gallery = out.get(str(parent["ZIDENTIFIER"]).upper()) if parent is not None else None
             if gallery is not None and kid is not None:            # a page whose parent has no type is left out
-                gallery.setdefault("items", []).append(kid)
+                if kid["id"] not in have.setdefault(gallery["id"], set()):
+                    have[gallery["id"]].add(kid["id"])
+                    gallery.setdefault("items", []).append(kid)
+    sorted_ = set()
     for r in rows:
-        g = out.get(str(r["ZIDENTIFIER"]).upper())
-        if g and g.get("items"):
+        ident = str(r["ZIDENTIFIER"]).upper()
+        g = out.get(ident)
+        if g and g.get("items") and ident not in sorted_:              # each gallery sorted once
+            sorted_.add(ident)
             order = notes_doc.gallery_order(r["ZMERGEABLEDATA1"], [k["id"] for k in g["items"]])
             place = {i: n for n, i in reversed(list(enumerate(order)))}
             g["items"].sort(key=lambda k: place[k["id"]])
