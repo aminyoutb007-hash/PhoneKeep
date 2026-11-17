@@ -926,6 +926,8 @@ class ChatPanel(tk.Frame):
             msgs, total = self.preview.messages(key, c["id"], self.preview_limit, around=around, at=at, people=names)
         else:
             msgs, total = self.preview.messages(key, c["id"], self.preview_limit, around=around, at=at)
+        if self.shown_chat != (key, c["id"]) and self.people_win is not None and self.people_win.winfo_exists():
+            self.people_win.destroy()           # its list belongs to the chat shown before
         self.shown_chat = (key, c["id"])
         self.pv_title.configure(text=c["name"])
         shown = f"latest {len(msgs)} of {total:,} messages" if total > len(msgs) else f"{total:,} messages"

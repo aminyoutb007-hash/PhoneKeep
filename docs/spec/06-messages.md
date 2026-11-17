@@ -58,7 +58,8 @@ All three work the same way: a chat list on the left, the conversation as bubble
 
 **How it's built (17 Nov):** a group chat's preview has a **People** button. It opens a list of the people in the chat with how many messages each sent, most first ("You" for your own). Ticking one or more shows only their messages; nobody ticked, or **Everyone**, shows the whole chat. While some people are ticked, the chat's row says "only <name>" (or "only 3 people") and counts only their messages, with the date range too, and so does the footer. Save, Print and the exports (Excel, CSV, PDF, web page) of the ticked chats keep the same choice; other ticked chats are saved whole.
 - A person is who the chat shows as the sender. Group updates (renamed, joined) aren't anyone's, so they're left out while some people are ticked.
-- WhatsApp: a first name or contact name that several different members of one group share names none of them (on a real phone every member had the same "first name", a number), so those members are shown by their push name or WhatsApp ID instead, and the People list tells them apart. This also fixes the sender shown in those groups' previews and saves.
+- WhatsApp: a number that several member IDs of one group share as their first name or contact name names none of them (on a real phone every member had the same "first name", a number), so those members are shown by their push name or WhatsApp ID instead, and the People list tells them apart. This also fixes the sender shown in those groups' previews and saves. A real name two IDs share stays: one person can be in a group under a phone-number ID and a hidden-number (@lid) ID.
+- Showing another chat closes the People list; each chat keeps its own choice.
 - The choice is kept while the chat list is open; it isn't saved.
 
 ## M6. Media viewer for chat attachments

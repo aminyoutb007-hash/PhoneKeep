@@ -124,14 +124,17 @@ CREATE TABLE ZWAMESSAGE(Z_PK INTEGER PRIMARY KEY, ZCHATSESSION, ZISFROMME, ZMESS
                   [(1, "447700900444@s.whatsapp.net", "Sam Example", None, 1),
                    (2, "447700900555@s.whatsapp.net", "Jo Test", None, 1),
                    (3, "100000000000001@lid", None, "+44 7700 900999", 2), (4, "100000000000002@lid", None, "+44 7700 900999", 2),
-                   (5, "100000000000002@lid", None, "+44 7700 900999", 2)])     # one person, two member rows
+                   (5, "100000000000002@lid", None, "+44 7700 900999", 2),      # one person, two member rows
+                   # one person in the group as a phone-number ID and a @lid ID, one contact name: still one person
+                   (6, "447700900666@s.whatsapp.net", "Pat Example", None, 2), (7, "100000000000003@lid", "Pat Example", None, 2)])
     c.execute("INSERT INTO ZWAPROFILEPUSHNAME VALUES (1, '100000000000001@lid', 'Lee')")
     t0 = T0.timestamp() - wv.APPLE_EPOCH
     for k, (mins, member, text) in enumerate(WALK, 1):
         c.execute("INSERT INTO ZWAMESSAGE VALUES (?,1,?,?,?,0,?,NULL,'120363000000000001@g.us',0)",
                   (k, int(member == 0), t0 + mins * 60, text, member or None))
     for k, (member, text) in enumerate(((3, "Lee: rehearsal at six"), (4, "Other: I'll be there"),
-                                        (5, "Other: and I'll bring the music")), 100):
+                                        (5, "Other: and I'll bring the music"), (6, "Pat: from my number"),
+                                        (7, "Pat: from my other ID")), 100):
         c.execute("INSERT INTO ZWAMESSAGE VALUES (?,2,0,?,?,0,?,NULL,'120363000000000002@g.us',0)",
                   (k, t0 + k * 60, text, member))
 
@@ -285,6 +288,16 @@ check("Kim: I'm a bit behind" in text and "Robin: Thursday then" in text and "Al
       and panel.tree.set(group_iid, "messages") == "4", "ticking a second person adds their messages")
 click_person(panel, KIM)
 check(panel.tree.set(group_iid, "messages") == "3", "unticking them takes theirs away again")
+panel.tree.selection_set(one_iid)
+panel.tree.focus(one_iid)
+panel._show(one_iid)
+a.update()
+check(not panel.people_win.winfo_exists() and panel.people == {("messages", panel.rows[int(group_iid)][2]["id"]): {ROBIN}},
+      "showing another chat closes the People list (it was the group's); the group keeps its choice")
+panel.tree.selection_set(group_iid)
+panel.tree.focus(group_iid)
+panel._show(group_iid)
+a.update()
 
 # save: the group (Robin only) and the one-to-one chat (whole), as Excel, CSV and PDF
 panel._toggle(group_iid)
@@ -410,9 +423,9 @@ a.update()
 wp.people_btn.command()
 pump(lambda: wp.people_tree is not None and wp.people_tree.winfo_ismapped(), 10)
 cl = {wp.people_tree.item(i, "text"): wp.people_tree.set(i, "messages") for i in wp.people_tree.get_children()}
-check(cl == {"~Lee": "1", "100000000000002": "2"},
+check(cl == {"~Lee": "1", "100000000000002": "2", "Pat Example": "2"},
       f"WhatsApp: a first name every member shares names none of them, so people are told apart; one person's two "
-      f"member rows are one person: {cl}")
+      f"member rows are one person, and a contact name on two IDs is one person: {cl}")
 wp.people_win.destroy()
 
 a.destroy()

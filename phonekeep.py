@@ -1237,8 +1237,9 @@ def parse_whatsapp(db_path: Path, log: Log = _print,
     member_jid: dict[int, str] = {}
     if "ZWAGROUPMEMBER" in tables:
         rows = _select(con, "ZWAGROUPMEMBER", ["Z_PK", "ZMEMBERJID", "ZCONTACTNAME", "ZFIRSTNAME", "ZCHATSESSION"])
-        # a name several different members of one group share names none of them (seen on a real phone: every
-        # member's ZFIRSTNAME was the same number), so it's skipped for them (M5: People must tell them apart)
+        # a number several member IDs of one group share as their "name" names none of them (seen on a real phone:
+        # every member's ZFIRSTNAME was the same number), so it's skipped for them (M5: People must tell them
+        # apart). A real name two IDs share stays: one person can be in a group as a phone-number ID and a @lid ID.
         shared: dict = {}
         for r in rows:
             for col in ("ZCONTACTNAME", "ZFIRSTNAME"):
@@ -1247,7 +1248,9 @@ def parse_whatsapp(db_path: Path, log: Log = _print,
 
         def own(r, col):
             v = r[col]
-            return v if v and len(shared[(r["ZCHATSESSION"], col, v)]) == 1 else None
+            if v and len(shared[(r["ZCHATSESSION"], col, v)]) > 1 and not any(ch.isalpha() for ch in v):
+                return None
+            return v
         for r in rows:
             jid = r["ZMEMBERJID"]
             member_jid[r["Z_PK"]] = jid or ""
