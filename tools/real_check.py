@@ -17,7 +17,8 @@ What it does, all read-only for the phone:
     (its cache and record go to the temporary folder too, not next to the real backups);
   * All files: previews a PDF from the backup; Voice Memos / Music: copies one to play;
   * Save everything: notes and calls of the last 30 days, and checks the contents page; D9: the last 30 days
-    mentioning "invoice" saves exactly the matching messages, notes and files (worked out from the backup on its own).
+    mentioning "invoice" saves exactly the matching messages, notes and files (worked out from the backup on its own);
+  * M4: every reply, reaction, edit and read time in Messages reaches the saved Excel file (counts only).
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
 and PhoneKeep's own folder and settings aren't changed.
 """
@@ -503,6 +504,32 @@ try:
         d9(word, [kind], lo, hi)
     check(tested == {"messages", "notes", "files"},
           f"D9 on real data: the dates and the word both left things out, for {', '.join(sorted(tested)) or 'nothing'}")
+
+    # -- M4: replies, reactions, edits and read times from the backup all reach the Excel file ----------------------
+    # Saved into this check's temporary folder (removed at the end); only counts are printed, never any text.
+    import tables
+    from openpyxl import load_workbook
+    try:
+        chats = sx.load_messages(ctx)
+    except wv.PhoneKeepError:
+        chats = []
+    want = {k: sum(1 for c in chats for m in c["messages"] if (m.get("detail") or {}).get(k))
+            for k in ("reply_to", "reactions", "edited", "read")}
+    got = dict.fromkeys(want, 0)
+    if chats:
+        book = load_workbook(tables.write_chats_xlsx(chats, WORK / "m4.xlsx", "Messages", lambda m: None), read_only=True)
+        col = {"reply_to": "Reply to", "reactions": "Reactions", "edited": "Edited at", "read": "Read at"}
+        for ws in book.worksheets[1:]:
+            rows = ws.iter_rows(values_only=True)
+            head = list(next(rows))
+            at = {k: head.index(h) for k, h in col.items()}
+            for row in rows:
+                for k, i in at.items():
+                    got[k] += row[i] not in (None, "")
+        book.close()
+    check(bool(chats) and got == want,
+          f"M4 on real data: every reply, reaction, edit and read time the backup has is in the Excel file "
+          f"({want['reply_to']} replies, {want['reactions']} messages with reactions, {want['edited']} edited, {want['read']} with a read time)")
 finally:
     try:
         win.close()

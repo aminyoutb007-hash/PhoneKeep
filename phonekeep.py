@@ -1189,6 +1189,12 @@ def jid_label(jid: Optional[str]) -> str:
     return user
 
 
+def jid_number(jid: Optional[str]) -> str:
+    """'447700900123@s.whatsapp.net' -> '+447700900123'; '' for anything else (a group, or a hidden-number @lid id)."""
+    user, _, server = (jid or "").partition("@")
+    return "+" + user if server == "s.whatsapp.net" and user.isdigit() else ""
+
+
 def _cols(con: sqlite3.Connection, table: str) -> set[str]:
     return {r[1] for r in con.execute(f"PRAGMA table_info({table})")}
 
@@ -1228,9 +1234,11 @@ def parse_whatsapp(db_path: Path, log: Log = _print,
                 push[r["ZJID"]] = r["ZPUSHNAME"]
 
     members: dict[int, str] = {}
+    member_jid: dict[int, str] = {}
     if "ZWAGROUPMEMBER" in tables:
         for r in _select(con, "ZWAGROUPMEMBER", ["Z_PK", "ZMEMBERJID", "ZCONTACTNAME", "ZFIRSTNAME"]):
             jid = r["ZMEMBERJID"]
+            member_jid[r["Z_PK"]] = jid or ""
             members[r["Z_PK"]] = (names.get(jid) or r["ZCONTACTNAME"] or r["ZFIRSTNAME"]
                                   or name_for(jid_label(jid))
                                   or (("~" + push[jid]) if jid in push else None) or jid_label(jid))
@@ -1276,6 +1284,10 @@ def parse_whatsapp(db_path: Path, log: Log = _print,
             "from_me": bool(r["ZISFROMME"]), "sender": sender, "type": mtype,
             "text": r["ZTEXT"] or "", "starred": bool(r["ZSTARRED"]),
         }
+        if chat["group"] and not r["ZISFROMME"]:     # M4: the sender's number (a phone-number JID only)
+            number = jid_number(member_jid.get(r["ZGROUPMEMBER"]) or r["ZFROMJID"])
+            if number:
+                msg["detail"] = {"number": number}
         m = media.get(r["ZMEDIAITEM"]) if r["ZMEDIAITEM"] else None
         if m is not None:
             if m["ZMEDIALOCALPATH"]:
@@ -1508,7 +1520,7 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
         main = main or f"{title} chats.xlsx"
     if "csv" in formats:
         import tables
-        tables.write_chats_csv(chats, out / "CSV", log)
+        tables.write_chats_csv(chats, out / "CSV", log, service=title)
         main = main or "CSV/_All chats.csv"
     if "pdf" in formats:
         import chat_pdf

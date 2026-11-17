@@ -40,8 +40,13 @@ All three work the same way: a chat list on the left, the conversation as bubble
 
 **Requirements:** add these columns to chat spreadsheets: Reply to (quoted text), Reactions, Edited at, Deleted at, Read at, Service (iMessage / SMS / WhatsApp), Group sender number. Keep existing columns and safety (cells as text).
 
+**How it's built (17 Nov):** the seven columns follow the first seven in every chat sheet and CSV file.
+- *Messages:* a reply shows the text of the message it answers (up to 200 characters). Reactions ("Love (Sam)", or the emoji a newer iPhone allows) sit on the message they react to and are not rows of their own; a reaction taken back is gone, and a person's later reaction replaces their earlier one. Edited at, Deleted at (an unsent message, shown as "This message was deleted") and Read at come from the message's own times. Service is per message (iMessage, SMS, RCS). The group sender number is the sender's number or email in group chats.
+- *WhatsApp:* only Group sender number (from a member's phone-number ID; a member WhatsApp shows by a hidden-number ID has none) and Service. *Decided: left blank for WhatsApp* Reply to, Reactions, Edited at, Deleted at and Read at: in a WhatsApp backup these are inside undocumented binary fields that change between WhatsApp versions, so PhoneKeep doesn't guess.
+- An older Messages database without these columns still saves, with those cells blank. The extra detail isn't searched: the word filter and the search look at a message's own words, not at the text a reply quotes.
+
 **Done when**
-- [ ] A chat with replies, reactions and an edited message shows all three in Excel.
+- [ ] A chat with replies, reactions and an edited message shows all three in Excel. *(17 Nov: `tests/test_m4_full_detail.py` on invented Messages and WhatsApp databases checks every new column in Excel and CSV, a quoted formula staying text, and an older database. On the owner's iPhone, `tools/real_check.py` checks that every reply, reaction, edit and read time in the latest backup's Messages reaches the saved Excel file: it passes, and the read times are there, but that backup's Messages has no replies, reactions or edits yet, so the real-iPhone part waits for a chat that has them.)*
 
 ## M5. Show one person in a group chat
 
