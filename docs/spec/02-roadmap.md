@@ -78,6 +78,11 @@ The usability test (five people, five tasks; P1's task 2 is one of them) and Q1'
 
 ### Everything else in P2
 
+Order from 17 Nov (owner): first the 5.2.2 fixes (the tkdnd start-up guard for macOS 11-13, the "no window tabs" fix
+on Tk 8.6, test_m5 on a Mac without pypdfium2, the 5.2.1 notes lines), then the features that only read from the
+backup, in this order: S6 (once the owner has chosen its format), D6, F3, Q2, Q3, Q4, Q5. B6 and C2 wait for a spare
+iPhone; F2 stays out because it writes to the phone. Any finding from the owner's 5.2.1 hand check comes first.
+
 | ID | Feature | Today | Status | Details |
 | --- | --- | --- | --- | --- |
 | S6 | Encrypted exports | Not available | To build | [04-security.md](04-security.md#s6-encrypted-exports) |
