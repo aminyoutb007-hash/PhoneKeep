@@ -314,6 +314,14 @@ with open(csvf, encoding="utf-8-sig", newline="") if csvf else open(os.devnull) 
 check(csvf and [r["Sender"] for r in crow] == ["'" + ROBIN] * 3, f"CSV: only that person's messages ({len(crow)})")
 
 win.bar_text.configure(text="")
+button(panel, "Save as web page").command()
+pump(lambda: str(win.bar_text.cget("text")).startswith(("✓", "Couldn't")), 120)
+web = [json.loads(f.read_text(encoding="utf-8")) for f in (out_root / "Messages" / "data" / "chats").glob("*.json")]
+wgroup = next((c for c in web if c.get("name") == "Book club"), None)
+check(wgroup and [m["sender"] for m in wgroup["messages"]] == [ROBIN] * 3,
+      f"web page: the group has only that person's messages ({len(wgroup['messages']) if wgroup else None})")
+
+win.bar_text.configure(text="")
 before = set(dest_dir.glob("*.pdf"))
 real_yes = phone.messagebox.askyesnocancel
 phone.messagebox.askyesnocancel = lambda *a, **k: False          # one PDF for each chat
