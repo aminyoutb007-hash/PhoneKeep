@@ -954,6 +954,7 @@ try:
             drawn = want = 0
             for n in readable:
                 view.show(n)
+                pump(app, lambda: view.pending == 0, 60)        # pictures are read in the background
                 drawn += view.shown["images"]
                 for b in n["blocks"]:
                     if b["kind"] != "attachment":

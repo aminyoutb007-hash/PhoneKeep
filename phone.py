@@ -2135,7 +2135,8 @@ class PhoneWindow(tk.Toplevel):
                                                    to_file=lambda dest: bool(self.data) and self.data.copy(dom, rel, dest),
                                                    why=lambda: getattr(self.data.reader, "last_error", None)
                                                    if self.data else None)], 0)
-        view = notes_ui.NoteView(txt, lambda d, r: self.data.read(d, r) if self.data else None, open_attachment)
+        view = notes_ui.NoteView(txt, lambda d, r: self.data.read(d, r) if self.data else None, open_attachment,
+                                 lambda fn, ok: self.backup_runner.submit(fn, ok, lambda e: ok(None)))
         self.note_view = view                                    # for the tests
 
         live = [n for n in notes if not n.get("deleted")]
@@ -2236,8 +2237,12 @@ class PhoneWindow(tk.Toplevel):
             self.saved([p], folder, "note")
 
         def save_pdf(which: list, name: str):
-            which = [n for n in which if not n["locked"]] or which
             if not which:
+                return
+            which = [n for n in which if not n["locked"]]
+            if not which:
+                messagebox.showinfo(wv.APP_NAME, "Nothing to save: these notes are locked with your Notes password.",
+                                    parent=self)
                 return
             folder = self.out_dir("notes")
             if folder is None:

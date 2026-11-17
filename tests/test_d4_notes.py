@@ -336,6 +336,101 @@ old = notes_doc.paragraphs("Shopping\nMilk\nEggs", [])
 check([b["text"] for b in old] == ["Shopping", "Milk", "Eggs"] and notes_doc.plain(old, {}) == "Shopping\nMilk\nEggs",
       "a body with no styles is plain lines, as before")
 
+# -- damaged or hostile bodies: each shows as plain text or its snippet (or is left out), the others still load ----
+import threading
+import zlib
+
+
+def bomb(mb: int) -> bytes:
+    """A small gzip blob that would unpack to `mb` MB of zeros."""
+    c = zlib.compressobj(9, zlib.DEFLATED, 31)
+    chunk = b"\0" * (1 << 20)
+    return b"".join(c.compress(chunk) for _ in range(mb)) + c.flush()
+
+
+good_runs = [run("Still here\n", "title"), run("Fine", "check", done=True)]
+bad = {
+    "length sent as bytes": note_blob([("Bytes length\nmore", msg((1, b"\x05\x06")))]),
+    "indent sent as bytes": note_blob([("Bytes indent\n", msg((1, 13), (2, msg((1, 100), (4, b"xx")))))]),
+    "huge indent": note_blob([("Deep\n", msg((1, 5), (2, msg((1, 100), (4, 2 ** 30)))))]),
+    "0xFF varint": gzip.compress(b"\x12" + b"\xff" * 1_000_000),
+    "0xFF varint, not compressed": b"\x12" + b"\xff" * 1_000_000,
+    "truncated gzip": note_blob(good_runs)[:25],
+    "garbage": bytes(range(256)) * 40,
+    "gzip bomb": bomb(200),
+}
+GALPARENT, GALPAGE = U(), U()
+bad_gallery_note = note_blob([run("Odd gallery\n", "title"), run(notes_doc.OBJ, att=(GALPARENT, "com.apple.notes.gallery")),
+                              run("\nafter")])
+p2 = W / "NoteStore2.sqlite"
+c2 = sqlite3.connect(p2)
+c2.executescript("""
+CREATE TABLE ZICCLOUDSYNCINGOBJECT(Z_PK INTEGER PRIMARY KEY, ZTITLE1, ZTITLE2, ZFOLDER, ZNOTEDATA, ZMODIFICATIONDATE1,
+ ZIDENTIFIER, ZTYPEUTI, ZMEDIA, ZFILENAME, ZPARENTATTACHMENT, ZSNIPPET, ZMERGEABLEDATA1);
+CREATE TABLE ZICNOTEDATA(Z_PK INTEGER PRIMARY KEY, ZNOTE, ZDATA);""")
+rows2, data2 = [(1, None, "Tests", None, None, None, U(), None, None, None, None, None, None)], []
+for k, (name, blob) in enumerate(bad.items()):
+    rows2.append((10 + k, name, None, 1, 100 + k, t0 + k, U(), None, None, None, None, f"snippet of {name}", None))
+    data2.append((100 + k, 10 + k, blob))
+rows2.append((40, "Still here", None, 1, 140, t0 + 99, U(), None, None, None, None, None, None))
+data2.append((140, 40, note_blob(good_runs)))
+rows2.append((41, "Odd gallery", None, 1, 141, t0 + 98, U(), None, None, None, None, None, None))
+data2.append((141, 41, bad_gallery_note))
+rows2.append((50, None, None, None, None, None, GALPARENT, None, None, None, None, None, bomb(200)))   # no type
+rows2.append((51, None, None, None, None, None, GALPAGE, "public.jpeg", None, None, 50, None, None))
+c2.executemany("INSERT INTO ZICCLOUDSYNCINGOBJECT VALUES (" + ",".join("?" * 13) + ")", rows2)
+c2.executemany("INSERT INTO ZICNOTEDATA VALUES (?,?,?)", data2)
+c2.commit()
+c2.close()
+BK2 = W / "Backups" / "00008030-D4BADNOTES0000000"
+BK2.mkdir(parents=True)
+for f_ in ("Info.plist", "Manifest.plist"):
+    shutil.copy(BK / f_, BK2 / f_)
+m2 = sqlite3.connect(BK2 / "Manifest.db")
+m2.execute("CREATE TABLE Files(fileID TEXT PRIMARY KEY, domain TEXT, relativePath TEXT, flags INTEGER, file BLOB)")
+fid2 = hashlib.sha1(f"{DOM}-NoteStore.sqlite".encode()).hexdigest()
+(BK2 / fid2[:2]).mkdir(exist_ok=True)
+(BK2 / fid2[:2] / fid2).write_bytes(p2.read_bytes())
+m2.execute("INSERT INTO Files VALUES (?,?,?,1,NULL)", (fid2, DOM, "NoteStore.sqlite"))
+m2.commit()
+m2.close()
+got: dict = {}
+
+
+def load_bad():
+    try:
+        r2 = wv.BackupReader(BK2, None, lambda m: None)
+        got["notes"] = sx.load_notes(sx.Ctx(r2, W / "out2", lambda m: None, False, {}))
+    except BaseException as e:            # noqa: BLE001 - reported below
+        got["error"] = e
+
+
+t1 = time.time()
+th = threading.Thread(target=load_bad, daemon=True)
+th.start()
+th.join(60)
+took = time.time() - t1
+bn = {n["title"]: n for n in got.get("notes", [])}
+check(not th.is_alive() and "error" not in got and took < 30,
+      f"damaged and hostile note bodies don't stop or hang the Notes screen ({took:.1f} s; "
+      f"{type(got.get('error')).__name__ if 'error' in got else 'no error'})")
+check(bn.get("Still here", {}).get("blocks") and bn["Still here"]["text"] == "Still here\n☑ Fine",
+      "  a good note next to them is read as usual")
+fine = {k: k in bn and isinstance(bn[k]["text"], str) and len(bn[k]["text"]) < 10_000 for k in bad}
+check(all(fine.values()), f"  each damaged one is still listed, as what could be read, plain text or its snippet, "
+      f"nothing huge: {[k for k, v in fine.items() if not v]}")
+check(all(bn[k]["blocks"] is None for k in ("0xFF varint", "0xFF varint, not compressed", "garbage", "gzip bomb"))
+      and bn["gzip bomb"]["text"] == "snippet of gzip bomb", "  one that can't be read at all falls back to the phone's snippet")
+check("Still here\n☑ Fine".startswith(bn["truncated gzip"]["text"]), "  one cut short shows the part that could be read")
+check(bn.get("Odd gallery", {}).get("blocks") is not None and "[Scanned pages]" in bn["Odd gallery"]["text"],
+      "  a gallery whose parent has no type is still a gallery line, with no error")
+deep = notes_doc.paragraphs("Deep\n", [{"len": 5, "style": "bullet", "indent": 10 ** 9, "done": None, "bold": False,
+                                        "italic": False, "underline": False, "strike": False, "link": None,
+                                        "attachment": None}])
+check(len(notes_doc.plain(deep, {})) < 100, "  plain text caps an indent that came from anywhere")
+check(notes_doc.unzip(bomb(200)) is None and notes_doc.unzip(gzip.compress(b"ok")) == b"ok",
+      "  a gzip bomb is refused, a normal blob unpacks")
+
 # -- the phone window ----------------------------------------------------------------------------------------------
 import keychain
 keychain.use_memory()
@@ -408,10 +503,31 @@ choose(next(i for i, p in enumerate(places) if p[0] == "deleted"))
 check([tree.item(i, "values")[0] for i in tree.get_children()] == ["Old list"], "Recently Deleted has its own list")
 choose(next(i for i, p in enumerate(places) if p[0] == "folder:Holidays"))
 trip_iid = tree.get_children()[0]
-tree.selection_set(trip_iid)
-a.update()
 view = win.note_view
 txt = view.txt
+# pictures are read in the background: one that arrives for a note no longer shown is dropped
+choose(next(i for i, p in enumerate(places) if p[0] == "all"))
+door = next(i for i in tree.get_children() if "Door code" in tree.item(i, "values")[0])
+trip_all = str(notes.index(by["Weekend trip"]))
+a.update()                                                   # earlier folder changes' redraws done
+held = []
+real_submit = view.submit
+view.submit = lambda fn, ok: held.append((fn, ok))           # the background reads, held back until we say
+tree.selection_set(trip_all)
+a.update()
+started = (len(held), view.pending, len(txt.image_names()))
+tree.selection_set(door)
+a.update()
+for fn, ok in held:                                          # they finish after the other note was chosen
+    ok(fn())
+view.submit = real_submit
+check(started[0] >= 2 and started[1:] == (2, 0) and view.pending == 0 and not txt.image_names() and view.shown["images"] == 0,
+      f"pictures are read in the background, not when the note is drawn, and those for a note no longer shown "
+      f"are dropped (asked, waiting, drawn at once: {started})")
+choose(next(i for i, p in enumerate(places) if p[0] == "folder:Holidays"))
+tree.selection_set(trip_iid)
+a.update()
+check(pump(lambda: view.pending == 0, 30), "  the note's pictures arrive")
 body = txt.get("1.0", "end")
 check("☑ Passport" in body and "☐ Charger" in body and "• Snacks" in body and "– Tickets" in body
       and "2. Pack bags" in body, "the note shows its checkboxes and list marks")
@@ -449,6 +565,7 @@ choose(next(i for i, p in enumerate(places) if p[0] == "folder:Home"))
 rec = next(i for i in tree.get_children() if tree.item(i, "values")[0] == "Receipts")
 tree.selection_set(rec)
 a.update()
+pump(lambda: view.pending == 0, 30)
 check(view.shown["images"] == 3 + 1 + 1, f"scanned pages, a drawing and a scan's preview are drawn "
       f"({view.shown['images']})")
 check("(not in the backup)" in txt.get("1.0", "end"), "a missing attachment says it isn't in the backup")

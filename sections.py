@@ -20,7 +20,6 @@ import re
 import sqlite3
 import threading
 import traceback
-import zlib
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -1115,52 +1114,20 @@ def sec_calls(ctx: Ctx) -> dict:
 # Notes
 # ---------------------------------------------------------------------------
 
-def _varint(b: bytes, i: int) -> tuple[int, int]:
-    shift = result = 0
-    while True:
-        x = b[i]
-        i += 1
-        result |= (x & 0x7F) << shift
-        if not x & 0x80:
-            return result, i
-        shift += 7
-
-
-def _pb_fields(buf: bytes):
-    i = 0
-    while i < len(buf):
-        key, i = _varint(buf, i)
-        f, wt = key >> 3, key & 7
-        if wt == 0:
-            v, i = _varint(buf, i)
-        elif wt == 1:
-            v, i = buf[i:i + 8], i + 8
-        elif wt == 2:
-            n, i = _varint(buf, i)
-            v, i = buf[i:i + n], i + n
-        elif wt == 5:
-            v, i = buf[i:i + 4], i + 4
-        else:
-            return
-        yield f, wt, v
-
-
 def note_text(data: Optional[bytes]) -> Optional[str]:
-    if not data:
-        return None
+    """A note body's text alone (NoteStoreProto.document.note.note_text), or None. Through notes_doc: a damaged or
+    oversized blob gives None, never an error or a hang."""
     try:
-        raw = zlib.decompress(bytes(data), 16 + zlib.MAX_WBITS)
-    except zlib.error:
-        try:
-            raw = zlib.decompress(bytes(data))
-        except zlib.error:
-            raw = bytes(data)
-    buf = raw
-    try:
-        for want in (2, 3, 2):  # NoteStoreProto.document.note.note_text
-            buf = next(v for f, wt, v in _pb_fields(buf) if f == want and wt == 2)
+        raw = notes_doc.unzip(data)
+        if not raw:
+            return None
+        buf = raw
+        for want in (2, 3, 2):
+            buf = notes_doc.fields(buf).get(want, [None])[0]
+            if not isinstance(buf, bytes):
+                return None
         return buf.decode("utf-8", "replace").replace("\ufffc", "[attachment]")
-    except (StopIteration, IndexError):
+    except Exception:
         return None
 
 
@@ -1256,8 +1223,9 @@ def _note_attachments(con, dom: str, rels) -> dict[str, dict]:
         if r["ZPARENTATTACHMENT"] and not r["ZMARKEDFORDELETION"]:
             parent = by_pk.get(r["ZPARENTATTACHMENT"])
             kid = out.get(str(r["ZIDENTIFIER"]).upper())
-            if parent is not None and kid is not None:
-                out.setdefault(str(parent["ZIDENTIFIER"]).upper(), {}).setdefault("items", []).append(kid)
+            gallery = out.get(str(parent["ZIDENTIFIER"]).upper()) if parent is not None else None
+            if gallery is not None and kid is not None:            # a page whose parent has no type is left out
+                gallery.setdefault("items", []).append(kid)
     for r in rows:
         g = out.get(str(r["ZIDENTIFIER"]).upper())
         if g and g.get("items"):
@@ -1307,19 +1275,20 @@ def load_notes(ctx: Ctx) -> list[dict]:
         locked = bool(r["ZISPASSWORDPROTECTED"])
         blocks, mine = None, {}
         if not locked:
-            try:
+            try:                                 # a damaged or hostile body: this note as plain text, the rest as usual
                 parsed = notes_doc.body(data.get(r["ZNOTEDATA"]))
+                if parsed is not None:
+                    blocks = notes_doc.paragraphs(*parsed)
+                    for b in blocks:
+                        if b["kind"] == "attachment":
+                            a = attachments.get(b["id"].upper())
+                            mine[b["id"]] = a if a else {"id": b["id"], "uti": b["uti"], "kind": _note_kind(b["uti"]),
+                                                         "name": "", "file": None, "preview": None}
+                    text = notes_doc.plain(blocks, mine)
             except Exception:
-                parsed = None
-            if parsed is not None:
-                blocks = notes_doc.paragraphs(*parsed)
-                for b in blocks:
-                    if b["kind"] == "attachment":
-                        a = attachments.get(b["id"].upper())
-                        mine[b["id"]] = a if a else {"id": b["id"], "uti": b["uti"], "kind": _note_kind(b["uti"]),
-                                                     "name": "", "file": None, "preview": None}
-        text = notes_doc.plain(blocks, mine) if blocks is not None else (
-            None if locked else note_text(data.get(r["ZNOTEDATA"])))
+                blocks, mine = None, {}
+        if blocks is None:
+            text = None if locked else note_text(data.get(r["ZNOTEDATA"]))
         folder = folder_name(r["ZFOLDER"])
         notes.append({"title": r["ZTITLE1"] or (text or "").split("\n", 1)[0][:80] or "Untitled",
                       "folder": folder,

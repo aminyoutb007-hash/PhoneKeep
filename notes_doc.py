@@ -23,27 +23,44 @@ LISTS = ("bullet", "dash", "number", "check")
 OBJ = "￼"
 
 
+MAX_UNZIP = 32 * 1024 * 1024    # a note body or table is a few KB; more than this is a damaged or hostile blob
+MAX_INDENT = 8                  # Notes goes no deeper; a bigger number would build huge margins and strings
+
+
 def unzip(data) -> Optional[bytes]:
+    """A blob gunzipped (or inflated), at most MAX_UNZIP bytes: None if it would be bigger. Not compressed at all:
+    the bytes as they are."""
     if not data:
         return None
     data = bytes(data)
     for wbits in (16 + zlib.MAX_WBITS, zlib.MAX_WBITS):
+        d = zlib.decompressobj(wbits)
         try:
-            return zlib.decompress(data, wbits)
+            out = d.decompress(data, MAX_UNZIP)
         except zlib.error:
-            pass
+            continue
+        if d.unconsumed_tail:
+            return None                                   # a "gzip bomb": refused, never expanded
+        return out
     return data
 
 
 def _varint(b: bytes, i: int) -> tuple[int, int]:
+    """A protobuf varint: at most 10 bytes (64 bits); anything longer is damaged."""
     shift = result = 0
-    while True:
+    for _ in range(10):
         x = b[i]
         i += 1
         result |= (x & 0x7F) << shift
         if not x & 0x80:
             return result, i
         shift += 7
+    raise ValueError("varint longer than 10 bytes")
+
+
+def _int(v, default: int = 0) -> int:
+    """A field that should be a varint; anything else (a damaged body) counts as the default."""
+    return v if isinstance(v, int) else default
 
 
 def fields(buf: bytes) -> dict[int, list]:
@@ -66,7 +83,7 @@ def fields(buf: bytes) -> dict[int, list]:
             else:
                 break
             out.setdefault(f, []).append(v)
-    except IndexError:
+    except (IndexError, ValueError):                       # cut short or damaged: what was read so far
         pass
     return out
 
@@ -95,16 +112,16 @@ def _note_msg(data) -> Optional[dict]:
 def _run(r: bytes) -> dict:
     m = fields(r)
     ps = fields(_one(m, 2, b"")) if isinstance(_one(m, 2), bytes) else {}
-    style = STYLES.get(_one(ps, 1, -1), "body")
+    style = STYLES.get(_int(_one(ps, 1, -1), -1), "body")
     done = None
     if style == "check":
         cl = fields(_one(ps, 5, b"")) if isinstance(_one(ps, 5), bytes) else {}
-        done = bool(_one(cl, 2, 0))
-    weight = _one(m, 5, 0)
+        done = bool(_int(_one(cl, 2, 0)))
+    weight = _int(_one(m, 5, 0))
     att = fields(_one(m, 12, b"")) if isinstance(_one(m, 12), bytes) else {}
-    return {"len": _one(m, 1, 0), "style": style, "indent": _one(ps, 4, 0) or 0, "done": done,
-            "bold": weight in (1, 3), "italic": weight in (2, 3), "underline": bool(_one(m, 6, 0)),
-            "strike": bool(_one(m, 7, 0)), "link": _str(_one(m, 9)) or None,
+    return {"len": _int(_one(m, 1, 0)), "style": style, "indent": min(MAX_INDENT, _int(_one(ps, 4, 0))), "done": done,
+            "bold": weight in (1, 3), "italic": weight in (2, 3), "underline": bool(_int(_one(m, 6, 0))),
+            "strike": bool(_int(_one(m, 7, 0))), "link": _str(_one(m, 9)) or None,
             "attachment": (_str(_one(att, 1)), _str(_one(att, 2))) if att.get(1) else None}
 
 
@@ -124,7 +141,7 @@ def _pieces(text: str, runs: list[dict]):
     plain = {"len": 0, "style": "body", "indent": 0, "done": None, "bold": False, "italic": False,
              "underline": False, "strike": False, "link": None, "attachment": None}
     for r in runs:
-        n = max(0, int(r["len"]))
+        n = max(0, _int(r["len"]))
         if n == 0:
             continue
         yield u16[pos * 2:(pos + n) * 2].decode("utf-16-le", "surrogatepass"), r
@@ -248,7 +265,7 @@ def table(data) -> Optional[list[list[str]]]:
     root = None
     for e in entries:
         cm = custom(e)
-        if cm and 0 <= _one(cm, 1, -1) < len(types) and types[_one(cm, 1)] == "com.apple.notes.ICTable":
+        if cm and 0 <= _int(_one(cm, 1, -1), -1) < len(types) and types[_one(cm, 1)] == "com.apple.notes.ICTable":
             root = cm
             break
     if root is None:
@@ -256,7 +273,7 @@ def table(data) -> Optional[list[list[str]]]:
     parts = {}
     for me in root.get(3, []):
         f = fields(me)
-        k = _one(f, 1, -1)
+        k = _int(_one(f, 1, -1), -1)
         if 0 <= k < len(keys):
             parts[keys[k]] = _one(_objid(_one(f, 2)), 6)
 
@@ -332,15 +349,16 @@ def plain(blocks: list[dict], attachments: dict) -> str:
     out = []
     for b in blocks:
         if b["kind"] == "para":
-            out.append("    " * b["indent"] + prefix(b) + b["text"])
+            out.append("    " * min(MAX_INDENT, _int(b["indent"])) + prefix(b) + b["text"])
             continue
-        a = attachments.get(b["id"]) or {"kind": "file", "name": ""}
-        if a["kind"] == "table" and a.get("rows"):
+        a = attachments.get(b["id"]) or {}
+        kind = a.get("kind") or "file"
+        if kind == "table" and a.get("rows"):
             out.extend("\t".join(r) for r in a["rows"])
-        elif a["kind"] == "link" and a.get("url"):
+        elif kind == "link" and a.get("url"):
             out.append(a["url"])
         else:
-            label = KIND_LABEL.get(a["kind"], "File")
+            label = KIND_LABEL.get(kind, "File")
             n = len(a.get("items") or [])
             out.append(f"[{label}{f' ({n})' if n else ''}{': ' + a['name'] if a.get('name') else ''}]")
     return "\n".join(out)

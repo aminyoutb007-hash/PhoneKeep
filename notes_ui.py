@@ -49,10 +49,19 @@ def picture(data: Optional[bytes], max_w: int = IMAGE_MAX_W, max_h: int = IMAGE_
 
 class NoteView:
     """Draws one note into a tk.Text. `read(domain, rel)` gives a backup file's bytes (None if it can't);
-    `open_attachment(a)` opens a file attachment (the window's viewer)."""
+    `open_attachment(a)` opens a file attachment (the window's viewer). `submit(fn, ok)` runs fn in the background
+    and ok(result) back on the UI thread (the window's backup runner): pictures are read and decoded there, never on
+    the UI thread, and each goes into the note when it's ready. Without it they're read straight away (tests)."""
 
-    def __init__(self, txt: tk.Text, read: Callable, open_attachment: Callable[[dict], None]):
+    CACHE = 48                                       # decoded pictures kept, by backup file
+
+    def __init__(self, txt: tk.Text, read: Callable, open_attachment: Callable[[dict], None],
+                 submit: Optional[Callable] = None):
         self.txt, self.read, self.open_attachment = txt, read, open_attachment
+        self.submit = submit or (lambda fn, ok: ok(fn()))
+        self.gen = 0                                 # which note is shown: a picture for an earlier one is dropped
+        self.pending = 0                             # pictures still being read for the note shown
+        self.cache: dict = {}
         self.images: list = []                       # PhotoImages must outlive their place in the text
         self.tables: list[tk.Frame] = []
         self.shown: dict = {"images": 0, "tables": 0, "files": 0}
@@ -90,6 +99,8 @@ class NoteView:
             f.destroy()
         self.images, self.tables = [], []
         self.shown = {"images": 0, "tables": 0, "files": 0}
+        self.gen += 1
+        self.pending = 0
         self.txt.configure(state="normal")
         self.txt.delete("1.0", "end")
 
@@ -137,17 +148,50 @@ class NoteView:
             t.insert("end", text, tuple(tags))
         t.insert("end", "\n", tuple(base))
 
-    def _image(self, a: dict) -> bool:
+    def _image(self, a: dict, fallback: Optional[dict] = None) -> bool:
+        """A picture's place in the note; it's read and decoded in the background and put there when ready (or,
+        if it can't be, `fallback`'s line). False if there's no picture to read."""
         src = a.get("file") if a.get("kind") in ("image", "drawing") else None
         src = src or a.get("preview")
-        im = picture(self.read(*src)) if src else None
-        if im is None or ImageTk is None:
+        if not src or ImageTk is None:
             return False
-        ph = ImageTk.PhotoImage(im)
-        self.images.append(ph)
-        self.txt.image_create("end", image=ph, padx=2, pady=4)
+        self._n += 1
+        mark = f"pic{self._n}"
+        self.txt.mark_set(mark, "end-1c")
+        self.txt.mark_gravity(mark, "left")
         self.txt.insert("end", "\n")
-        self.shown["images"] += 1
+        gen, key = self.gen, tuple(src)
+        self.pending += 1
+
+        def load():
+            if key in self.cache:
+                return self.cache[key]
+            try:
+                im = picture(self.read(*key))
+            except Exception:
+                im = None
+            if len(self.cache) >= self.CACHE:
+                self.cache.pop(next(iter(self.cache)))
+            self.cache[key] = im
+            return im
+
+        def put(im):
+            if gen != self.gen:                      # another note is shown now
+                return
+            self.pending -= 1
+            t = self.txt
+            was = t.cget("state")
+            t.configure(state="normal")
+            if im is not None:
+                ph = ImageTk.PhotoImage(im)
+                self.images.append(ph)
+                t.image_create(mark, image=ph, padx=2, pady=4)
+                self.shown["images"] += 1
+            elif fallback is not None:
+                self._file_line(fallback, at=mark, newline=False)
+            t.mark_unset(mark)
+            t.configure(state=was)
+        self.submit(load, put)
         return True
 
     def _table(self, rows: list[list[str]]) -> None:
@@ -162,7 +206,7 @@ class NoteView:
         self.txt.insert("end", "\n")
         self.shown["tables"] += 1
 
-    def _file_line(self, a: dict) -> None:
+    def _file_line(self, a: dict, at: str = "end", newline: bool = True) -> None:
         t = self.txt
         kind = a.get("kind", "file")
         label = notes_doc.KIND_LABEL.get(kind, "File")
@@ -170,20 +214,21 @@ class NoteView:
         self._n += 1
         tag = f"att{self._n}"
         if kind == "link":                               # shown, never opened: PhoneKeep doesn't go online
-            t.insert("end", f"{ICON['link']} {a.get('name') or ''}" + (f"  {a['url']}" if a.get("url") and
-                                                                        a["url"] != a.get("name") else ""),
+            t.insert(at, f"{ICON['link']} {a.get('name') or ''}" + (f"  {a['url']}" if a.get("url") and
+                                                                     a["url"] != a.get("name") else ""),
                      ("meta",))
         elif a.get("file"):
             t.tag_bind(tag, "<Button-1>", lambda e, a=a: self.open_attachment(a))
             t.tag_bind(tag, "<Enter>", lambda e: t.configure(cursor="hand2"))
             t.tag_bind(tag, "<Leave>", lambda e: t.configure(cursor=""))
-            t.insert("end", f"{ICON.get(kind, '📎')} {label}{': ' + name if name and name != label else ''}  Open",
+            t.insert(at, f"{ICON.get(kind, '📎')} {label}{': ' + name if name and name != label else ''}  Open",
                      ("file", tag))
             self.shown["files"] += 1
         else:
-            t.insert("end", f"{ICON.get(kind, '📎')} {label}{': ' + name if name else ''} (not in the backup)",
-                     ("meta",))
-        t.insert("end", "\n")
+            t.insert(at, f"{ICON.get(kind, '📎')} {label}{': ' + name if name else ''} "
+                         f"({'not in the backup' if not a.get('file') else 'can’t be shown'})", ("meta",))
+        if newline:
+            t.insert(at, "\n")
 
     def _attachment(self, a: dict) -> None:
         kind = a.get("kind")
@@ -191,11 +236,11 @@ class NoteView:
             self._table(a["rows"])
         elif kind == "gallery":
             pages = a.get("items") or []
-            drawn = sum(self._image(p) for p in pages)
-            if not drawn:
+            queued = sum(self._image(p, fallback=p) for p in pages)
+            if not queued:
                 self._file_line(a)
         elif kind in ("image", "drawing"):
-            if not self._image(a):
+            if not self._image(a, fallback=a):
                 self._file_line(a)
         else:
             if kind in ("scan", "pdf", "video") and a.get("preview"):

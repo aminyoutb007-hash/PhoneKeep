@@ -4,12 +4,13 @@ Each note starts on a new page: its title, folder and dates, then the note as on
 checklists (☐ / ☑), monospaced text, bold / underline / strikethrough and links, tables as a grid, and images,
 drawings and scanned pages scaled to the page. Audio, video and other files are named (they can't be printed).
 Same fonts, colour emoji and "Page N of M" as the chat PDFs (M3). Images are scaled in PhoneKeep's private temp
-folder, which goes when PhoneKeep closes; the PDF is written next to its final name and then renamed.
+folder, removed when the PDF is made; the PDF is written next to its final name and then renamed.
 """
 from __future__ import annotations
 
 import io
 import os
+import shutil
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -189,4 +190,5 @@ def write_notes_pdf(notes: list[dict], dest: Path, read: Callable, title: str = 
     finally:
         if part.exists():
             part.unlink()
+        shutil.rmtree(work, ignore_errors=True)        # the scaled pictures: not kept until PhoneKeep closes
     return dest
