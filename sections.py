@@ -1175,9 +1175,6 @@ def _note_attachments(con, dom: str, rels, budget: Optional[notes_doc.Budget] = 
     rows = select(con, "ZICCLOUDSYNCINGOBJECT", want, "WHERE ZIDENTIFIER IS NOT NULL")
     by_pk = {r["Z_PK"]: r for r in rows}
 
-    def newest(rs: list[str]) -> Optional[str]:
-        return sorted(rs, key=lambda x: (x.count("/"), x))[-1] if rs else None
-
     previews: dict[str, Optional[tuple[str, str]]] = {}
 
     def preview(ident: str) -> Optional[tuple[str, str]]:
@@ -1196,16 +1193,28 @@ def _note_attachments(con, dom: str, rels, budget: Optional[notes_doc.Budget] = 
                 best = (score, rel)
         return (dom, best[1]) if best else None
 
-    found: dict[tuple, Optional[str]] = {}
+    indexed: dict[tuple, tuple[Optional[str], dict[str, str]]] = {}
 
     def find(folder: str, ident: str, name: str = "", exts: tuple = ()) -> Optional[str]:
-        """The newest file in `folder` for `ident` (named `name` if one is; ending in `exts` if given), once."""
-        key = (folder, ident, name, exts)
-        if key not in found:
-            got = [x for x in files.get((folder, ident), []) if not exts or x.lower().endswith(exts)]
-            named = [x for x in got if name and x.rsplit("/", 1)[-1] == name]
-            found[key] = newest(named or got)
-        return found[key]
+        """The newest file in `folder` for `ident` (named `name` if one is; ending in `exts` if given). Each
+        (folder, identifier, exts) is indexed once, newest overall and newest by file name, so rows that share an
+        identifier, whatever their file names, cost one look each."""
+        key = (folder, ident, exts)
+        if key not in indexed:
+            best: Optional[str] = None
+            by_name: dict[str, str] = {}
+            for x in files.get((folder, ident), []):
+                if exts and not x.lower().endswith(exts):
+                    continue
+                rank = (x.count("/"), x)
+                if best is None or rank > (best.count("/"), best):
+                    best = x
+                n = x.rsplit("/", 1)[-1]
+                if n not in by_name or rank > (by_name[n].count("/"), by_name[n]):
+                    by_name[n] = x
+            indexed[key] = (best, by_name)
+        best, by_name = indexed[key]
+        return by_name.get(name, best) if name else best
 
     out: dict[str, dict] = {}
     source: dict[str, object] = {}                           # identifier -> the row it was read from

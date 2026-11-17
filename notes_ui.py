@@ -28,6 +28,29 @@ except Exception:                                   # pragma: no cover - Pillow 
 IMAGE_MAX_W = 520
 IMAGE_MAX_H = 640
 INDENT = 22
+LINE = 2_000              # characters on one line of the view: Tk lays out a long line slowly (one of 100,000: 4.5 s)
+                          # but many short ones at once, so a longer paragraph gets a line break here (on screen only)
+CELL = 2_000              # characters in one table cell drawn as a grid
+
+
+def _broken(s: str, col: int = 0) -> tuple[str, int]:
+    """`s` (no newlines) with a line break wherever its line would pass LINE characters, at a space if there's one
+    near; and the column it ends at."""
+    out = []
+    while col + len(s) > LINE:
+        cut = LINE - col
+        space = s.rfind(" ", 0, cut)
+        if space > cut // 2:
+            cut = space + 1
+        out.append(s[:cut] + "\n")
+        s, col = s[cut:], 0
+    out.append(s)
+    return "".join(out), col + len(s)
+
+
+def _lines(s: str) -> str:
+    """Text with newlines, each line broken as _broken does."""
+    return "\n".join(_broken(line)[0] for line in s.split("\n"))
 ICON = {"audio": "🎤", "video": "🎬", "pdf": "📄", "scan": "📄", "file": "📎", "link": "🔗", "image": "🖼",
         "drawing": "✏️", "gallery": "🖼", "table": "▦"}
 
@@ -54,9 +77,14 @@ class NoteView:
     the UI thread, and each goes into the note when it's ready. Without it they're read straight away (tests)."""
 
     CACHE = 48                                       # decoded pictures kept, by backup file
-    MAX_CELLS = 400                                  # table cells drawn in one note: each is a widget, and Tk lays
-                                                     # out many slowly (500: 0.6 s, 1,500: 17 s); the rest are in
-                                                     # the note's PDF and text
+    MAX_CELLS = 400                                  # table cells drawn as a grid in one note: each is a widget,
+                                                     # and Tk lays out many slowly (500: 0.6 s, 1,500: 17 s)
+    MAX_TEXT_ROWS = 5_000                            # rows past the grid, shown as lines of text (cheap); the
+                                                     # rest are in the note's PDF and text
+    MAX_PICTURES = 150                               # pictures drawn in one note (each a background read and a
+                                                     # picture on screen); the rest are in the note's PDF
+    MAX_BLOCKS = 20_000                              # lines and attachments drawn in one note; the rest are in
+                                                     # its PDF and text
 
     def __init__(self, txt: tk.Text, read: Callable, open_attachment: Callable[[dict], None],
                  submit: Optional[Callable] = None):
@@ -67,7 +95,8 @@ class NoteView:
         self.cache: dict = {}
         self.images: list = []                       # PhotoImages must outlive their place in the text
         self.tables: list[tk.Frame] = []
-        self.shown: dict = {"images": 0, "tables": 0, "files": 0, "cells": 0}
+        self.shown: dict = {"images": 0, "tables": 0, "files": 0, "cells": 0, "text_rows": 0, "queued": 0,
+                            "pictures_left": 0}
         ink, muted = theme.TEXT, theme.TEXT_2
         t = txt
         t.tag_configure("title", font=font(20, "bold"), spacing1=4, spacing3=8)
@@ -101,7 +130,8 @@ class NoteView:
         for f in self.tables:
             f.destroy()
         self.images, self.tables = [], []
-        self.shown = {"images": 0, "tables": 0, "files": 0, "cells": 0}
+        self.shown = {"images": 0, "tables": 0, "files": 0, "cells": 0, "text_rows": 0, "queued": 0,
+                      "pictures_left": 0}
         self.gen += 1
         self.pending = 0
         self.txt.configure(state="normal")
@@ -114,14 +144,22 @@ class NoteView:
             t.insert("end", "🔒\nLocked on your iPhone\n", ("locked",))
             t.insert("end", "Open it on the iPhone with your Notes password.", ("locked", "meta"))
         elif note.get("blocks") is None:
-            t.insert("end", note.get("text") or "", ("para",))
+            t.insert("end", _lines(note.get("text") or ""), ("para",))
         else:
             atts = note.get("attachments") or {}
-            for b in note["blocks"]:
+            blocks = note["blocks"]
+            for b in blocks[:self.MAX_BLOCKS]:
                 if b["kind"] == "para":
                     self._para(b)
                 else:
                     self._attachment(atts.get(b["id"]) or {"kind": "file", "name": "", "file": None})
+            n = self.shown["pictures_left"]
+            if n:
+                t.insert("end", f"{n:,} more picture{'s' if n != 1 else ''}: save this note as PDF to see "
+                                f"{'them' if n != 1 else 'it'}\n", ("meta",))
+            if len(blocks) > self.MAX_BLOCKS:
+                t.insert("end", f"This note goes on for {len(blocks) - self.MAX_BLOCKS:,} more lines: save it as "
+                                f"PDF or text to see it all\n", ("meta",))
         t.configure(state="disabled")
 
     def _para(self, b: dict) -> None:
@@ -135,7 +173,9 @@ class NoteView:
             t.insert("end", ("☑" if b["done"] else "☐") + " ", tuple(base + ["box"]))
         elif hanging:
             t.insert("end", notes_doc.prefix(b), tuple(base))
+        col = 0
         for text, fmt, link in b["spans"]:
+            text, col = _broken(text, col)
             tags = list(base)
             if "bold" in fmt and "italic" in fmt and style not in ("title", "heading", "subheading"):
                 tags.append("bolditalic")
@@ -158,6 +198,10 @@ class NoteView:
         src = src or a.get("preview")
         if not src or ImageTk is None:
             return False
+        if self.shown["queued"] >= self.MAX_PICTURES:       # said at the end of the note
+            self.shown["pictures_left"] += 1
+            return True
+        self.shown["queued"] += 1
         self._n += 1
         mark = f"pic{self._n}"
         self.txt.mark_set(mark, "end-1c")
@@ -205,14 +249,10 @@ class NoteView:
         left = self.MAX_CELLS - self.shown["cells"]
         width = max((len(row) for row in rows), default=0)
         fit = min(len(rows), left // width) if width else len(rows)   # whole rows only, within the note's cells
-        if fit < len(rows):
-            rest = len(rows) - fit
-            more = (f"{rest:,} more row{'s' if rest != 1 else ''}" if fit else
-                    f"A table of {len(rows):,} row{'s' if len(rows) != 1 else ''} is too big to show here")
         f = tk.Frame(self.txt, bg=theme.BORDER, bd=0)
         for r, row in enumerate(rows[:fit]):
             for c, cell in enumerate(row):
-                tk.Label(f, text=cell, bg=theme.CARD, fg=theme.TEXT, font=font(12, "bold" if r == 0 else "normal"),
+                tk.Label(f, text=cell if len(cell) <= CELL else cell[:CELL] + "…", bg=theme.CARD, fg=theme.TEXT, font=font(12, "bold" if r == 0 else "normal"),
                          anchor="nw", justify="left", wraplength=180, padx=6, pady=4
                          ).grid(row=r, column=c, sticky="nsew", padx=(0 if c else 1, 1), pady=(0 if r else 1, 1))
         self.shown["cells"] += sum(len(row) for row in rows[:fit])
@@ -220,8 +260,14 @@ class NoteView:
         if fit:
             self.txt.window_create("end", window=f, padx=2, pady=6)
             self.txt.insert("end", "\n")
-        if fit < len(rows):
-            self.txt.insert("end", f"{more}: save this note as PDF or text to see them all\n", ("meta",))
+        as_text = rows[fit:fit + max(0, self.MAX_TEXT_ROWS - self.shown["text_rows"])]   # the rest, as lines of text
+        if as_text:
+            self.txt.insert("end", _lines("\n".join("\t".join(r) for r in as_text)) + "\n", ("para", "mono"))
+            self.shown["text_rows"] += len(as_text)
+        rest = len(rows) - fit - len(as_text)
+        if rest > 0:
+            self.txt.insert("end", f"{rest:,} more row{'s' if rest != 1 else ''}: save this note as PDF or text to "
+                                   f"see them all\n", ("meta",))
         self.shown["tables"] += 1
 
     def _file_line(self, a: dict, at: str = "end", newline: bool = True) -> None:

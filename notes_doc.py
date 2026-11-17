@@ -25,10 +25,14 @@ OBJ = "￼"
 
 
 MAX_UNZIP = 32 * 1024 * 1024    # a table or gallery is a few KB; more than this is a damaged or hostile blob
-MAX_BODY = 4 * 1024 * 1024      # a note body: its text and styles (pictures are files of their own)
-MAX_TOTAL = 64 * 1024 * 1024    # all the note bodies of one load of the notes, and again all its tables and
-                                # galleries (two budgets), so many blobs just under the limits can't keep it busy
-                                # either; past it, what's left can't be read (snippets, "can't be read" tables)
+MAX_BODY = 16 * 1024 * 1024     # a note body: its text and styles (pictures are files of their own); a 16 MB
+                                # note is thousands of pages
+MAX_TOTAL = 64 * 1024 * 1024    # how far one load of the notes may unpack *beyond* EXPANSION x the packed size,
+                                # once for the bodies and once for tables and galleries (two budgets). Ordinary
+                                # notes and tables pack 2-5 to 1 and never touch it, however many there are; only
+                                # blobs that unpack far more than real ones (bombs) use it up. Past it, the rest of
+                                # those can't be read (snippets, "can't be read" tables)
+EXPANSION = 20
 MAX_INDENT = 8                  # Notes goes no deeper; a bigger number would build huge margins and strings
 MAX_CELLS = 100_000             # a table's rows x columns; a bigger one is damaged (and the grid alone would be huge)
 _BREAKS = re.compile("(\n|" + OBJ + ")")
@@ -36,7 +40,7 @@ _UUID = re.compile(rb"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4
 
 
 class Budget:
-    """How many more bytes one load of the notes may unpack (MAX_TOTAL)."""
+    """How much more one load of the notes may unpack beyond EXPANSION x the packed size (MAX_TOTAL)."""
 
     def __init__(self, total: int = MAX_TOTAL):
         self.left = total
@@ -44,14 +48,14 @@ class Budget:
 
 def unzip(data, limit: int = MAX_UNZIP, budget: Optional[Budget] = None) -> Optional[bytes]:
     """A blob gunzipped (or inflated), at most `limit` bytes: None if it would be bigger, or if `budget` is spent.
-    Not compressed at all: the bytes as they are. What's unpacked (or refused) is taken from `budget`."""
+    Not compressed at all: the bytes as they are. What's unpacked (or refused) beyond EXPANSION x the packed size
+    is taken from `budget`; once it's spent, a blob may unpack to EXPANSION x its packed size only, so ordinary
+    notes still read in full and only bombs are refused."""
     if not data:
         return None
-    if budget is not None:
-        if budget.left <= 0:
-            return None
-        limit = min(limit, budget.left)
     data = bytes(data)
+    if budget is not None and budget.left <= 0:
+        limit = min(limit, EXPANSION * len(data))
     for wbits in (16 + zlib.MAX_WBITS, zlib.MAX_WBITS):
         d = zlib.decompressobj(wbits)
         try:
@@ -65,7 +69,7 @@ def unzip(data, limit: int = MAX_UNZIP, budget: Optional[Budget] = None) -> Opti
         out = data if len(data) <= limit else None
         used = min(len(data), limit)
     if budget is not None:
-        budget.left -= max(used, 1)
+        budget.left -= max(0, used - EXPANSION * len(data))
     return out
 
 

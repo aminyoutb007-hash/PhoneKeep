@@ -24,6 +24,8 @@ import notes_doc
 
 IMG_MAX_W = cp.BODY_W
 IMG_MAX_H = 120 * mm
+MAX_PICTURES = 1_000      # pictures in one note's pages; the rest are named in a line (a 20,000-page "gallery" is
+                          # damaged or hostile, and each picture is scaled on disk until the PDF is made)
 
 
 def _styles():
@@ -51,15 +53,33 @@ def _when(v) -> str:
 
 
 class _Pictures:
-    """Backup images scaled for the page once, as JPEGs in a private folder."""
+    """Backup images scaled for the page once each (by backup file), as JPEGs in a private folder; at most
+    MAX_PICTURES drawn per note (`in_note` counts them, `left_out` the rest)."""
 
     def __init__(self, folder: Path, read: Callable):
         self.folder, self.read, self.n = folder, read, 0
+        self.scaled: dict[tuple, Optional[tuple[str, float, float]]] = {}
+        self.in_note = self.left_out = 0
         folder.mkdir(parents=True, exist_ok=True)
 
     def flowable(self, src) -> Optional[RLImage]:
         if not src or cp.Image is None:
             return None
+        if self.in_note >= MAX_PICTURES:
+            self.left_out += 1
+            return None
+        key = tuple(src)
+        if key not in self.scaled:
+            self.scaled[key] = self._scale(src)
+        if self.scaled[key] is None:
+            return None
+        self.in_note += 1
+        path, w, h = self.scaled[key]
+        img = RLImage(path, width=w, height=h)
+        img.hAlign = "LEFT"
+        return img
+
+    def _scale(self, src) -> Optional[tuple[str, float, float]]:
         data = self.read(*src)
         if not data:
             return None
@@ -75,9 +95,7 @@ class _Pictures:
         p = self.folder / f"n{self.n}.jpg"
         im.save(p, "JPEG", quality=82)
         scale = min(IMG_MAX_W / im.width, IMG_MAX_H / im.height, 1.0 if im.width > 300 else 2.0)
-        img = RLImage(str(p), width=im.width * scale, height=im.height * scale)
-        img.hAlign = "LEFT"
-        return img
+        return str(p), im.width * scale, im.height * scale
 
 
 def _spans(b: dict, emoji) -> str:
@@ -109,6 +127,7 @@ def note_flowables(n: dict, st: dict, emoji, pics: _Pictures) -> list:
             fl.append(Paragraph(cp.markup(cp.drawable(line), emoji, 11) or "&nbsp;", st["body"]))
         return fl
     atts = n.get("attachments") or {}
+    pics.in_note = pics.left_out = 0
     first_title = True
     for b in n["blocks"]:
         if b["kind"] == "para":
@@ -159,6 +178,9 @@ def note_flowables(n: dict, st: dict, emoji, pics: _Pictures) -> list:
         missing = "" if a.get("file") or kind == "link" else " (not in the backup)"
         fl.append(Paragraph(cp.markup(f"[{label}{': ' + name if name and name != label else ''}{missing}]", emoji, 11),
                             st["file"]))
+    if pics.left_out:
+        fl.append(Paragraph(f"[{pics.left_out:,} more picture{'s' if pics.left_out != 1 else ''} not in this PDF: "
+                            f"at most {MAX_PICTURES:,} a note]", st["file"]))
     return fl
 
 

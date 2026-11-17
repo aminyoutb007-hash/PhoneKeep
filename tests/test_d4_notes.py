@@ -446,15 +446,35 @@ rows2.append((99_999, None, None, None, None, None, DUP_MEDIA, None, None, "pic.
 DUP_IMGS = [U() for _ in range(DUPS)]
 rows2 += [(200_000 + k, None, None, None, None, None, im, "public.jpeg", 99_999, None, None, None, None)
           for k, im in enumerate(DUP_IMGS)]
+DUP_MEDIA2 = U()                    # media rows sharing one identifier, each with its own file name
+rows2 += [(300_000 + k, None, None, None, None, None, DUP_MEDIA2, None, None, f"scan{k}.jpeg", None, None, None)
+          for k in range(DUPS)]
+NAMED_IMGS = [U() for _ in range(DUPS)]
+rows2 += [(310_000 + k, None, None, None, None, None, im, "public.jpeg", 300_000 + k, None, None, None, None)
+          for k, im in enumerate(NAMED_IMGS)]
 dup_rels = ([f"Accounts/A/FallbackImages/{DUP_DRAW}/{k}/FallbackImage.png" for k in range(DUPS)]
-            + [f"Accounts/A/Media/{DUP_MEDIA}/{k}/pic.jpeg" for k in range(DUPS)])
-MANY_BOMBS = 100                   # each unpacks to 10 MB of tiny fields: under 32 MB, over MAX_BODY
-small_bomb = gzip.compress(b"\x08\x01" * (5 << 20), 9)
+            + [f"Accounts/A/Media/{DUP_MEDIA}/{k}/pic.jpeg" for k in range(DUPS)]
+            + [f"Accounts/A/Media/{DUP_MEDIA2}/x/scan{k}.jpeg" for k in range(DUPS)])
+MANY_BOMBS = 100                   # each unpacks to 20 MB of tiny fields: under 32 MB, over MAX_BODY (16 MB)
+small_bomb = gzip.compress(b"\x08\x01" * (10 << 20), 9)
 for k in range(MANY_BOMBS):
     rows2.append((200 + k, f"Bomb {k}", None, 1, 300 + k, t0 - k, U(), None, None, None, None, f"snippet {k}", None))
     data2.append((300 + k, 200 + k, small_bomb))
 rows2 += [(1000 + k, None, None, None, None, None, pg, "public.jpeg", None, None, 61, None, None)
           for k, pg in enumerate(GAL_PAGES)]
+# ordinary notes, more than the 64 MB budget in all and after the bombs: each still read in full
+import random
+rnd = random.Random(7)
+WORDS = ("garden", "ticket", "river", "lamp", "Tuesday", "bread", "window", "seven", "orange", "bicycle", "café",
+         "notebook", "harbour", "mountain", "kettle", "violin", "forty", "paper", "station", "Monday")
+ORDINARY, ORD_KB = 280, 256
+ord_text = []
+for k in range(ORDINARY):
+    words = " ".join(rnd.choice(WORDS) + rnd.choice(("", "", "s", "ing", "ed")) for _ in range(ORD_KB * 1024 // 7))
+    ord_text.append(f"Ordinary {k}\n" + words[:ORD_KB * 1024])
+    rows2.append((400_000 + k, f"Ordinary {k}", None, 1, 500_000 + k, t0 - 500 - k, U(), None, None, None, None,
+                  f"ord snippet {k}", None))
+    data2.append((500_000 + k, 400_000 + k, note_blob([run(f"Ordinary {k}\n", "title"), run(ord_text[-1][len(f"Ordinary {k}\n"):])])))
 c2.executemany("INSERT INTO ZICCLOUDSYNCINGOBJECT VALUES (" + ",".join("?" * 13) + ")", rows2)
 c2.executemany("INSERT INTO ZICNOTEDATA VALUES (?,?,?)", data2)
 c2.commit()
@@ -514,13 +534,20 @@ check(BIGGAL in ga and [k["id"] for k in ga[BIGGAL]["items"][:3]] == list(revers
       "  a gallery of 20,000 pages in 30 MB of data is put in order in one pass")
 check(TALL in ga and ga[TALL]["rows"] == [["x"]] * TALL_ROWS,
       "  a 1-column table of 50,000 rows whose column is named 200,000 times reads each row once")
+check(all(ga.get(im, {}).get("file") == (DOM, f"Accounts/A/Media/{DUP_MEDIA2}/x/scan{k}.jpeg")
+          for k, im in enumerate(NAMED_IMGS)),
+      f"  {DUPS:,} media rows sharing one identifier, each with its own file name, find their own file at one look each")
 check(ga.get(DUP_DRAW, {}).get("file") == (DOM, max(r_ for r_ in dup_rels if "FallbackImages" in r_))
-      and all(ga.get(im, {}).get("file") == (DOM, max(r_ for r_ in dup_rels if "/Media/" in r_)) for im in DUP_IMGS),
+      and all(ga.get(im, {}).get("file") == (DOM, max(r_ for r_ in dup_rels if f"/Media/{DUP_MEDIA}/" in r_))
+              for im in DUP_IMGS),
       f"  {DUPS:,} rows sharing one identifier, and {DUPS:,} images sharing one media row, each with {DUPS:,} files, "
       f"look their files up once")
 check(all(bn.get(f"Bomb {k}", {}).get("text") == f"snippet {k}" for k in range(MANY_BOMBS)),
-      f"  {MANY_BOMBS} note bodies that each unpack to 10 MB are refused (4 MB a body, 64 MB in all) and show their "
+      f"  {MANY_BOMBS} note bodies that each unpack to 20 MB are refused (16 MB a body) and show their "
       f"snippets")
+full = [k for k in range(ORDINARY) if bn.get(f"Ordinary {k}", {}).get("text") == ord_text[k]]
+check(len(full) == ORDINARY, f"  {ORDINARY} ordinary notes of {ORD_KB} KB ({ORDINARY * ORD_KB // 1024} MB in all, more "
+      f"than the 64 MB budget, read after the bombs) are each read in full ({len(full)})")
 tn = bn.get("Tall table", {})
 check([b["id"] for b in tn.get("blocks") or [] if b["kind"] == "attachment"] == [TALL]
       and tn["text"].count("\n") < TALL_ROWS + 5,
@@ -675,9 +702,11 @@ tree.selection_set(lock)
 a.update()
 check("Locked on your iPhone" in txt.get("1.0", "end"), "a locked note shows a lock and 'Locked on your iPhone'")
 
-# a note's big tables draw at most NoteView.MAX_CELLS cells (each a widget), whole rows, then say where the rest is
+# a note's big tables: at most NoteView.MAX_CELLS cells as a grid (each a widget), whole rows; the rows after that
+# as lines of text (cheap), at most MAX_TEXT_ROWS in the note; past those, a line says where the rest is
 big_tables = {f"T{k}": {"id": f"T{k}", "kind": "table", "rows": rows_}
-              for k, rows_ in enumerate([[["a"]] * 300, [["b", "c"]] * 1_000, [["d"]] * 10])}
+              for k, rows_ in enumerate([[["a"]] * 300, [["b", "c"]] * 1_000, [["d"]] * 10,
+                                         [[f"row {i}", "e"] for i in range(6_000)]])}
 t1 = time.time()
 view.show({"title": "Big tables", "locked": False, "attachments": big_tables, "text": "",
            "blocks": [{"kind": "attachment", "id": k, "uti": "com.apple.notes.table"} for k in big_tables]})
@@ -685,12 +714,80 @@ a.update()
 took = time.time() - t1
 shown_txt = txt.get("1.0", "end")
 check(view.MAX_CELLS == 400 and view.shown["cells"] == 400 and took < 10
-      and [len(f.grid_slaves()) for f in view.tables] == [300, 100, 0],
-      f"three tables of 300, 2,000 and 10 cells draw 400 cells in all, whole rows "
+      and [len(f.grid_slaves()) for f in view.tables] == [300, 100, 0, 0],
+      f"tables of 300, 2,000, 10 and 12,000 cells draw 400 cells in all as a grid, whole rows "
       f"({[len(f.grid_slaves()) for f in view.tables]}; {took:.1f} s)")
-check("950 more rows: save this note as PDF or text to see them all" in shown_txt
-      and "A table of 10 rows is too big to show here: save this note as PDF or text" in shown_txt,
-      "  the table cut short says how many rows are left out, the one that doesn't fit says it's too big")
+check(view.MAX_TEXT_ROWS == 5_000 and view.shown["text_rows"] == 5_000 and "b\tc\n" in shown_txt
+      and "\nd\n" in shown_txt and "row 4039\te" in shown_txt and "row 4040\te" not in shown_txt
+      and "1,960 more rows: save this note as PDF or text to see them all" in shown_txt
+      and shown_txt.count("more rows") == 1,
+      "  the rows after the grid show as lines of text (950 + 10 + 4,040 = 5,000); only the last table says "
+      "1,960 more rows are in its PDF and text")
+
+# a note's pictures: at most NoteView.MAX_PICTURES read and drawn, then a line says the rest are in its PDF
+gal = {"G": {"id": "G", "kind": "gallery", "items": [dict(atts[0], id=f"P{i}") for i in range(400)]}}
+view.show({"title": "Many pictures", "locked": False, "attachments": gal, "text": "",
+           "blocks": [{"kind": "attachment", "id": "G", "uti": "com.apple.notes.gallery"}]})
+a.update()
+queued = view.shown["queued"]
+pump(lambda: view.pending == 0, 60)
+check(view.MAX_PICTURES == 150 and queued == 150 and view.shown["images"] == 150
+      and view.shown["pictures_left"] == 250
+      and "250 more pictures: save this note as PDF to see them" in txt.get("1.0", "end"),
+      f"a gallery of 400 pages reads and draws 150 pictures and says 250 more are in the PDF "
+      f"({queued} read, {view.shown['images']} drawn)")
+
+# a very long paragraph (or plain text, or table cell) shows at once: on screen its lines break every 2,000 characters
+long_para = " ".join(f"word{i}" for i in range(60_000))                  # ~590,000 characters, no line break
+t1 = time.time()
+view.show({"title": "Long", "locked": False, "text": "", "attachments": {"C": {"id": "C", "kind": "table",
+           "rows": [["x" * 50_000, "y"]]}}, "blocks": [
+    {"kind": "para", "style": "body", "indent": 0, "done": None, "number": 0, "spans": [(long_para, set(), None)],
+     "text": long_para}, {"kind": "attachment", "id": "C", "uti": "com.apple.notes.table"}]})
+a.update()
+txt.see("end")
+a.update()
+took = time.time() - t1
+lines = txt.get("1.0", "end").split("\n")
+cell = view.tables[0].grid_slaves(row=0, column=0)[0].cget("text")
+check(took < 5 and max(len(x) for x in lines) <= 2_000 and txt.get("1.0", "end").replace("\n", "").startswith(
+      long_para) and len(cell) == 2_001 and cell.endswith("…"),
+      f"a paragraph of {len(long_para):,} characters and a 50,000-character cell show at once ({took:.1f} s; "
+      f"longest line {max(len(x) for x in lines):,}, cell {len(cell):,})")
+t1 = time.time()
+view.show({"title": "Long text", "locked": False, "blocks": None, "attachments": {}, "text": long_para})
+a.update()
+txt.see("end")
+a.update()
+check(time.time() - t1 < 5 and max(len(x) for x in txt.get("1.0", "end").split("\n")) <= 2_000,
+      f"  so does a note shown as plain text ({time.time() - t1:.1f} s)")
+
+import chat_pdf
+import notes_pdf
+
+
+def pdf_flowables(pages: int):
+    work = ql.private_tmp("phonekeep-notes-pdf-")
+    try:
+        pics = notes_pdf._Pictures(work / "img", ctx.read)
+        g = {"G": dict(gal["G"], items=[dict(atts[0], id=f"P{i}") for i in range(pages)])}
+        fl = notes_pdf.note_flowables({"title": "Pictures", "attachments": g, "blocks": [
+            {"kind": "attachment", "id": "G", "uti": "com.apple.notes.gallery"}]}, notes_pdf._styles(),
+            chat_pdf.EmojiCache(work / "emoji"), pics)
+        return fl, pics.n
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+chat_pdf._register_fonts()
+fl, scaled = pdf_flowables(400)
+n_img = sum(isinstance(f, notes_pdf.RLImage) for f in fl)
+check(notes_pdf.MAX_PICTURES == 1_000 and n_img == 400 and scaled == 1,
+      f"  its PDF has all 400 (at most 1,000 a note), the one backup file scaled once ({n_img}, {scaled})")
+fl, scaled = pdf_flowables(1_200)
+last = fl[-1].getPlainText() if hasattr(fl[-1], "getPlainText") else ""
+check(sum(isinstance(f, notes_pdf.RLImage) for f in fl) == 1_000 and "200 more pictures not in this PDF" in last,
+      f"  a PDF of a 1,200-page gallery has 1,000 and says 200 more aren't in it ({last!r})")
 
 # E4's jump from a search hit lands on the note, whichever folder was chosen
 idx = notes.index(by["Old list"])
