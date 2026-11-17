@@ -1625,14 +1625,30 @@ def use_light_appearance(win) -> bool:
 
 def no_tabs(win) -> bool:
     """Keep a window out of macOS's window tabs: with "Prefer tabs" on, or in full screen, macOS merged
-    PhoneKeep's windows into tabs and the tab bar covered the top of the header (5.1.2). Older Tk without
-    -tabbingmode is left as it is. Returns True if applied."""
+    PhoneKeep's windows into tabs and the tab bar covered the top of the header (5.1.2). Tk 8.6, which the
+    installers bundle, has no -tabbingmode: there AppKit's own switch turns window tabs off for the whole app
+    (5.2.2). Returns True if applied."""
     if sys.platform != "darwin":
         return False
     try:
         win.tk.call("wm", "attributes", win._w, "-tabbingmode", "disallowed")
         return True
     except tk.TclError:
+        return _appkit_no_tabs()
+
+
+NS_TABBING_DISALLOWED = 2       # NSWindowTabbingModeDisallowed
+
+
+def _appkit_no_tabs() -> bool:
+    """No automatic window tabs for any PhoneKeep window, and each window already made marked "no tabs"."""
+    try:
+        from AppKit import NSApplication, NSWindow
+        NSWindow.setAllowsAutomaticWindowTabbing_(False)
+        for w in NSApplication.sharedApplication().windows():
+            w.setTabbingMode_(NS_TABBING_DISALLOWED)
+        return True
+    except Exception:
         return False
 
 

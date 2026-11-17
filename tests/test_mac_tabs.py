@@ -5,7 +5,9 @@ Checks:
 - on a Mac every window gets -tabbingmode disallowed as it's made: the main window (tk.Tk, and TkinterDnD's when
   installed), a plain Toplevel and a PhoneKeep-style Toplevel subclass;
 - every window class in PhoneKeep's code is a Toplevel (or the main window), so the hook reaches it;
-- older Tk without -tabbingmode doesn't crash; off a Mac nothing is called.
+- Tk 8.6 without -tabbingmode (the installers bundle it): AppKit's switch turns window tabs off for the whole app
+  instead, and every window is marked "no tabs" (5.2.2: before, the fix did nothing in the installed app);
+- off a Mac nothing is called.
 """
 import os, re, sys
 from pathlib import Path
@@ -61,8 +63,16 @@ class FakeWin:
 real = sys.platform
 try:
     sys.platform = "darwin"
+    appkit_calls = []
+    real_appkit, ui._appkit_no_tabs = ui._appkit_no_tabs, lambda: appkit_calls.append(1) or True
     old = FakeWin(error=True)
-    check(ui.no_tabs(old) is False and len(old.tk.calls) == 1, "older Tk without -tabbingmode: no crash, left as it is")
+    check(ui.no_tabs(old) is True and len(old.tk.calls) == 1 and appkit_calls == [1],
+          "Tk 8.6 without -tabbingmode: no crash, AppKit's switch is used instead")
+    new = FakeWin()
+    appkit_calls.clear()
+    ui.no_tabs(new)
+    check(not appkit_calls, "with -tabbingmode, AppKit isn't needed")
+    ui._appkit_no_tabs = real_appkit
     new = FakeWin()
     check(ui.no_tabs(new) is True and new.tk.calls == [("wm", "attributes", ".fake", "-tabbingmode", "disallowed")],
           "on a Mac: wm attributes <win> -tabbingmode disallowed")
@@ -80,8 +90,21 @@ except tk.TclError as ex:
     print(f"(live check skipped: no display: {ex})")
 
 if root is not None and sys.platform == "darwin":
+    try:
+        root.tk.call("wm", "attributes", root._w, "-tabbingmode")
+        HAS_MODE = True
+    except tk.TclError:
+        HAS_MODE = False                 # Tk 8.6, as in the installers
+    print(f"(Tk {root.tk.call('info', 'patchlevel')}: {'-tabbingmode' if HAS_MODE else 'no -tabbingmode, AppKit switch'})")
+
     def mode(w):
-        return str(w.tk.call("wm", "attributes", w._w, "-tabbingmode"))
+        if HAS_MODE:
+            return str(w.tk.call("wm", "attributes", w._w, "-tabbingmode"))
+        from AppKit import NSApplication, NSWindow
+        w.update_idletasks()
+        modes = {int(n.tabbingMode()) for n in NSApplication.sharedApplication().windows()}
+        return ("disallowed" if not NSWindow.allowsAutomaticWindowTabbing() and modes == {ui.NS_TABBING_DISALLOWED}
+                else f"allowed (automatic {bool(NSWindow.allowsAutomaticWindowTabbing())}, modes {sorted(modes)})")
 
     class Window(tk.Toplevel):          # like PhoneWindow, OpenBackupDialog, Viewer, ...
         def __init__(self, parent):
