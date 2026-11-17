@@ -222,5 +222,5 @@ check(all(any(c.itemcget(k, "outline") == ui.SELECT_BLUE for k in c.find_all() i
 
 print("\nE7 TIMES " + json.dumps(times), flush=True)
 a.destroy()
-print("\nE7 TESTS:", "PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures))
+print("\nE7 TESTS:", "PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures), flush=True)
 os._exit(1 if failures else 0)
