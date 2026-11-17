@@ -700,13 +700,15 @@ try:
         fits = {cid: a for cid, a in per6.items() if 0 < sum(h for h, _t, _p in a) <= 150}
         if fits:
             cid = max(fits, key=lambda k: sum(h for h, _t, _p in fits[k]))
-            pick6 = (cid, fits[cid])
+            # the photo shown large: from this chat, or else from the first chat with a photo in the backup
+            with_photo = [k for k, a in per6.items() if any(h and p for h, _t, p in a)]
+            pick6 = (cid, fits[cid], cid if cid in with_photo else (with_photo[0] if with_photo else None))
     if con is not None:
         con.close()
     if pick6 is None:
         note("M6: no Messages chat with attachments in the backup (up to 150); not tested on real data")
     else:
-        cid, atts = pick6
+        cid, atts, photo_chat = pick6
         here = sorted(t for h, t, _p in atts if h and t)
         win.open_app("messages")
         pump(app, lambda: find(win.content, ui.ChatPanel) is not None and not loading(win), 600)
@@ -716,7 +718,9 @@ try:
         app.update()
         grid = panel.media_grid
         shown, shown_here = len(grid.all), sum(1 for v in grid.here.values() if v)
-        photo = next((m for m in grid.all if grid.here.get(m["id"]) and m["type"] == "image"), None)
+        pv = win.data.preview
+        photo = next((m for m in (pv.media("messages", photo_chat) if photo_chat is not None else [])
+                      if m["type"] == "image" and pv.media_source("messages", m) is not None), None)
         big = None
         if photo is not None:
             panel.open_media_list("messages", [photo], 0)
@@ -738,7 +742,7 @@ try:
               f"M6 on real data: a chat's Media tab shows every attachment ({shown} of {len(atts)} in sms.db, "
               f"{shown_here} of {len(here)} in the backup); Save all saved {res['saved']} files, "
               f"{res['missing']} not in the backup, each dated when it was sent: {dated}; a photo shown large: "
-              f"{big if photo is not None else 'no photo in that chat'}")
+              f"{big if photo is not None else 'no photo in the backup'}")
         shutil.rmtree(WORK / "m6", ignore_errors=True)
 finally:
     try:

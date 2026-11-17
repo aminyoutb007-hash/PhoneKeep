@@ -1337,8 +1337,11 @@ class MediaGrid(tk.Frame):
                            width=20)
         box.pack(side="left")
         box.bind("<<ComboboxSelected>>", lambda e: self._filter())
-        self.summary = tk.Label(bar, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w")
-        self.summary.pack(side="left", padx=10)
+        # the counts on a line of their own, wrapped: the preview is often narrow
+        self.summary = tk.Label(self, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left",
+                                wraplength=300)
+        self.summary.pack(fill="x", padx=10, pady=(0, 6))
+        self.summary.bind("<Configure>", lambda e: self.summary.configure(wraplength=max(160, e.width - 4)))
         foot = tk.Frame(self, bg=CARD)
         foot.pack(side="bottom", fill="x", padx=10, pady=(4, 6))
         self.show_btn = RoundButton(foot, "Show folder", lambda: None, "secondary", 120, 28, 12, bg=CARD)
