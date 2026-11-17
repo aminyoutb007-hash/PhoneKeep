@@ -482,8 +482,8 @@ def load_messages(ctx: Ctx) -> list[dict]:
     # database without these columns just has none
     have = cols(con, "message")
     stamps = [k for k in ("date_edited", "date_retracted", "date_read") if k in have]
-    times = {r["ROWID"]: r for r in select(con, "message", ["ROWID", "date_edited", "date_retracted", "date_read"],
-                                            "WHERE " + " OR ".join(f"{k} > 0" for k in stamps))} if stamps else {}
+    times = {r[0]: r[1:] for r in select(con, "message", ["ROWID", "date_retracted", "date_edited", "date_read"],
+                                          "WHERE " + " OR ".join(f"{k} > 0" for k in stamps))} if stamps else {}
     reply_of = {}
     if "thread_originator_guid" in have:
         reply_of = dict(con.execute("SELECT ROWID, thread_originator_guid FROM message "
@@ -522,22 +522,18 @@ def load_messages(ctx: Ctx) -> list[dict]:
         # with something to say get one (the service only where it isn't the chat's): 300,000 messages stay fast
         rid = r["ROWID"]
         number = c["group"] and not r["is_from_me"] and handles.get(r["handle_id"])
-        tr = times.get(rid)
         detail = None
-        if number or tr is not None or rid in target_row or rid in reply_of or r["service"] != c["service"]:
+        if number or rid in target_row or rid in reply_of or r["service"] != c["service"]:
             detail = {"service": r["service"]} if r["service"] and r["service"] != c["service"] else {}
             if number:
                 detail["number"] = number
-        retracted = tr is not None and t2001(tr["date_retracted"])
-        edited = tr is not None and not retracted and t2001(tr["date_edited"])
-        read = tr is not None and t2001(tr["date_read"])
-        if retracted:
-            detail["deleted"] = retracted.isoformat(timespec="seconds")
-        if edited:
-            detail["edited"] = edited.isoformat(timespec="seconds")
-        if read:
-            detail["read"] = read.isoformat(timespec="seconds")
-        text = (r["text"] or decode_attributed_body(r["attributedBody"]) or "").replace("\ufffc", "").strip()
+        # deleted / edited / read: Messages' own times as they are (most messages have a read time, so no
+        # conversion here; tables.message_times turns them into dates as a spreadsheet is written)
+        tr = times.get(rid)
+        if tr is not None:
+            base["times"] = tr
+        retracted = tr is not None and bool(tr[0])
+        text =(r["text"] or decode_attributed_body(r["attributedBody"]) or "").replace("\ufffc", "").strip()
         parts = []
         for k, a in enumerate(atts.get(r["ROWID"], [])):
             rel = re.sub(r"^(~/|/var/mobile/|/private/var/mobile/)", "", a["filename"] or "")

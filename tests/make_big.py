@@ -3,6 +3,8 @@
 300,000 messages in 400 chats (one chat with 10,000, the size the speed target names) and 50,000 photos and videos
 over six years (every fifth a video, so the Videos collection has 10,000 to scroll through). Every name, number and word is invented. The photos are one small JPEG hard-linked 50,000 times, so the backup
 takes little disk space; each has its own date. Not encrypted (the speed is the app's, not the decryption's).
+Messages have M4's detail as on a real phone: most have a read time, one in 100 is a reply, one in 100 was edited,
+and 3,000 reactions are rows of their own.
 
     python tests/make_big.py            # builds tests/work/Big/00008030-BIGTEST... once; again only if missing
 """
@@ -26,7 +28,7 @@ WORDS = ("see you at the station tomorrow morning", "running late, five minutes"
 
 
 def build() -> Path:
-    if (BK / "Manifest.db").exists() and (BK / "done").exists():
+    if (BK / "Manifest.db").exists() and (BK / "done-m4").exists():
         return BK
     shutil.rmtree(BK, ignore_errors=True)
     BK.mkdir(parents=True)
@@ -78,21 +80,32 @@ CREATE TABLE chat(ROWID INTEGER PRIMARY KEY, chat_identifier, display_name, styl
 CREATE TABLE chat_message_join(chat_id, message_id);
 CREATE TABLE chat_handle_join(chat_id, handle_id);
 CREATE TABLE message(ROWID INTEGER PRIMARY KEY, text, attributedBody, handle_id, date, is_from_me,
-  item_type, associated_message_type, group_title, service);
+  item_type, associated_message_type, group_title, service, guid UNIQUE, associated_message_guid, associated_message_emoji,
+  thread_originator_guid, date_edited, date_retracted, date_read);
 CREATE TABLE attachment(ROWID INTEGER PRIMARY KEY, filename, mime_type, transfer_name);
 CREATE TABLE message_attachment_join(message_id, attachment_id);""")
     c.executemany("INSERT INTO handle VALUES (?,?)", [(i, f"+44770090{i:04d}") for i in range(1, CHATS + 1)])
     c.executemany("INSERT INTO chat VALUES (?,?,?,?,?)",
                   [(i, f"+44770090{i:04d}", "", 45, "iMessage") for i in range(1, CHATS + 1)])
     c.executemany("INSERT INTO chat_handle_join VALUES (?,?)", [(i, i) for i in range(1, CHATS + 1)])
-    rows, joins = [], []
+    # M4's detail as on a real phone: most messages have a read time, one in 100 is a reply, one in 100 edited,
+    # and 3,000 reactions (rows of their own, on top of the 300,000)
+    rows, joins, chat_of = [], [], {}
     for m in range(1, MESSAGES + 1):
         chat = 1 if m <= BIG_CHAT else 2 + rnd.randrange(CHATS - 1)
-        when = start + (end - start) * (m / MESSAGES if chat == 1 else rnd.random())
-        rows.append((m, rnd.choice(WORDS), None, chat, int((when - E) * 1e9), rnd.random() < 0.5, 0, 0, None,
-                     "iMessage"))
+        chat_of[m] = chat
+        when = int((start + (end - start) * (m / MESSAGES if chat == 1 else rnd.random()) - E) * 1e9)
+        rows.append((m, rnd.choice(WORDS), None, chat, when, rnd.random() < 0.5, 0, 0, None, "iMessage", f"M{m}",
+                     None, None, f"M{m - 1}" if m % 100 == 0 else None, when + 60_000_000_000 if m % 100 == 50 else 0,
+                     0, when + 30_000_000_000 if rnd.random() < 0.8 else 0))
         joins.append((chat, m))
-    c.executemany("INSERT INTO message VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+    for k in range(3000):
+        target = rnd.randrange(1, MESSAGES + 1)
+        rid = MESSAGES + 1 + k
+        rows.append((rid, "Loved a message", None, chat_of[target], rows[target - 1][4] + 1, rnd.random() < 0.5, 0,
+                     2000 + rnd.randrange(6), None, "iMessage", f"R{k}", f"p:0/M{target}", None, None, 0, 0, 0))
+        joins.append((chat_of[target], rid))
+    c.executemany("INSERT INTO message VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     c.executemany("INSERT INTO chat_message_join VALUES (?,?)", joins)
     c.commit()
     c.close()
@@ -114,7 +127,7 @@ CREATE TABLE message_attachment_join(message_id, attachment_id);""")
     man.executemany("INSERT INTO Files VALUES (?,?,?,?,?)", entries)
     man.commit()
     man.close()
-    (BK / "done").write_text("ok")
+    (BK / "done-m4").write_text("ok")   # done-m4: built with M4's detail (older builds are made again)
     return BK
 
 

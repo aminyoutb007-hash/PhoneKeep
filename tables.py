@@ -23,7 +23,7 @@ _SHEET_BAD = re.compile(r"[\[\]:*?/\\]")
 HEADERS = ["Date", "Time", "Sender", "Message", "Type", "Attachment", "Starred",
            # M4: full detail (blank where the backup doesn't say; WhatsApp's backup has only the group number)
            "Reply to", "Reactions", "Edited at", "Deleted at", "Read at", "Service", "Group sender number"]
-_DETAIL_TIMES = ("edited", "deleted", "read")
+_APPLE_EPOCH = 978307200      # 2001-01-01 in Unix seconds (phonekeep.APPLE_EPOCH)
 
 
 def csv_safe(v):
@@ -61,8 +61,26 @@ def _detail_row(m: dict, service: str = "") -> list:
     """M4's columns: reply to, reactions, edited / deleted / read at (datetimes or None), service, group number.
     `service`: the chat's, used where the message doesn't name its own."""
     d = m.get("detail") or {}
-    times = [dt.datetime.fromisoformat(d[k]) if d.get(k) else None for k in _DETAIL_TIMES]
-    return [d.get("reply_to", ""), d.get("reactions", "")] + times + [d.get("service") or service, d.get("number", "")]
+    return [d.get("reply_to", ""), d.get("reactions", "")] + list(message_times(m)) \
+        + [d.get("service") or service, d.get("number", "")]
+
+
+def message_times(m: dict) -> tuple:
+    """(edited, deleted, read) as local datetimes or None, from the message's "times": Messages' own (retracted,
+    edited, read) values, seconds or nanoseconds since 2001, kept as read (an edit doesn't count once unsent)."""
+    x, e, rd = m.get("times") or (None, None, None)
+    x = _apple(x)
+    return (None if x else _apple(e)), x, _apple(rd)
+
+
+def _apple(v) -> Optional[dt.datetime]:
+    """Seconds or nanoseconds since 2001 -> local time to the second (None for none or a time no computer shows)."""
+    if not v or not isinstance(v, (int, float)):
+        return None
+    try:
+        return dt.datetime.fromtimestamp(int((v / 1e9 if v > 1e12 else v) + _APPLE_EPOCH))
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 def _stamp(v) -> str:

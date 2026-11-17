@@ -506,16 +506,54 @@ try:
           f"D9 on real data: the dates and the word both left things out, for {', '.join(sorted(tested)) or 'nothing'}")
 
     # -- M4: replies, reactions, edits and read times from the backup all reach the Excel file ----------------------
-    # Saved into this check's temporary folder (removed at the end); only counts are printed, never any text.
+    # What should be there is worked out here on its own, straight from the backup's sms.db (the way D9's step does),
+    # per message; then the export's reading of it is compared, and the saved Excel file with that. Saved into this
+    # check's temporary folder (removed at the end); only counts are printed, never any text.
     import tables
     from openpyxl import load_workbook
+    KINDS = ("reply_to", "reactions", "edited", "read")
+    db = {k: set() for k in KINDS}                          # message ROWIDs, from sms.db on its own
+    con = ctx.db(sx.HOME, "Library/SMS/sms.db")
+    if con is not None:
+        have = sx.cols(con, "message")
+        need = {"guid", "thread_originator_guid", "associated_message_guid", "date_edited", "date_retracted",
+                "date_read"}
+        if need <= have:
+            # an ordinary message: in a chat that exists, not a reaction, not a group event
+            rows = con.execute("SELECT m.ROWID, m.guid, m.thread_originator_guid, m.date_edited, m.date_retracted, "
+                               "m.date_read FROM message m JOIN chat_message_join j ON j.message_id = m.ROWID "
+                               "JOIN chat ON chat.ROWID = j.chat_id WHERE IFNULL(m.associated_message_type, 0) = 0 "
+                               "AND IFNULL(m.item_type, 0) = 0").fetchall()
+            ordinary = {r[1]: r[0] for r in rows if r[1]}
+            for rid, _guid, to, edited, retracted, read in rows:
+                if to and to in ordinary:
+                    db["reply_to"].add(rid)
+                if edited and not retracted:
+                    db["edited"].add(rid)
+                if read:
+                    db["read"].add(rid)
+            mine: dict = {}                                  # target ROWID -> {who: reacting?}, in date order
+            for kind, to, me, handle in con.execute(
+                    "SELECT associated_message_type, associated_message_guid, is_from_me, handle_id FROM message "
+                    "WHERE associated_message_type BETWEEN 2000 AND 2006 OR associated_message_type BETWEEN 3000 AND "
+                    "3006 ORDER BY date, ROWID"):
+                target = ordinary.get((to or "").split("/", 1)[-1].removeprefix("bp:"))
+                if target is not None:
+                    mine.setdefault(target, {})["me" if me else handle] = kind < 3000
+            db["reactions"] = {t for t, who in mine.items() if any(who.values())}
+        con.close()
     try:
         chats = sx.load_messages(ctx)
     except wv.PhoneKeepError:
         chats = []
-    want = {k: sum(1 for c in chats for m in c["messages"] if (m.get("detail") or {}).get(k))
-            for k in ("reply_to", "reactions", "edited", "read")}
-    got = dict.fromkeys(want, 0)
+
+    def has(m, k):
+        if k in ("edited", "read"):
+            return tables.message_times(m)[0 if k == "edited" else 2] is not None
+        return bool((m.get("detail") or {}).get(k))
+    read_in = {k: {int(str(m["id"]).split("-")[0]) for c in chats for m in c["messages"] if has(m, k)} for k in KINDS}
+    want = {k: sum(1 for c in chats for m in c["messages"] if has(m, k)) for k in KINDS}   # Excel rows (one per part)
+    got = dict.fromkeys(KINDS, 0)
     if chats:
         book = load_workbook(tables.write_chats_xlsx(chats, WORK / "m4.xlsx", "Messages", lambda m: None), read_only=True)
         col = {"reply_to": "Reply to", "reactions": "Reactions", "edited": "Edited at", "read": "Read at"}
@@ -527,9 +565,11 @@ try:
                 for k, i in at.items():
                     got[k] += row[i] not in (None, "")
         book.close()
-    check(bool(chats) and got == want,
-          f"M4 on real data: every reply, reaction, edit and read time the backup has is in the Excel file "
-          f"({want['reply_to']} replies, {want['reactions']} messages with reactions, {want['edited']} edited, {want['read']} with a read time)")
+    n = {k: len(db[k]) for k in KINDS}
+    check(bool(chats) and read_in == db and got == want,
+          f"M4 on real data: every reply, reaction, edit and read time in sms.db (counted on its own) is read and in "
+          f"the Excel file ({n['reply_to']} replies, {n['reactions']} messages with reactions, {n['edited']} edited, "
+          f"{n['read']} with a read time; reading the same: {read_in == db}, Excel the same: {got == want})")
 finally:
     try:
         win.close()
