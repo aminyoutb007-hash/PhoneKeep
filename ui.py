@@ -1209,7 +1209,6 @@ class PhotoPanel(tk.Frame):
     on_open is given. Used by the export picker and by the phone window."""
 
     TILE = 128
-    PAGE = 240
 
     # P1: collections above the library, like the Photos app (key, label); filled from the phone's Photos library
     COLLECTIONS = (("c:fav", "★ Favourites"), ("c:videos", "▶ Videos"), ("c:shots", "▢ Screenshots"),
@@ -1258,7 +1257,6 @@ class PhotoPanel(tk.Frame):
         if self.hidden_items:
             self.months["c:hidden"] = self.hidden_items
         self.shown = 0
-        self._more_btn = None
 
         bar = tk.Frame(self, bg=BG)
         bar.pack(fill="x", padx=16, pady=(12, 6))
@@ -1282,7 +1280,9 @@ class PhotoPanel(tk.Frame):
         self.mlist = ttk.Treeview(side, columns=("m", "n"), show="", selectmode="browse", height=18,
                                   style="Months.Treeview")
         self.mlist.column("m", width=180)
-        self.mlist.column("n", width=64, anchor="e")
+        # E7: wide enough for the biggest "selected/total" (a 10,000-photo group read "0/1000" in 64 px)
+        most = len(self.items) + len(getattr(self, "hidden_items", []) or [])
+        self.mlist.column("n", width=max(64, tkfont.Font(font=font(12, "bold")).measure(f"{most}/{most}") + 14), anchor="e")
         self.mlist.tag_configure("year", font=font(12, "bold"), foreground=INK)
         self.mlist.tag_configure("month", foreground=INK)
         self.mlist.pack(fill="y", expand=True, padx=4, pady=4)
@@ -1296,17 +1296,16 @@ class PhotoPanel(tk.Frame):
         gsb = ttk.Scrollbar(grid_frame, orient="vertical", command=self.canvas.yview)
         def scrolled(first, last):
             gsb.set(first, last)
-            # near the bottom: load the next photos by themselves, so scrolling never stops at a page's end
-            if float(last) >= 0.97 and self._more_btn is not None and not getattr(self, "_loading_more", False):
-                self._loading_more = True
-                self.after_idle(self._auto_more)
+            # E7: the tiles follow the rows on screen (once per redraw, however many scroll events came)
+            if not self._relayout_due:
+                self._relayout_due = True
+                self.after_idle(self._relayout)
+        self._relayout_due = False
+        self.pool: list = []           # E7: the tiles there are, moved to the rows on screen as the grid scrolls
         self.canvas.configure(yscrollcommand=scrolled)
         self.canvas.pack(side="left", fill="both", expand=True)
         gsb.pack(side="right", fill="y")
-        self.gridf = tk.Frame(self.canvas, bg=CARD)
-        self.canvas.create_window((0, 0), window=self.gridf, anchor="nw")
-        self.gridf.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self._laid_out = None          # (month, cols, shown) of the last layout: re-grid only when it changes,
+        self._laid_out = None          # (month, cols, tile, rows on screen) of the last layout: only redone when it changes,
         self.canvas.bind("<Configure>", lambda e: self._relayout())   # or a Configure storm can loop (macOS)
         wheel_scroll(self.canvas)          # wheel, Linux buttons and the Mac trackpad, over tiles too
 
@@ -1441,15 +1440,13 @@ class PhotoPanel(tk.Frame):
 
     def _open_month(self):
         self.worker.clear()
-        for w in self.gridf.winfo_children():
-            w.destroy()
-        self.tiles.clear()
         self.shown = 0
-        self._laid_out = None          # new tiles: always place them
+        self._laid_out = None          # another group: always place the tiles
         self.canvas.yview_moveto(0)
-        self._more()
+        self._relayout()
 
     GAP = 6
+    KEEP_IMAGES = 1500                 # E7: thumbnails kept in memory (those on screen are always kept)
 
     def _cols(self) -> int:
         return max(3, (self.canvas.winfo_width() - self.GAP) // (self.TILE + self.GAP))
@@ -1458,44 +1455,80 @@ class PhotoPanel(tk.Frame):
         """Tiles grow so the columns fill the width exactly (owner, 13 Nov: white space on the right)."""
         return max(self.TILE, (self.canvas.winfo_width() - self.GAP * (cols + 1)) // cols)
 
-    def _more(self):
-        m = self._month()
-        if not m:
-            return
-        items = self.months[m]
-        start, end = self.shown, min(len(items), self.shown + self.PAGE)
-        more_btn = getattr(self, "_more_btn", None)
-        if more_btn is not None:
-            more_btn.destroy()
-            self._more_btn = None
-        for item in items[start:end]:
-            self._tile(item)
-        self.shown = end
-        if end < len(items):
-            self._more_btn = RoundButton(self.gridf, f"Show {min(self.PAGE, len(items) - end)} more",
-                                         self._more, "light", 200, 34, 12)
-        self._relayout()
-
-    def _auto_more(self):
-        try:
-            if self._more_btn is not None:
-                self._more()
-        finally:
-            self._loading_more = False
-
-    def _tile(self, item):
-        t = getattr(self, "tile", self.TILE)
-        c = tk.Canvas(self.gridf, width=t, height=t, bg=theme.TILE_BG, highlightthickness=0, cursor="hand2")
-        c.bind("<ButtonRelease-1>", lambda e, i=item: (self._point_at(i, e.widget), self._toggle(i)))
+    def _new_tile(self, size: int) -> tk.Canvas:
+        c = tk.Canvas(self.canvas, width=size, height=size, bg=theme.TILE_BG, highlightthickness=0, cursor="hand2")
+        c.item = None
+        c.bind("<ButtonRelease-1>", lambda e, c=c: (self._point_at(c.item, e.widget), self._toggle(c.item))
+               if c.item is not None else None)
         c.bind("<space>", lambda e: (self.preview_current(), "break")[1])
         if self.on_open:
-            c.bind("<Double-Button-1>", lambda e, i=item: self.on_open(i))
-        self.tiles[item.id] = c
-        self._draw_tile(item)
-        if item.id in self.paths:
+            c.bind("<Double-Button-1>", lambda e, c=c: self.on_open(c.item) if c.item is not None else None)
+        c.win = self.canvas.create_window(0, 0, window=c, anchor="nw")
+        self.pool.append(c)
+        return c
+
+    def _relayout(self):
+        """E7 (virtual scrolling): the grid is as tall as all of the group's photos, but tiles are made only for the
+        rows on screen and one row either side; as it scrolls, the same tiles move to the new rows and show their
+        photos. 10,000 photos scroll like 100, and only the thumbnails on screen are asked for."""
+        self._relayout_due = False
+        try:
+            m = self._month()
+            items = self.months.get(m, []) if m else []
+            cols = self._cols()
+            tile = self._tile_size(cols)
+            width, view = self.canvas.winfo_width(), self.canvas.winfo_height()
+        except tk.TclError:
             return
-        self.worker.submit(lambda i=item: self.source.thumbnail(i),
-                           lambda path, i=item, m=self._month(): self._thumb_ready(i, path, m))
+        resized = tile != getattr(self, "tile", None)
+        if resized:
+            self.tile = tile
+            self.images = {k: v for k, v in self.images.items() if k[1] == tile}     # drop other sizes
+            for c in self.pool:
+                c.configure(width=tile, height=tile)
+        step = tile + self.GAP
+        rows = -(-len(items) // cols)
+        region = (0, 0, width, self.GAP + rows * step + self.GAP)
+        if region != getattr(self, "_region", None):  # setting it reports a scroll, which lays out again
+            self._region = region
+            self.canvas.configure(scrollregion=region)
+        top = self.canvas.canvasy(0)
+        r0 = max(0, int(top // step) - 1)
+        r1 = min(rows, int((top + max(view, step)) // step) + 2)
+        first, last = r0 * cols, min(len(items), r1 * cols)
+        key = (m, cols, tile, first, last)
+        if key == self._laid_out:
+            return
+        moved = self._laid_out is None or self._laid_out[:3] != key[:3]
+        self._laid_out = key
+        self.tiles = {}
+        want = []
+        for n in range(last - first):
+            item = items[first + n]
+            c = self.pool[n] if n < len(self.pool) else self._new_tile(tile)
+            r, col = divmod(first + n, cols)
+            self.canvas.coords(c.win, self.GAP + col * step, self.GAP + r * step)
+            self.canvas.itemconfigure(c.win, state="normal")
+            again = c.item is not item or resized or moved
+            c.item = item
+            self.tiles[item.id] = c
+            if again:
+                self._draw_tile(item)
+            if item.id not in self.paths:
+                want.append(item)
+        for c in self.pool[last - first:]:
+            c.item = None
+            self.canvas.itemconfigure(c.win, state="hidden")
+        self.shown = max(self.shown, last)
+        # thumbnails: only those on screen, the ones asked for while scrolling past are dropped
+        self.worker.clear()
+        for item in want:
+            self.worker.submit(lambda i=item: self.source.thumbnail(i),
+                               lambda path, i=item, m=m: self._thumb_ready(i, path, m))
+        if len(self.images) > self.KEEP_IMAGES:
+            keep = set(self.tiles)
+            for k in [k for k in self.images if k[0] not in keep][:len(self.images) - self.KEEP_IMAGES]:
+                del self.images[k]
 
     def _thumb_ready(self, item, path, month):
         self.paths[item.id] = path
@@ -1530,34 +1563,6 @@ class PhotoPanel(tk.Frame):
         # selected: a blue frame, nothing else (owner, 13 Nov: no tick circle)
         if item.id in self.selected:
             c.create_rectangle(2, 2, T - 2, T - 2, outline=SELECT_BLUE, width=5)
-
-    def _relayout(self):
-        cols = self._cols()
-        m = self._month()
-        if not m:
-            return
-        tile = self._tile_size(cols)
-        if tile != getattr(self, "tile", None):
-            self.tile = tile
-            self.images = {k: v for k, v in self.images.items() if k[1] == tile}     # drop other sizes
-            for item in self.months[m][:self.shown]:
-                c = self.tiles.get(item.id)
-                if c is not None:
-                    c.configure(width=tile, height=tile)
-                    self._draw_tile(item)
-        key = (m, cols, tile, self.shown, len(self.tiles))
-        if key == getattr(self, "_laid_out", None):
-            return
-        self._laid_out = key
-        r = 0
-        for n, item in enumerate(self.months[m][:self.shown]):
-            c = self.tiles.get(item.id)
-            if c is not None:
-                r, col = divmod(n, cols)
-                c.grid(row=r, column=col, padx=(self.GAP, 0), pady=(self.GAP, 0))
-        btn = getattr(self, "_more_btn", None)
-        if btn is not None:
-            btn.grid(row=r + 1, column=0, columnspan=cols, pady=12)
 
     def _point_at(self, item, widget=None):
         self.cursor = item
