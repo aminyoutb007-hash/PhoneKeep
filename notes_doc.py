@@ -1,0 +1,346 @@
+"""D4: a note as on the phone (docs/spec/08-personal-data.md#d4-notes).
+
+Apple Notes keeps a note's body as gzipped protobuf (NoteStoreProto -> Document -> Note): the text, and "attribute
+runs" over it, each with a length in UTF-16 units and the style of that stretch: paragraph style (title, heading,
+subheading, monospaced, bulleted / dashed / numbered list, checklist with its tick), indent, bold / italic, underline,
+strikethrough, link, and an attachment (U+FFFC in the text) with its identifier and type.
+
+Tables are attachments too, kept as Apple's "mergeable data" (a CRDT, also gzipped protobuf): an ICTable object with
+crRows and crColumns (ordered sets of row and column UUIDs) and cellColumns (column -> row -> a small note with the
+cell's text). Galleries (scanned pages) list their pages' identifiers in their own mergeable data.
+
+This is read-only, from the backup's NoteStore.sqlite; field numbers follow the published layout the open-source
+apple_cloud_notes_parser uses. Anything not understood is kept as plain text, never dropped.
+"""
+from __future__ import annotations
+
+import zlib
+from typing import Optional
+
+STYLES = {0: "title", 1: "heading", 2: "subheading", 4: "mono", 100: "bullet", 101: "dash", 102: "number",
+          103: "check"}
+LISTS = ("bullet", "dash", "number", "check")
+OBJ = "￼"
+
+
+def unzip(data) -> Optional[bytes]:
+    if not data:
+        return None
+    data = bytes(data)
+    for wbits in (16 + zlib.MAX_WBITS, zlib.MAX_WBITS):
+        try:
+            return zlib.decompress(data, wbits)
+        except zlib.error:
+            pass
+    return data
+
+
+def _varint(b: bytes, i: int) -> tuple[int, int]:
+    shift = result = 0
+    while True:
+        x = b[i]
+        i += 1
+        result |= (x & 0x7F) << shift
+        if not x & 0x80:
+            return result, i
+        shift += 7
+
+
+def fields(buf: bytes) -> dict[int, list]:
+    """One protobuf message: field number -> its values in order (ints for varints, bytes for the rest)."""
+    out: dict[int, list] = {}
+    i = 0
+    try:
+        while i < len(buf):
+            key, i = _varint(buf, i)
+            f, wt = key >> 3, key & 7
+            if wt == 0:
+                v, i = _varint(buf, i)
+            elif wt == 1:
+                v, i = buf[i:i + 8], i + 8
+            elif wt == 2:
+                n, i = _varint(buf, i)
+                v, i = buf[i:i + n], i + n
+            elif wt == 5:
+                v, i = buf[i:i + 4], i + 4
+            else:
+                break
+            out.setdefault(f, []).append(v)
+    except IndexError:
+        pass
+    return out
+
+
+def _one(msg: dict, f: int, default=None):
+    v = msg.get(f)
+    return v[0] if v else default
+
+
+def _str(v) -> str:
+    return v.decode("utf-8", "replace") if isinstance(v, (bytes, bytearray)) else ("" if v is None else str(v))
+
+
+def _note_msg(data) -> Optional[dict]:
+    """NoteStoreProto.document(2).note(3), from a ZICNOTEDATA.ZDATA blob."""
+    raw = unzip(data)
+    if not raw:
+        return None
+    doc = _one(fields(raw), 2)
+    note = _one(fields(doc), 3) if isinstance(doc, bytes) else None
+    return fields(note) if isinstance(note, bytes) else None
+
+
+# -- the body: text + runs -> paragraphs ------------------------------------------------------------------------
+
+def _run(r: bytes) -> dict:
+    m = fields(r)
+    ps = fields(_one(m, 2, b"")) if isinstance(_one(m, 2), bytes) else {}
+    style = STYLES.get(_one(ps, 1, -1), "body")
+    done = None
+    if style == "check":
+        cl = fields(_one(ps, 5, b"")) if isinstance(_one(ps, 5), bytes) else {}
+        done = bool(_one(cl, 2, 0))
+    weight = _one(m, 5, 0)
+    att = fields(_one(m, 12, b"")) if isinstance(_one(m, 12), bytes) else {}
+    return {"len": _one(m, 1, 0), "style": style, "indent": _one(ps, 4, 0) or 0, "done": done,
+            "bold": weight in (1, 3), "italic": weight in (2, 3), "underline": bool(_one(m, 6, 0)),
+            "strike": bool(_one(m, 7, 0)), "link": _str(_one(m, 9)) or None,
+            "attachment": (_str(_one(att, 1)), _str(_one(att, 2))) if att.get(1) else None}
+
+
+def body(data) -> Optional[tuple[str, list[dict]]]:
+    """(text, runs) of a note, or None if the blob isn't a note body (a locked note is encrypted)."""
+    note = _note_msg(data)
+    if note is None or not note.get(2):
+        return None
+    text = _str(note[2][0])
+    return text, [_run(r) for r in note.get(5, []) if isinstance(r, bytes)]
+
+
+def _pieces(text: str, runs: list[dict]):
+    """(text, run) pieces; lengths are UTF-16 units. Text past the last run gets a plain run."""
+    u16 = text.encode("utf-16-le", "surrogatepass")
+    pos = 0
+    plain = {"len": 0, "style": "body", "indent": 0, "done": None, "bold": False, "italic": False,
+             "underline": False, "strike": False, "link": None, "attachment": None}
+    for r in runs:
+        n = max(0, int(r["len"]))
+        if n == 0:
+            continue
+        yield u16[pos * 2:(pos + n) * 2].decode("utf-16-le", "surrogatepass"), r
+        pos += n
+    if pos * 2 < len(u16):
+        yield u16[pos * 2:].decode("utf-16-le", "surrogatepass"), plain
+
+
+def paragraphs(text: str, runs: list[dict]) -> list[dict]:
+    """The note as blocks, in order:
+    {"kind": "para", "style", "indent", "done", "number", "spans": [(text, {"bold", "italic", ...}, link)]}
+    {"kind": "attachment", "id", "uti"}
+    A paragraph's style is the one on its line (Notes stores it on every run of the line, newline included)."""
+    blocks: list[dict] = []
+    spans: list = []
+    style = {"style": "body", "indent": 0, "done": None}
+
+    def close():
+        nonlocal spans
+        txt = "".join(s[0] for s in spans)
+        blocks.append({"kind": "para", "style": style["style"], "indent": style["indent"], "done": style["done"],
+                       "number": 0, "spans": [s for s in spans if s[0]], "text": txt})
+        spans = []
+
+    for chunk, r in _pieces(text, runs):
+        fmt = {k for k in ("bold", "italic", "underline", "strike") if r[k]}
+        for part in _split_keep(chunk):
+            if part == "\n":
+                style = {"style": r["style"], "indent": r["indent"], "done": r["done"]}
+                close()
+            elif part == OBJ and r["attachment"]:
+                if spans:
+                    style = {"style": r["style"], "indent": r["indent"], "done": r["done"]}
+                    close()
+                blocks.append({"kind": "attachment", "id": r["attachment"][0], "uti": r["attachment"][1]})
+            elif part:
+                style = {"style": r["style"], "indent": r["indent"], "done": r["done"]}
+                spans.append((part.replace(OBJ, ""), fmt, r["link"]))
+    if spans:
+        close()
+    # numbered lists count per indent, starting again after anything else
+    counts: dict[int, int] = {}
+    for b in blocks:
+        if b["kind"] == "para" and b["style"] == "number":
+            counts = {k: v for k, v in counts.items() if k <= b["indent"]}
+            counts[b["indent"]] = counts.get(b["indent"], 0) + 1
+            b["number"] = counts[b["indent"]]
+        elif not (b["kind"] == "para" and b["style"] in LISTS):
+            counts = {}
+    # an empty line after an attachment is the attachment's own line break: not a paragraph of its own
+    out = []
+    for i, b in enumerate(blocks):
+        if (b["kind"] == "para" and not b["text"] and b["style"] not in LISTS and i and
+                blocks[i - 1]["kind"] == "attachment"):
+            continue
+        out.append(b)
+    return out
+
+
+def _split_keep(s: str):
+    """Split on newlines and U+FFFC, keeping them as their own pieces."""
+    cur = ""
+    for ch in s:
+        if ch in ("\n", OBJ):
+            if cur:
+                yield cur
+                cur = ""
+            yield ch
+        else:
+            cur += ch
+    if cur:
+        yield cur
+
+
+# -- mergeable data: tables and galleries ---------------------------------------------------------------------
+
+def _mergeable(data) -> Optional[dict]:
+    """MergableDataProto.mergable_data_object(2).mergeable_data_object_data(3) as
+    {"entries", "keys", "types", "uuids"}."""
+    raw = unzip(data)
+    if not raw:
+        return None
+    obj = _one(fields(raw), 2)
+    d = _one(fields(obj), 3) if isinstance(obj, bytes) else None
+    if not isinstance(d, bytes):
+        return None
+    m = fields(d)
+    return {"entries": [fields(e) for e in m.get(3, []) if isinstance(e, bytes)],
+            "keys": [_str(k) for k in m.get(4, [])], "types": [_str(t) for t in m.get(5, [])],
+            "uuids": [bytes(u) for u in m.get(6, [])]}
+
+
+def _objid(b) -> dict:
+    return fields(b) if isinstance(b, bytes) else {}
+
+
+def table(data) -> Optional[list[list[str]]]:
+    """A table attachment's cells, row by row, as on the phone; None if it can't be read."""
+    md = _mergeable(data)
+    if not md:
+        return None
+    entries, keys, types, uuids = md["entries"], md["keys"], md["types"], md["uuids"]
+
+    def custom(e):
+        cm = _one(e, 13)
+        return fields(cm) if isinstance(cm, bytes) else None
+
+    def uuid_index(i) -> Optional[int]:
+        """The UUID an object stands for: its custom map's first value (an index into the UUID list)."""
+        if not isinstance(i, int) or not 0 <= i < len(entries):
+            return None
+        cm = custom(entries[i])
+        if not cm or not cm.get(3):
+            return None
+        me = fields(cm[3][0])
+        return _one(_objid(_one(me, 2)), 2)
+
+    def dict_elements(msg) -> list[tuple[dict, dict]]:
+        return [(_objid(_one(fields(el), 1)), _objid(_one(fields(el), 2))) for el in msg.get(1, [])]
+
+    root = None
+    for e in entries:
+        cm = custom(e)
+        if cm and 0 <= _one(cm, 1, -1) < len(types) and types[_one(cm, 1)] == "com.apple.notes.ICTable":
+            root = cm
+            break
+    if root is None:
+        return None
+    parts = {}
+    for me in root.get(3, []):
+        f = fields(me)
+        k = _one(f, 1, -1)
+        if 0 <= k < len(keys):
+            parts[keys[k]] = _one(_objid(_one(f, 2)), 6)
+
+    def order(i) -> dict[int, int]:
+        """An ordered set (crRows / crColumns): UUID index -> position."""
+        if not isinstance(i, int) or not 0 <= i < len(entries):
+            return {}
+        os_ = fields(_one(entries[i], 16, b"") or b"")
+        ordering = fields(_one(os_, 1, b"") or b"")
+        arr = fields(_one(ordering, 1, b"") or b"")
+        pos: dict[int, int] = {}
+        for n, a in enumerate(arr.get(2, [])):
+            u = _one(fields(a), 2)
+            if isinstance(u, bytes) and u in uuids:
+                pos[uuids.index(u)] = n
+        contents = fields(_one(ordering, 2, b"") or b"")
+        for k, v in dict_elements(contents):
+            ku, vu = uuid_index(_one(k, 6)), uuid_index(_one(v, 6))
+            if ku in pos and vu is not None:
+                pos[vu] = pos[ku]
+        return pos
+
+    rows, cols = order(parts.get("crRows")), order(parts.get("crColumns"))
+    if not rows or not cols:
+        return None
+    grid = [["" for _ in range(max(cols.values()) + 1)] for _ in range(max(rows.values()) + 1)]
+    cc = parts.get("cellColumns")
+    if isinstance(cc, int) and 0 <= cc < len(entries):
+        for k, v in dict_elements(fields(_one(entries[cc], 6, b"") or b"")):
+            col = cols.get(uuid_index(_one(k, 6)))
+            vi = _one(v, 6)
+            if col is None or not isinstance(vi, int) or not 0 <= vi < len(entries):
+                continue
+            for rk, rv in dict_elements(fields(_one(entries[vi], 6, b"") or b"")):
+                row = rows.get(uuid_index(_one(rk, 6)))
+                ci = _one(rv, 6)
+                if row is None or not isinstance(ci, int) or not 0 <= ci < len(entries):
+                    continue
+                cell = _one(entries[ci], 10)
+                if isinstance(cell, bytes):
+                    grid[row][col] = _str(_one(fields(cell), 2)).replace(OBJ, "").strip("\n")
+    return grid
+
+
+def gallery_order(data, ids: list[str]) -> list[str]:
+    """A gallery's pages in its own order (the order their identifiers appear in its data); the rest after."""
+    raw = unzip(data) or b""
+    pos = {i: raw.find(i.encode()) for i in ids}
+    return sorted(ids, key=lambda i: (pos[i] < 0, pos[i] if pos[i] >= 0 else 0))
+
+
+# -- plain text --------------------------------------------------------------------------------------------------
+
+KIND_LABEL = {"image": "Image", "drawing": "Drawing", "scan": "Scanned document", "pdf": "PDF", "audio": "Audio",
+              "video": "Video", "link": "Link", "file": "File", "table": "Table", "gallery": "Scanned pages"}
+
+
+def prefix(b: dict) -> str:
+    s = b["style"]
+    if s == "bullet":
+        return "• "
+    if s == "dash":
+        return "– "
+    if s == "number":
+        return f"{b['number']}. "
+    if s == "check":
+        return "☑ " if b["done"] else "☐ "
+    return ""
+
+
+def plain(blocks: list[dict], attachments: dict) -> str:
+    """The note as text: lists and checklists marked, tables as tab-separated rows, attachments named."""
+    out = []
+    for b in blocks:
+        if b["kind"] == "para":
+            out.append("    " * b["indent"] + prefix(b) + b["text"])
+            continue
+        a = attachments.get(b["id"]) or {"kind": "file", "name": ""}
+        if a["kind"] == "table" and a.get("rows"):
+            out.extend("\t".join(r) for r in a["rows"])
+        elif a["kind"] == "link" and a.get("url"):
+            out.append(a["url"])
+        else:
+            label = KIND_LABEL.get(a["kind"], "File")
+            n = len(a.get("items") or [])
+            out.append(f"[{label}{f' ({n})' if n else ''}{': ' + a['name'] if a.get('name') else ''}]")
+    return "\n".join(out)

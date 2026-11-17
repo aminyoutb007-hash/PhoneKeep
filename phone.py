@@ -2102,13 +2102,19 @@ class PhoneWindow(tk.Toplevel):
         ttk.Entry(top, textvariable=q, width=32).pack(side="left", padx=4)
         pane = tk.PanedWindow(self.content, orient="horizontal", sashwidth=6, bg=BG, bd=0)
         pane.pack(fill="both", expand=True)
+        # D4: the phone's folders (Pinned first, Recently Deleted last), the notes in the one chosen, the note
+        ff = card(pane)
+        folders = tk.Listbox(ff, activestyle="none", relief="flat", highlightthickness=0, bd=0, exportselection=False,
+                             bg=CARD, fg=INK, selectbackground=theme.ACCENT_PALE, selectforeground=INK, font=font(13))
+        folders.pack(fill="both", expand=True, padx=4, pady=6)
+        pane.add(ff, minsize=150, width=190)
         lf = card(pane)
-        tree = ttk.Treeview(lf, columns=("t", "f", "m"), show="headings", selectmode="browse")
-        for c, h, w in (("t", "Title", 230), ("f", "Folder", 110), ("m", "Edited", 120)):
+        tree = ttk.Treeview(lf, columns=("t", "m"), show="headings", selectmode="browse")
+        for c, h, w in (("t", "Title", 230), ("m", "Edited", 120)):
             tree.heading(c, text=h)
             tree.column(c, width=w, stretch=(c == "t"))
         tree.pack(fill="both", expand=True)
-        pane.add(lf, minsize=360, width=470)
+        pane.add(lf, minsize=300, width=360)
         rf = card(pane)
         title = tk.Label(rf, text="", bg=CARD, fg=INK, font=font(16, "bold"), anchor="w")
         title.pack(fill="x", padx=14, pady=(10, 0))
@@ -2120,15 +2126,68 @@ class PhoneWindow(tk.Toplevel):
         pane.add(rf, minsize=320)
 
         import search
+        import notes_ui
+
+        def open_attachment(a):
+            dom, rel = a["file"]
+            quicklook.Viewer(self, [quicklook.Item(a.get("name") or Path(rel).name,
+                                                   read=lambda: self.data.read(dom, rel) if self.data else None,
+                                                   to_file=lambda dest: bool(self.data) and self.data.copy(dom, rel, dest),
+                                                   why=lambda: getattr(self.data.reader, "last_error", None)
+                                                   if self.data else None)], 0)
+        view = notes_ui.NoteView(txt, lambda d, r: self.data.read(d, r) if self.data else None, open_attachment)
+        self.note_view = view                                    # for the tests
+
+        live = [n for n in notes if not n.get("deleted")]
+        places = [("all", "All notes", len(live))]
+        if any(n.get("pinned") for n in live):
+            places.append(("pinned", "📌 Pinned", sum(1 for n in live if n.get("pinned"))))
+        for name in sorted({n["folder"] for n in live}, key=str.lower):
+            places.append(("folder:" + name, name, sum(1 for n in live if n["folder"] == name)))
+        if len(live) < len(notes):
+            places.append(("deleted", "🗑 " + sx.RECENTLY_DELETED, len(notes) - len(live)))
+        for _k, label, n in places:
+            folders.insert("end", f"{label}  ({n:,})")
+        place = {"key": "all"}
+
+        def in_place(n) -> bool:
+            k = place["key"]
+            if k == "deleted":
+                return bool(n.get("deleted"))
+            if n.get("deleted"):
+                return False
+            return k == "all" or (k == "pinned" and n.get("pinned")) or k == "folder:" + n["folder"]
 
         def fill(*_):
             t = search.fold(q.get()).strip()
             tree.delete(*tree.get_children())
-            for i, n in enumerate(notes):
+            rows = [(i, n) for i, n in enumerate(notes) if in_place(n)]
+            rows.sort(key=lambda r: not r[1].get("pinned"))         # pinned first, as on the phone
+            for i, n in rows:
                 if t and t not in search.fold(n["title"] + " " + (n["text"] or "")):
                     continue
-                tree.insert("", "end", iid=str(i), values=(("🔒 " if n["locked"] else "") + n["title"],
-                                                           n["folder"], sx.fmt(n["modified"])))
+                tree.insert("", "end", iid=str(i), values=(("🔒 " if n["locked"] else "📌 " if n.get("pinned") else "")
+                                                           + n["title"], sx.fmt(n["modified"])))
+            kids = tree.get_children()
+            if kids and not tree.selection():
+                tree.selection_set(kids[0])
+            elif not kids:
+                view.clear()
+                txt.configure(state="disabled")
+                title.configure(text="")
+                meta.configure(text="")
+
+        def choose(idx: int):
+            folders.selection_clear(0, "end")
+            folders.selection_set(idx)
+            folders.see(idx)
+            place["key"] = places[idx][0]
+            fill()
+
+        def on_folder(_e=None):
+            s = folders.curselection()
+            if s and places[s[0]][0] != place["key"]:
+                choose(s[0])
 
         def show(*_):
             s = tree.selection()
@@ -2137,26 +2196,35 @@ class PhoneWindow(tk.Toplevel):
             n = notes[int(s[0])]
             title.configure(text=n["title"])
             meta.configure(text=f"{n['folder']} · created {sx.fmt(n['created'])} · edited {sx.fmt(n['modified'])}")
-            txt.configure(state="normal")
-            txt.delete("1.0", "end")
-            txt.insert("1.0", n["text"] or "")
-            txt.configure(state="disabled")
+            view.show(n)
+
+        def jump(ref):
+            n = notes[int(ref)]
+            want = "deleted" if n.get("deleted") else "all"
+            if place["key"] != want or (q.get() and str(ref) not in tree.get_children()):
+                choose(next(i for i, p in enumerate(places) if p[0] == want))
+            if str(ref) in tree.get_children():
+                tree.selection_set(str(ref))
+                tree.see(str(ref))
         q.trace_add("write", fill)
         tree.bind("<<TreeviewSelect>>", show)
+        folders.bind("<<ListboxSelect>>", on_folder)
+        folders.selection_set(0)
         fill()
-        self.find_hook = (key, q, lambda ref: (tree.selection_set(str(ref)), tree.see(str(ref))))
-        kids = tree.get_children()
-        if kids:
-            tree.selection_set(kids[0])
+        self.find_hook = (key, q, jump)
+        self.notes_folders = (folders, places, choose)            # for the tests
 
         foot = tk.Frame(self.content, bg=BG)
         foot.pack(fill="x", pady=(10, 0))
 
-        def save_one():
+        def chosen():
             s = tree.selection()
-            if not s:
+            return notes[int(s[0])] if s else None
+
+        def save_one():
+            n = chosen()
+            if n is None:
                 return
-            n = notes[int(s[0])]
             if n["locked"]:
                 messagebox.showinfo(wv.APP_NAME, "This note is locked with your Notes password.", parent=self)
                 return
@@ -2166,8 +2234,41 @@ class PhoneWindow(tk.Toplevel):
             p = unique_path(folder / (sx.safe_name(n["title"], 80) + ".txt"))
             p.write_text(n["text"] or "", encoding="utf-8")
             self.saved([p], folder, "note")
+
+        def save_pdf(which: list, name: str):
+            which = [n for n in which if not n["locked"]] or which
+            if not which:
+                return
+            folder = self.out_dir("notes")
+            if folder is None:
+                return
+            import notes_pdf
+            dest = unique_path(folder / (sx.safe_name(name, 80) + ".pdf"))
+            read = (lambda d, r: self.data.read(d, r) if self.data else None)
+
+            def write():
+                notes_pdf.write_notes_pdf(which, dest, read, name)
+                return [dest] * len(which)                      # "Saved 3 notes": one PDF holds them all
+            self.run_save(dest.name, write, folder, "note")
+        self.notes_save_pdf = save_pdf                            # for the tests
+
+        def save_one_pdf():
+            n = chosen()
+            if n is None:
+                return
+            if n["locked"]:
+                messagebox.showinfo(wv.APP_NAME, "This note is locked with your Notes password.", parent=self)
+                return
+            save_pdf([n], n["title"])
+
+        def save_shown_pdf():
+            shown = [notes[int(i)] for i in tree.get_children()]
+            save_pdf(shown, places[folders.curselection()[0]][1].lstrip("📌🗑 ") if folders.curselection()
+                     else "Notes")
         RoundButton(foot, "Save all notes", lambda: self.export_section("notes", {"web"}), "primary", 160, 38, 12).pack(side="right")
-        RoundButton(foot, "Save this note (.txt)", save_one, "secondary", 190, 38, 12).pack(side="right", padx=6)
+        RoundButton(foot, "Save these as PDF", save_shown_pdf, "secondary", 170, 38, 12).pack(side="right", padx=6)
+        RoundButton(foot, "Save this note (.txt)", save_one, "secondary", 190, 38, 12).pack(side="right")
+        RoundButton(foot, "Save this note as PDF", save_one_pdf, "secondary", 200, 38, 12).pack(side="right", padx=6)
 
     # audio ----------------------------------------------------------------------
     @staticmethod

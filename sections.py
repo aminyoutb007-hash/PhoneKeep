@@ -24,6 +24,7 @@ import zlib
 from pathlib import Path
 from typing import Callable, Optional
 
+import notes_doc
 import phonekeep as wv
 from phonekeep import _e, Log, PhoneKeepError
 
@@ -1163,9 +1164,113 @@ def note_text(data: Optional[bytes]) -> Optional[str]:
         return None
 
 
+NOTE_LOCKED = "🔒 Locked on your iPhone"
+RECENTLY_DELETED = "Recently Deleted"
+_NOTE_FILE = re.compile(r"/(Media|FallbackImages|FallbackPDFs|Previews)/([0-9A-Fa-f]{8}-[0-9A-Fa-f-]{27})")
+_PREVIEW_SIZE = re.compile(r"-(\d+)x(\d+)-(\d)")
+
+
+def _note_kind(uti: str) -> str:
+    u = (uti or "").lower()
+    if u == "com.apple.notes.table":
+        return "table"
+    if u == "com.apple.notes.gallery":
+        return "gallery"
+    if u == "com.apple.paper.doc.scan":
+        return "scan"
+    if u.startswith(("com.apple.paper", "com.apple.drawing")):
+        return "drawing"
+    if u in ("public.url", "com.apple.notes.inlinetextattachment.link"):
+        return "link"
+    if u in ("com.adobe.pdf",):
+        return "pdf"
+    if "audio" in u or u in ("public.mp3", "com.microsoft.waveform-audio"):
+        return "audio"
+    if "movie" in u or "video" in u or u in ("public.mpeg-4", "com.apple.quicktime-movie"):
+        return "video"
+    if u.startswith("public.") and u.split(".", 1)[1] in ("jpeg", "png", "heic", "heif", "tiff", "gif", "image"):
+        return "image"
+    return "file"
+
+
+def _note_attachments(con, dom: str, rels) -> dict[str, dict]:
+    """Every attachment in the Notes database by identifier: {kind, uti, name, file: (domain, rel) or None,
+    preview: (domain, rel) or None, rows (tables), items (a gallery's pages), url (links)}."""
+    files: dict[tuple[str, str], list[str]] = {}
+    for rel in rels:
+        m = _NOTE_FILE.search("/" + rel)
+        if m:
+            files.setdefault((m.group(1), m.group(2).upper()), []).append(rel)
+    want = ["Z_PK", "ZIDENTIFIER", "ZTYPEUTI", "ZMEDIA", "ZFILENAME", "ZMERGEABLEDATA1", "ZURLSTRING", "ZTITLE",
+            "ZPARENTATTACHMENT", "ZMARKEDFORDELETION"]
+    rows = select(con, "ZICCLOUDSYNCINGOBJECT", want, "WHERE ZIDENTIFIER IS NOT NULL")
+    by_pk = {r["Z_PK"]: r for r in rows}
+
+    def newest(rs: list[str]) -> Optional[str]:
+        return sorted(rs, key=lambda x: (x.count("/"), x))[-1] if rs else None
+
+    def preview(ident: str) -> Optional[tuple[str, str]]:
+        best = None
+        for rel in files.get(("Previews", ident), []):
+            m = _PREVIEW_SIZE.search(rel)
+            if not m or not rel.lower().endswith((".png", ".jpg", ".jpeg")):
+                continue
+            score = (m.group(3) == "0", int(m.group(1)))          # light appearance first, then the biggest
+            if best is None or score > best[0]:
+                best = (score, rel)
+        return (dom, best[1]) if best else None
+
+    out: dict[str, dict] = {}
+    for r in rows:
+        if not r["ZTYPEUTI"]:
+            continue
+        ident = str(r["ZIDENTIFIER"]).upper()
+        kind = _note_kind(r["ZTYPEUTI"])
+        a = {"id": ident, "uti": r["ZTYPEUTI"], "kind": kind, "name": "", "file": None, "preview": preview(ident)}
+        media = by_pk.get(r["ZMEDIA"]) if r["ZMEDIA"] else None
+        if media is not None:
+            a["name"] = media["ZFILENAME"] or ""
+            got = files.get(("Media", str(media["ZIDENTIFIER"]).upper()), [])
+            named = [x for x in got if a["name"] and x.rsplit("/", 1)[-1] == a["name"]]
+            rel = newest(named or got)
+            a["file"] = (dom, rel) if rel else None
+        if kind == "drawing":
+            rel = newest([x for x in files.get(("FallbackImages", ident), [])
+                          if x.lower().endswith((".jpg", ".jpeg", ".png"))])
+            a["file"] = (dom, rel) if rel else a["file"]
+            a["name"] = a["name"] or "Drawing"
+        elif kind == "scan":
+            rel = newest(files.get(("FallbackPDFs", ident), []))
+            a["file"] = (dom, rel) if rel else a["file"]
+            a["name"] = a["name"] or "Scanned document.pdf"
+        elif kind == "table":
+            try:
+                a["rows"] = notes_doc.table(r["ZMERGEABLEDATA1"])
+            except Exception:
+                a["rows"] = None
+        elif kind == "link":
+            a["url"] = r["ZURLSTRING"] or ""
+            a["name"] = r["ZTITLE"] or a["url"]
+        out[ident] = a
+    for r in rows:                                           # a gallery's pages, in the gallery's own order
+        if r["ZPARENTATTACHMENT"] and not r["ZMARKEDFORDELETION"]:
+            parent = by_pk.get(r["ZPARENTATTACHMENT"])
+            kid = out.get(str(r["ZIDENTIFIER"]).upper())
+            if parent is not None and kid is not None:
+                out.setdefault(str(parent["ZIDENTIFIER"]).upper(), {}).setdefault("items", []).append(kid)
+    for r in rows:
+        g = out.get(str(r["ZIDENTIFIER"]).upper())
+        if g and g.get("items"):
+            order = notes_doc.gallery_order(r["ZMERGEABLEDATA1"], [k["id"] for k in g["items"]])
+            g["items"].sort(key=lambda k: order.index(k["id"]))
+    return out
+
+
 def load_notes(ctx: Ctx) -> list[dict]:
-    """[{title, folder, created, modified, text, locked}], most recently edited first."""
-    con = None
+    """[{title, folder, created, modified, text, locked, pinned, deleted, blocks, attachments}], most recently edited
+    first. `text` is the note as plain text (search, D9's filter, .txt); `blocks` is the note as on the phone
+    (notes_doc.paragraphs), with its attachments by identifier. Older databases give text only."""
+    con, dom = None, None
     for dom in ctx.reader.domains("%group.com.apple.notes%"):
         con = ctx.db(dom, "NoteStore.sqlite")
         if con:
@@ -1173,25 +1278,56 @@ def load_notes(ctx: Ctx) -> list[dict]:
     if con is None:
         raise PhoneKeepError("No Notes database in this backup.")
     want = ["Z_PK", "ZTITLE1", "ZTITLE2", "ZSNIPPET", "ZFOLDER", "ZNOTEDATA", "ZCREATIONDATE1",
-            "ZCREATIONDATE3", "ZMODIFICATIONDATE1", "ZISPASSWORDPROTECTED", "ZMARKEDFORDELETION"]
+            "ZCREATIONDATE3", "ZMODIFICATIONDATE1", "ZISPASSWORDPROTECTED", "ZMARKEDFORDELETION", "ZISPINNED",
+            "ZFOLDERTYPE", "ZPARENT"]
     objs = select(con, "ZICCLOUDSYNCINGOBJECT", want)
-    folders = {r["Z_PK"]: r["ZTITLE2"] for r in objs if r["ZTITLE2"]}
+    folder_rows = {r["Z_PK"]: r for r in objs if r["ZTITLE2"]}
+
+    def folder_name(pk, depth=0) -> str:
+        r = folder_rows.get(pk)
+        if r is None:
+            return "Notes"
+        if r["ZFOLDERTYPE"] == 1:
+            return RECENTLY_DELETED
+        parent = r["ZPARENT"]
+        if parent in folder_rows and parent != pk and depth < 8:
+            return folder_name(parent, depth + 1) + " › " + r["ZTITLE2"]
+        return r["ZTITLE2"]
     data = {}
     if "ZICNOTEDATA" in tables(con):
         data = {r["Z_PK"]: r["ZDATA"] for r in select(con, "ZICNOTEDATA", ["Z_PK", "ZDATA"])}
+    try:
+        attachments = _note_attachments(con, dom, ctx.files(dom))
+    except Exception:
+        attachments = {}
     notes = []
     for r in objs:
         if r["ZNOTEDATA"] is None or r["ZMARKEDFORDELETION"]:
             continue
         locked = bool(r["ZISPASSWORDPROTECTED"])
-        text = None if locked else note_text(data.get(r["ZNOTEDATA"]))
+        blocks, mine = None, {}
+        if not locked:
+            try:
+                parsed = notes_doc.body(data.get(r["ZNOTEDATA"]))
+            except Exception:
+                parsed = None
+            if parsed is not None:
+                blocks = notes_doc.paragraphs(*parsed)
+                for b in blocks:
+                    if b["kind"] == "attachment":
+                        a = attachments.get(b["id"].upper())
+                        mine[b["id"]] = a if a else {"id": b["id"], "uti": b["uti"], "kind": _note_kind(b["uti"]),
+                                                     "name": "", "file": None, "preview": None}
+        text = notes_doc.plain(blocks, mine) if blocks is not None else (
+            None if locked else note_text(data.get(r["ZNOTEDATA"])))
+        folder = folder_name(r["ZFOLDER"])
         notes.append({"title": r["ZTITLE1"] or (text or "").split("\n", 1)[0][:80] or "Untitled",
-                      "folder": folders.get(r["ZFOLDER"], "Notes"),
+                      "folder": folder,
                       "created": t2001(r["ZCREATIONDATE3"] or r["ZCREATIONDATE1"]),
                       "modified": t2001(r["ZMODIFICATIONDATE1"]),
-                      "text": "🔒 Locked note (protected by your Notes password)" if locked
-                      else (text if text is not None else (r["ZSNIPPET"] or "")),
-                      "locked": locked})
+                      "text": NOTE_LOCKED if locked else (text if text is not None else (r["ZSNIPPET"] or "")),
+                      "locked": locked, "pinned": bool(r["ZISPINNED"]), "deleted": folder == RECENTLY_DELETED,
+                      "blocks": blocks, "attachments": mine})
     con.close()
     if not notes:
         raise PhoneKeepError("No notes found.")
@@ -1227,6 +1363,9 @@ def sec_notes(ctx: Ctx) -> dict:
     (d / "index.html").write_text(page("Notes", f'<p class="meta">{len(notes):,} notes · plain-text copies '
                                        f'in <b>Notes/text</b></p><p>{pills}</p>{cards}', filt=True),
                                   encoding="utf-8")
+    if "pdf" in ctx.formats:                    # D4: the notes as on the phone, images and tables included
+        import notes_pdf
+        notes_pdf.write_notes_pdf([n for n in notes if not n["locked"]], d / "PDF" / "Notes.pdf", ctx.read)
     return {"count": len(notes), "detail": f"{len(notes):,} notes", "link": "Notes/index.html"}
 
 
