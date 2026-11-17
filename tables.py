@@ -20,7 +20,10 @@ _RISKY_START = ("=", "+", "-", "@", "\t", "\r")
 _CTRL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")  # characters Excel files can't hold
 _SHEET_BAD = re.compile(r"[\[\]:*?/\\]")
 
-HEADERS = ["Date", "Time", "Sender", "Message", "Type", "Attachment", "Starred"]
+HEADERS = ["Date", "Time", "Sender", "Message", "Type", "Attachment", "Starred",
+           # M4: full detail (blank where the backup doesn't say; WhatsApp's backup has only the group number)
+           "Reply to", "Reactions", "Edited at", "Deleted at", "Read at", "Service", "Group sender number"]
+_APPLE_EPOCH = 978307200      # 2001-01-01 in Unix seconds (phonekeep.APPLE_EPOCH)
 
 
 def csv_safe(v):
@@ -54,6 +57,49 @@ def _msg_row(m: dict) -> tuple:
     return t, m.get("sender", ""), text, m["type"], attach, "yes" if m.get("starred") else ""
 
 
+def _detail_row(m: dict, service: str = "") -> list:
+    """M4's columns: reply to, reactions, edited / deleted / read at (datetimes or None), service, group number.
+    `service`: the chat's, used where the message doesn't name its own."""
+    d = m.get("detail") or {}
+    return [d.get("reply_to", ""), d.get("reactions", "")] + list(message_times(m)) \
+        + [d.get("service") or service, d.get("number", "")]
+
+
+def message_times(m: dict) -> tuple:
+    """(edited, deleted, read) as local datetimes or None, from the message's "times": Messages' own (retracted,
+    edited, read) values, seconds or nanoseconds since 2001, kept as read (an edit doesn't count once unsent)."""
+    x, e, rd = m.get("times") or (None, None, None)
+    x = _apple(x)
+    return (None if x else _apple(e)), x, _apple(rd)
+
+
+def json_message(m: dict) -> dict:
+    """The message for the web archive's JSON: its "times" become "edited" / "deleted" / "read" dates in "detail"."""
+    if not m.get("times"):
+        return m
+    out = {k: v for k, v in m.items() if k != "times"}
+    detail = dict(m.get("detail") or {})
+    for k, v in zip(("edited", "deleted", "read"), message_times(m)):
+        if v is not None:
+            detail[k] = v.isoformat(timespec="seconds")
+    out["detail"] = detail
+    return out
+
+
+def _apple(v) -> Optional[dt.datetime]:
+    """Seconds or nanoseconds since 2001 -> local time to the second (None for none or a time no computer shows)."""
+    if not v or not isinstance(v, (int, float)):
+        return None
+    try:
+        return dt.datetime.fromtimestamp(int((v / 1e9 if v > 1e12 else v) + _APPLE_EPOCH))
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _stamp(v) -> str:
+    return v.strftime("%Y-%m-%d %H:%M:%S") if isinstance(v, dt.datetime) else v
+
+
 def _file_stub(name: str, used: set, n: int = 60) -> str:
     s = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", name).strip(" .")[:n] or "chat"
     stub, k = s, 2
@@ -63,8 +109,10 @@ def _file_stub(name: str, used: set, n: int = 60) -> str:
     return stub
 
 
-def write_chats_csv(chats: list[dict], folder: Path, log: Callable[[str], None] = print) -> Path:
-    """One CSV per chat, plus all chats together in one file."""
+def write_chats_csv(chats: list[dict], folder: Path, log: Callable[[str], None] = print,
+                    service: str = "") -> Path:
+    """One CSV per chat, plus all chats together in one file. `service` fills the Service column where a message
+    doesn't name its own (WhatsApp)."""
     folder = Path(folder)
     used: set = set()
     everything = []
@@ -74,6 +122,7 @@ def write_chats_csv(chats: list[dict], folder: Path, log: Callable[[str], None] 
             t, sender, text, typ, attach, star = _msg_row(m)
             row = [t.strftime("%Y-%m-%d") if t else "", t.strftime("%H:%M:%S") if t else "",
                    sender, text, typ, attach, star]
+            row += [_stamp(v) or "" for v in _detail_row(m, c.get("service") or service)]
             rows.append(row)
             everything.append([c["name"]] + row)
         write_csv_rows(folder / f"{_file_stub(c['name'], used)}.csv", HEADERS, rows)
@@ -157,7 +206,8 @@ def write_chats_xlsx(chats: list[dict], path: Path, title: str = "WhatsApp",
 
     for c, sname in zip(chats, sheet_names):
         ws = wb.create_sheet(sname)
-        header(ws, HEADERS, [12, 9, 22, 70, 10, 34, 8])
+        header(ws, HEADERS, [12, 9, 22, 70, 10, 34, 8, 40, 24, 17, 17, 17, 10, 18])
+        service = "" if title == "Messages" else title
         for r, m in enumerate(c["messages"], 2):
             t, sender, text, typ, attach, star = _msg_row(m)
             if t:
@@ -171,8 +221,13 @@ def write_chats_xlsx(chats: list[dict], path: Path, title: str = "WhatsApp",
                 cell.hyperlink = m["media"]
                 cell.font = link_font
             put(ws, r, 7, star, align=top)
+            for col, v in enumerate(_detail_row(m, c.get("service") or service), 8):
+                if isinstance(v, dt.datetime):
+                    put(ws, r, col, v, "yyyy-mm-dd hh:mm", top)
+                elif v:
+                    put(ws, r, col, v, align=wrap if col == 8 else top)
         if c["messages"]:
-            ws.auto_filter.ref = f"A1:G{len(c['messages']) + 1}"
+            ws.auto_filter.ref = f"A1:{get_column_letter(len(HEADERS))}{len(c['messages']) + 1}"
 
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)

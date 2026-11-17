@@ -441,6 +441,10 @@ def decode_attributed_body(b: Optional[bytes]) -> str:
     return _typedstream_text(b)
 
 
+TAPBACKS = {2000: "Love", 2001: "Like", 2002: "Dislike", 2003: "Laugh", 2004: "Emphasis", 2005: "Question"}
+_TAPBACK_TO = re.compile(r"^(p:\d+/|bp:)")      # "p:0/<guid>": a reaction on part 0 of that message
+
+
 def load_messages(ctx: Ctx) -> list[dict]:
     """Read every iMessage/SMS conversation (attachments are only located, not copied yet)."""
     con = ctx.db(HOME, "Library/SMS/sms.db")
@@ -474,8 +478,32 @@ def load_messages(ctx: Ctx) -> list[dict]:
     rows = select(con, "message", ["ROWID", "text", "attributedBody", "handle_id", "date", "is_from_me",
                                    "item_type", "associated_message_type", "group_title", "service"],
                   "ORDER BY date, ROWID")
+    # M4's detail, read only for the messages that have some (a phone with 300,000 messages stays fast); an older
+    # database without these columns just has none
+    have = cols(con, "message")
+    stamps = [k for k in ("date_edited", "date_retracted", "date_read") if k in have]
+    times = {r[0]: r[1:] for r in select(con, "message", ["ROWID", "date_retracted", "date_edited", "date_read"],
+                                          "WHERE " + " OR ".join(f"{k} > 0" for k in stamps))} if stamps else {}
+    reply_of = {}
+    if "thread_originator_guid" in have:
+        reply_of = dict(con.execute("SELECT ROWID, thread_originator_guid FROM message "
+                                    "WHERE thread_originator_guid IS NOT NULL AND thread_originator_guid != ''"))
+    reactions = select(con, "message", ["handle_id", "is_from_me", "associated_message_type", "associated_message_guid",
+                                        "associated_message_emoji"],
+                       "WHERE associated_message_type BETWEEN 2000 AND 2006 OR associated_message_type BETWEEN "
+                       "3000 AND 3006 ORDER BY date, ROWID") if "associated_message_guid" in have else []
+    targets = set(reply_of.values()) | {_TAPBACK_TO.sub("", r["associated_message_guid"] or "") for r in reactions}
+    target_row: dict[int, str] = {}                   # ROWID -> guid, for the messages quoted or reacted to
+    if targets and "guid" in have:
+        wanted = sorted(targets)
+        for i in range(0, len(wanted), 500):
+            chunk = wanted[i:i + 500]
+            marks = ",".join("?" * len(chunk))
+            target_row.update(con.execute(f"SELECT ROWID, guid FROM message WHERE guid IN ({marks})", chunk))
+    by_guid: dict[str, dict] = {}
+    replies = []
     for r in rows:
-        if (r["associated_message_type"] or 0) != 0:  # tapback reactions
+        if (r["associated_message_type"] or 0) != 0:  # tapback reactions: not rows of their own (M4: see above)
             continue
         c = chats.get(msg_chat.get(r["ROWID"]))
         if c is None:
@@ -489,7 +517,23 @@ def load_messages(ctx: Ctx) -> list[dict]:
             txt = f"Group renamed to “{r['group_title']}”" if r["group_title"] else "Group update"
             c["messages"].append({**base, "id": r["ROWID"], "type": "system", "text": txt})
             continue
-        text = (r["text"] or decode_attributed_body(r["attributedBody"]) or "").replace("\ufffc", "").strip()
+        # M4's extra columns sit in their own dict, so the export's word filter and the search (which look at a
+        # message's own words) don't start matching a reply on the words of the message it quotes. Only messages
+        # with something to say get one (the service only where it isn't the chat's): 300,000 messages stay fast
+        rid = r["ROWID"]
+        number = c["group"] and not r["is_from_me"] and handles.get(r["handle_id"])
+        detail = None
+        if number or rid in target_row or rid in reply_of or r["service"] != c["service"]:
+            detail = {"service": r["service"]} if r["service"] and r["service"] != c["service"] else {}
+            if number:
+                detail["number"] = number
+        # deleted / edited / read: Messages' own times as they are (most messages have a read time, so no
+        # conversion here; tables.message_times turns them into dates as a spreadsheet is written)
+        tr = times.get(rid)
+        if tr is not None:
+            base["times"] = tr
+        retracted = tr is not None and bool(tr[0])
+        text =(r["text"] or decode_attributed_body(r["attributedBody"]) or "").replace("\ufffc", "").strip()
         parts = []
         for k, a in enumerate(atts.get(r["ROWID"], [])):
             rel = re.sub(r"^(~/|/var/mobile/|/private/var/mobile/)", "", a["filename"] or "")
@@ -504,9 +548,38 @@ def load_messages(ctx: Ctx) -> list[dict]:
                 m["media_missing"] = True
             parts.append(m)
         if text or not parts:
-            c["messages"].append({**base, "id": r["ROWID"], "type": "text", "text": text})
+            parts.insert(0, {**base, "id": r["ROWID"], "type": "deleted" if retracted and not text else "text",
+                             "text": text})
+        if detail is not None:
+            parts[0]["detail"] = detail
+            for m in parts[1:]:
+                m["detail"] = dict(detail)
         c["messages"].extend(parts)
+        if rid in target_row:
+            by_guid[target_row[rid]] = parts[0]
+        if rid in reply_of:
+            replies.append((parts[0], reply_of[rid]))
     con.close()
+    for m, guid in replies:
+        q = by_guid.get(guid)
+        if q is not None:
+            m["detail"]["reply_to"] = (q.get("text") or q.get("caption") or q["type"])[:200]
+    for r in reactions:                     # in date order; one reaction per person, a later one replaces it
+        q = by_guid.get(_TAPBACK_TO.sub("", r["associated_message_guid"] or ""))
+        if q is None:
+            continue
+        who = "You" if r["is_from_me"] else ctx.label(handles.get(r["handle_id"]))
+        got = q["detail"].setdefault("_reactions", {})
+        kind = r["associated_message_type"]
+        if kind < 3000:
+            got.pop(who, None)
+            got[who] = r["associated_message_emoji"] or TAPBACKS.get(kind, "")
+        else:
+            got.pop(who, None)              # 3000-3006: that person took the reaction back
+    for m in by_guid.values():
+        got = m["detail"].pop("_reactions", None)
+        if got:
+            m["detail"]["reactions"] = ", ".join(f"{what} ({who})" for who, what in got.items() if what)
 
     # merge iMessage/SMS threads with the same person into one conversation
     merged: dict[str, dict] = {}
@@ -515,6 +588,10 @@ def load_messages(ctx: Ctx) -> list[dict]:
             continue
         key = "g" + str(c["id"]) if c["group"] else "p" + phone_key(c["jid"] or str(c["id"]))
         if key in merged:
+            if c["service"] and c["service"] != merged[key]["service"]:   # M4: these keep their own service
+                for m in c["messages"]:
+                    if not (m.get("detail") or {}).get("service"):
+                        m["detail"] = {**(m.get("detail") or {}), "service": c["service"]}
             merged[key]["messages"].extend(c["messages"])
         else:
             merged[key] = c
