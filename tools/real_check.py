@@ -20,6 +20,8 @@ What it does, all read-only for the phone:
     mentioning "invoice" saves exactly the matching messages, notes and files (worked out from the backup on its own);
   * M4: every reply, reaction, edit and read time in Messages reaches the saved Excel file (counts only).
   * M5: a group chat saved for one person keeps only their messages, in Excel and PDF (counts only).
+  * M6: a chat's Media tab shows every attachment sms.db has; one photo shown large; Save all saves the ones the
+    backup has, each dated when it was sent (counts only).
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
 and PhoneKeep's own folder and settings aren't changed.
 """
@@ -674,6 +676,70 @@ try:
               f"messages, {len(others) + 1} people; reading them the same: {read_ids == rowids}; Excel rows "
               f"{len(rows)} of {len(kept)}, all theirs: {set(rows) <= {who}}; one PDF with no one else's name: "
               f"{len(pdfs) == 1 and not any(o in ptext for o in absent)})")
+
+    # -- M6: a chat's Media tab shows every attachment; Save all saves them with their dates ---------------------
+    # A Messages chat's attachments are counted here on their own, straight from sms.db and the backup's file list:
+    # how many, how many the backup has, and when each was sent. The chat with the most attachments the backup has,
+    # up to 150 (Save all copies them, into this check's temporary folder), is then opened in the phone window: its
+    # Media tab, one photo shown large, and Save all. Counts only.
+    import re
+    pick6 = None
+    con = ctx.db(sx.HOME, "Library/SMS/sms.db")
+    if con is not None and {"attachment", "message_attachment_join"} <= sx.tables(con):
+        in_backup = set(ctx.files(sx.MEDIA))
+        per6: dict = {}
+        for cid, date, fname, mime in con.execute(
+                "SELECT j.chat_id, m.date, a.filename, a.mime_type FROM message m JOIN chat_message_join j ON "
+                "j.message_id = m.ROWID JOIN message_attachment_join x ON x.message_id = m.ROWID JOIN attachment a "
+                "ON a.ROWID = x.attachment_id WHERE IFNULL(m.associated_message_type, 0) = 0 AND "
+                "IFNULL(m.item_type, 0) = 0"):
+            rel = re.sub(r"^(~/|/var/mobile/|/private/var/mobile/)", "", fname or "")
+            t = sx.t2001(date)
+            per6.setdefault(cid, []).append((rel in in_backup, int(t.timestamp()) if t else None,
+                                             (mime or "").startswith("image/")))
+        fits = {cid: a for cid, a in per6.items() if 0 < sum(h for h, _t, _p in a) <= 150}
+        if fits:
+            cid = max(fits, key=lambda k: sum(h for h, _t, _p in fits[k]))
+            pick6 = (cid, fits[cid])
+    if con is not None:
+        con.close()
+    if pick6 is None:
+        note("M6: no Messages chat with attachments in the backup (up to 150); not tested on real data")
+    else:
+        cid, atts = pick6
+        here = sorted(t for h, t, _p in atts if h and t)
+        win.open_app("messages")
+        pump(app, lambda: find(win.content, ui.ChatPanel) is not None and not loading(win), 600)
+        panel = find(win.content, ui.ChatPanel)
+        panel.show_chat("messages", cid)
+        panel.show_tab("media")
+        app.update()
+        grid = panel.media_grid
+        shown, shown_here = len(grid.all), sum(1 for v in grid.here.values() if v)
+        photo = next((m for m in grid.all if grid.here.get(m["id"]) and m["type"] == "image"), None)
+        big = None
+        if photo is not None:
+            panel.open_media_list("messages", [photo], 0)
+            v = quicklook.Viewer.current
+            pump(app, lambda: v.shown_kind not in ("", "loading"), 90)
+            big = v.shown_kind
+            v.close()
+        ui.ask_folder = lambda parent, title: str(WORK / "m6")
+        (WORK / "m6").mkdir()
+        panel.save_all_media()
+        pump(app, lambda: panel.saving is None and getattr(panel, "saved_media", None), 900)
+        res = getattr(panel, "saved_media", None) or {"saved": 0, "missing": 0, "failed": 0, "folder": WORK / "m6" / "?"}
+        files = list(Path(res["folder"]).glob("*")) if Path(res["folder"]).is_dir() else []
+        dates = sorted(int(f.stat().st_mtime) for f in files)
+        dated = len(dates) == len(here) and all(abs(a - b) <= 1 for a, b in zip(dates, here))
+        check(shown == len(atts) and shown_here == len(here) and res["saved"] == len(here) == len(files)
+              and res["missing"] == len(atts) - len(here) and not res["failed"] and dated
+              and (photo is None or big == "image"),
+              f"M6 on real data: a chat's Media tab shows every attachment ({shown} of {len(atts)} in sms.db, "
+              f"{shown_here} of {len(here)} in the backup); Save all saved {res['saved']} files, "
+              f"{res['missing']} not in the backup, each dated when it was sent: {dated}; a photo shown large: "
+              f"{big if photo is not None else 'no photo in that chat'}")
+        shutil.rmtree(WORK / "m6", ignore_errors=True)
 finally:
     try:
         win.close()
