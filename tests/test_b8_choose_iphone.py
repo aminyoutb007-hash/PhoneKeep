@@ -209,6 +209,18 @@ try:
     check(a._phone_extra[B["UniqueDeviceID"]]["battery"]["level"] == 55 and not asked_wall and not kept.exists()
           and not a._should_read_extra(B["UniqueDeviceID"]),
           "once it answers over Wi-Fi, its battery shows; the wallpaper isn't asked for (only over a cable, 5.1.3)")
+    # a background read that gets no answer and ends after a newer read keeps the newer battery (16 Nov: a stale
+    # read blanked it on a slow Windows runner)
+    a._phone_extra[B["UniqueDeviceID"]]["battery"] = None
+
+    def newer_meanwhile(udid=None, **k):
+        a._phone_extra[B["UniqueDeviceID"]]["battery"] = {"level": 77, "charging": True}    # the newer read's answer
+        return None                                                                       # this one gets none
+    wv.battery_state = newer_meanwhile
+    a._read_phone_extra(B["UniqueDeviceID"])
+    wv.battery_state = lambda udid=None, **k: {"level": 55, "charging": False} if reachable["on"] else None
+    check((a._phone_extra[B["UniqueDeviceID"]].get("battery") or {}).get("level") == 77,
+          "a read that gets no answer and ends after a newer one keeps the newer one's battery")
     check(str(kept).startswith(str(wv.DEFAULT_HOME)), "a phone's picture is kept in PhoneKeep's own folder")
     kept.parent.mkdir(parents=True, exist_ok=True)
     _Im.new("RGB", (300, 600), (120, 60, 160)).save(kept)          # as if saved the last time it was on the cable

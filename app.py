@@ -1452,8 +1452,13 @@ class App(_dnd_root()):
                 extra["wall"] = keep
         except Exception:
             pass
-        extra["battery"] = (wv.battery_state(udid, timeout=wv.WIFI_TIMEOUT // 3) if d.get("ConnectionType") == "Network"
-                            else wv.battery_state(udid)) or extra.get("battery")
+        battery = (wv.battery_state(udid, timeout=wv.WIFI_TIMEOUT // 3) if d.get("ConnectionType") == "Network"
+                   else wv.battery_state(udid))
+        # a read that got no answer keeps what's known, including what a newer read found meanwhile (it would
+        # otherwise blank the battery a later read had just shown)
+        now = self._phone_extra.get(udid) or {}
+        extra["battery"] = battery or now.get("battery") or extra.get("battery")
+        extra["wall"] = extra.get("wall") or now.get("wall")
         self._phone_extra[udid] = extra
 
         def show():
