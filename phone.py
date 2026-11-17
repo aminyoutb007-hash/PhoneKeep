@@ -15,6 +15,7 @@ Where the data comes from:
 from __future__ import annotations
 
 import datetime as dt
+import io
 import os
 import queue
 import shutil
@@ -2166,19 +2167,20 @@ class PhoneWindow(tk.Toplevel):
     def _preview_from(getter):
         """Q1 for lists of recordings, songs and books: Space shows the item with a Play / Open button."""
         def item(r):
-            copy, name = getter(r)
+            copy, name = getter(r)[:2]
             return quicklook.Item(name, to_file=copy)
         return item
 
     def _audio_actions(self, key, getter):
-        """getter(row) -> (copy function(dest) -> bool, file name). Returns Play/Save actions."""
+        """getter(row) -> (copy function(dest) -> bool, file name[, where Save puts it inside the chosen folder,
+        e.g. Artist/Album/01 Song.m4a, and the copy function Save uses]). Returns Play/Save actions."""
         tmp = quicklook.private_dir()      # Q1: private, deleted when PhoneKeep closes
 
         def play(sel):
             if not sel:
                 messagebox.showinfo(wv.APP_NAME, "Select something to play first.", parent=self)
                 return
-            copy, name = getter(sel[0])
+            copy, name = getter(sel[0])[:2]
             dest = tmp / name
             runner = self.live_runner if key in ("music", "books") else self.backup_runner
             self.banner(f"Opening {name}…")
@@ -2198,8 +2200,10 @@ class PhoneWindow(tk.Toplevel):
             def go():
                 done = []
                 for r in sel:
-                    copy, name = getter(r)
-                    dest = unique_path(folder / name)
+                    copy, name, *more = getter(r)
+                    if len(more) > 1:
+                        copy = more[1]
+                    dest = unique_path(folder / (more[0] if more else name))
                     if copy(dest):
                         done.append(dest)
                 return done
@@ -2237,12 +2241,19 @@ class PhoneWindow(tk.Toplevel):
 
     def v_music(self, key, tracks):
         import device as devmod
+        import music_tags
         total = sum(t.size for t in tracks)
         self.view_sub.configure(text=f"{len(tracks):,} items on the iPhone · {devmod.human_size(total)}")
+        n = getattr(tracks, "streaming", 0)      # P2: in the library, but no file on the phone
+        self.music_note = (f"{n:,} more song{'s' if n != 1 else ''} in the Music library "
+                           f"{'are' if n != 1 else 'is'} not listed: only songs stored on the iPhone can be copied, "
+                           "and these stream from Apple Music or iCloud." if n else "")
         if not tracks:
             holder = self.loading("")
             self.failed(holder, "No music is stored on this iPhone. Songs that only stream from Apple Music "
-                                "aren't on the phone, so they can't be copied.")
+                                "aren't on the phone, so they can't be copied."
+                        + (f" ({n:,} song{'s' if n != 1 else ''} in the library stream{'' if n != 1 else 's'} "
+                           "this way.)" if n else ""))
             return
         rows = [[t.title, t.artist, t.album, sx.dur(t.seconds) if t.seconds else "", t.kind,
                  devmod.human_size(t.size), t] for t in tracks]
@@ -2250,12 +2261,64 @@ class PhoneWindow(tk.Toplevel):
         def getter(r):
             t = r[6]
             name = sx.safe_name(" - ".join(x for x in (t.artist, t.title) if x) or Path(t.path).stem, 120) + Path(t.path).suffix
-            return (lambda dest: self.live.copy_media(t.path, dest)), name
+            return ((lambda dest: self.live.copy_media(t.path, dest)), name, music_tags.save_path(t),
+                    lambda dest: self.live.copy_song(t, dest))
         play, save = self._audio_actions(key, getter)
-        self.table_view(key, ["Title", "Artist", "Album", "Length", "Kind", "Size"], rows,
-                        [240, 170, 170, 70, 90, 80], on_double=play, preview=self._preview_from(getter),
-                        actions=[("▶  Play", play), ("Save selected", save)],
-                        title_extra=" · purchased songs may only play on your own devices")
+        # P2: the chosen song's artwork and details, on the right
+        side = card(self.content)
+        side.pack(side="right", fill="y", padx=(10, 0))
+        art = tk.Label(side, text="🎵", bg=theme.TILE_BG, fg=MUTED, font=font(54), width=4, height=2)
+        art.pack(padx=14, pady=(14, 8))
+        info = tk.Label(side, text="Choose a song to see its artwork.", bg=CARD, fg=INK, font=font(12),
+                        justify="left", anchor="nw", wraplength=200)
+        info.pack(fill="x", padx=14)
+        for text in ([self.music_note] if self.music_note else []) + [
+                "Save selected puts each song in an Artist / Album folder, with its title, artist, album and "
+                "artwork written into the file."]:
+            tk.Label(side, text=text, bg=CARD, fg=MUTED, font=font(11), justify="left", anchor="nw",
+                     wraplength=200).pack(fill="x", padx=14, pady=(12, 0))
+        covers: dict = {}
+        self.music_art, self.music_info, self.music_shown = art, info, None
+
+        def show_art(t, data):
+            covers[t.artwork] = data
+            if self.music_shown is not t or not art.winfo_exists():
+                return
+            img = None
+            if data:
+                try:
+                    from PIL import Image, ImageTk
+                    with Image.open(io.BytesIO(data)) as im:
+                        im = im.convert("RGB")
+                        im.thumbnail((200, 200))
+                        img = ImageTk.PhotoImage(im)
+                except Exception:
+                    img = None
+            if img is not None:
+                art.configure(image=img, text="", width=img.width(), height=img.height())
+            else:
+                art.configure(image="", text="🎵", width=4, height=2)
+            art.image = img
+
+        def picked(_e=None):
+            sel = selected()
+            if not sel:
+                return
+            t = sel[0][6]
+            self.music_shown = t
+            info.configure(text="\n".join(x for x in (t.title, t.artist, t.album, " · ".join(
+                y for y in (t.genre, str(t.year) if t.year else "") if y)) if x))
+            if not t.artwork or t.artwork in covers:
+                show_art(t, covers.get(t.artwork))
+            else:
+                self.live_runner.submit(lambda: self.live.artwork(t), lambda d: show_art(t, d),
+                                        lambda e: show_art(t, None))
+        tree, selected = self.table_view(key, ["Title", "Artist", "Album", "Length", "Kind", "Size"], rows,
+                                         [240, 170, 170, 70, 90, 80], on_double=play,
+                                         preview=self._preview_from(getter),
+                                         actions=[("▶  Play", play), ("Save selected", save)],
+                                         title_extra=" · purchased songs may only play on your own devices")
+        tree.bind("<<TreeviewSelect>>", picked, add="+")
 
     def v_books(self, key, books):
         import device as devmod

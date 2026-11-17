@@ -90,7 +90,7 @@ The usability test (five people, five tasks; P1's task 2 is one of them) and Q1'
 | M4 | Full detail in Excel and CSV | Basic columns | Partial (17 Nov: all seven columns built and tested; WhatsApp gives group numbers only; a real chat with a reply, a reaction and an edit to try) | [06-messages.md](06-messages.md#m4-full-detail-in-excel-and-csv) |
 | M5 | Show one person in a group chat | Not available | Done (17 Nov: People button; preview, counts and every save keep only the chosen people) | [06-messages.md](06-messages.md#m5-show-one-person-in-a-group-chat) |
 | M6 | Media viewer for chat attachments | Thumbnails only | Done (17 Nov: chat attachments open large, a Media tab per chat, Save all with their dates; real iPhone checked) | [06-messages.md](06-messages.md#m6-media-viewer-for-chat-attachments) |
-| P2 | Music export with tags and artwork | Files saved without tags | Partial | [07-photos-media.md](07-photos-media.md#p2-music) |
+| P2 | Music export with tags and artwork | Files saved without tags | Partial (17 Nov: Artist / Album folders, tags and artwork, artwork on screen, streaming songs not listed with a note; tested on an invented iPhone; the owner's iPhone stores no songs, so a phone with songs is still to try) | [07-photos-media.md](07-photos-media.md#p2-music) |
 | P8 | Video conversion HEVC to H.264 when saving "Most compatible" (moved from P1) | Videos saved as originals | To build | [07-photos-media.md](07-photos-media.md#p8-video-conversion) |
 | P3 | Books: filter books and PDFs | Open and save | Done | [07-photos-media.md](07-photos-media.md#p3-books-and-pdfs) |
 | D1 | Contacts: groups, photos, links | Table and exports | Partial | [08-personal-data.md](08-personal-data.md#d1-contacts) |

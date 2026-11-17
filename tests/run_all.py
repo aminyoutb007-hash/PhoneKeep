@@ -28,6 +28,7 @@ STEPS = [
     ("M4: full detail in Excel and CSV (replies, reactions, edited, deleted and read times, service, group numbers)", "test_m4_full_detail.py", True),
     ("M5: one person in a group chat (People: preview, row counts, Excel, CSV and PDF keep only their messages)", "test_m5_group_person.py", True),
     ("M6: chat attachments open large (arrows go through them); a Media tab per chat; Save all with their dates", "test_m6_media_viewer.py", True),
+    ("Music (P2): songs saved into Artist / Album folders with their tags and artwork; songs that only stream aren't listed, and a note says why", "test_p2_music.py", True),
     ("E1: first-run guide walked end to end with a stub iPhone", "test_e1_first_run.py", True),
     ("E2: menu bar / tray helper backs up and notifies with no window open", "test_e2_helper.py", True),
     ("B2: scheduled automatic backups with a fake clock", "test_b2_schedule.py", False),

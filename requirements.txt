@@ -14,6 +14,7 @@ winrt-Windows.Foundation>=2.0; sys_platform == "win32"
 winrt-Windows.Security.Credentials.UI>=2.0; sys_platform == "win32"
 pystray>=0.19; sys_platform != "darwin"
 send2trash>=1.8
+mutagen>=1.47           # P2: songs saved with their title, artist, album and artwork (GPL-2.0-or-later, no network)
 tkinterdnd2>=0.4
 reportlab>=4.0          # chats to PDF (M3)
 arabic-reshaper>=3.0    # Arabic letter forms in PDFs
