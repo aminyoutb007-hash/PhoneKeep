@@ -299,6 +299,14 @@ def wait_file(p, timeout=20):
     return pump(lambda: p.exists() and not p.with_name(p.name + ".part").exists(), timeout)
 
 
+dlg = contacts_ui.ConflictDialog(win, "Contacts.vcf")
+a.update()
+said = [w.cget("text") for w in dlg.winfo_children() if isinstance(w, tk.Label)]
+buttons = sorted(b.text for b in dlg.winfo_children()[-1].winfo_children() if hasattr(b, "text"))
+dlg.pick("replace")
+check("“Contacts.vcf” is already in this folder." in said and buttons == ["Keep both", "Replace", "Skip"]
+      and dlg.result == "replace" and not dlg.winfo_exists(),
+      f"the question when the file is there: {said[:1]}, buttons {buttons}; a click answers it and closes it")
 v.tree.selection_remove(*v.tree.selection())
 a.update()
 v.save_vcard()

@@ -56,31 +56,37 @@ def avatar(p: dict, size: int):
     return im.resize((size, size), Image.LANCZOS)
 
 
-def ask_conflict(parent, name: str):
-    """'name' is already in the folder: "both" (keep both), "replace", "skip", or None (closed)."""
-    dlg = tk.Toplevel(parent)
-    dlg.title("Save as vCard")
-    dlg.configure(bg=BG)
-    dlg.resizable(False, False)
-    dlg.transient(parent)
-    res = {"v": None}
-    tk.Label(dlg, text=f"“{name}” is already in this folder.", bg=BG, fg=INK, font=font(14, "bold"),
-             wraplength=420, justify="left").pack(anchor="w", padx=20, pady=(18, 4))
-    tk.Label(dlg, text="Keep both saves this one with a number after its name.", bg=BG, fg=MUTED, font=font(12),
-             wraplength=420, justify="left").pack(anchor="w", padx=20)
-    row = tk.Frame(dlg, bg=BG)
-    row.pack(fill="x", padx=20, pady=16)
+class ConflictDialog(tk.Toplevel):
+    """'name' is already in the folder: Keep both, Replace or Skip."""
 
-    def pick(v):
-        res["v"] = v
-        dlg.destroy()
-    RoundButton(row, "Keep both", lambda: pick("both"), "primary", 120, 34, 12).pack(side="right")
-    RoundButton(row, "Replace", lambda: pick("replace"), "secondary", 100, 34, 12).pack(side="right", padx=6)
-    RoundButton(row, "Skip", lambda: pick("skip"), "secondary", 80, 34, 12).pack(side="right")
-    dlg.bind("<Escape>", lambda e: dlg.destroy())
+    def __init__(self, parent, name: str):
+        super().__init__(parent, bg=BG)
+        self.title("Save as vCard")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.result = None
+        tk.Label(self, text=f"“{name}” is already in this folder.", bg=BG, fg=INK, font=font(14, "bold"),
+                 wraplength=420, justify="left").pack(anchor="w", padx=20, pady=(18, 4))
+        tk.Label(self, text="Keep both saves this one with a number after its name.", bg=BG, fg=MUTED, font=font(12),
+                 wraplength=420, justify="left").pack(anchor="w", padx=20)
+        row = tk.Frame(self, bg=BG)
+        row.pack(fill="x", padx=20, pady=16)
+        RoundButton(row, "Keep both", lambda: self.pick("both"), "primary", 120, 34, 12).pack(side="right")
+        RoundButton(row, "Replace", lambda: self.pick("replace"), "secondary", 100, 34, 12).pack(side="right", padx=6)
+        RoundButton(row, "Skip", lambda: self.pick("skip"), "secondary", 80, 34, 12).pack(side="right")
+        self.bind("<Escape>", lambda e: self.destroy())
+
+    def pick(self, v):
+        self.result = v
+        self.destroy()
+
+
+def ask_conflict(parent, name: str):
+    """"both" (keep both), "replace", "skip", or None (closed)."""
+    dlg = ConflictDialog(parent, name)
     dlg.grab_set()
     parent.wait_window(dlg)
-    return res["v"]
+    return dlg.result
 
 
 def file_name(name: str) -> str:
