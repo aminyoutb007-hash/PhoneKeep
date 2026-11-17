@@ -7,7 +7,16 @@
 **Requirements:** when saving vCards into a folder that already has one with the same name: "Keep both / Replace / Skip".
 
 **Done when**
-- [ ] Contact photos and groups match the phone; a saved .vcf imports into Contacts / Outlook with photos.
+- [ ] Contact photos and groups match the phone; a saved .vcf imports into Contacts / Outlook with photos. *(17 Nov: built and checked on invented data and on the owner's real backup; the import into Contacts on a Mac and into Outlook is the owner's to try: PhoneKeep never drives another app. `tests/test_d1_contacts.py` checks it all on an invented backup. On the owner's real backup, `tools/real_check.py` counts the contacts, the Lists and the pictures straight from the phone's own address book databases. The Contacts screen matches all three, and a vCard of everything has every contact and every photo as a JPEG. The owner's phone has no groups, so its Lists are its accounts.)*
+
+**How it's built (17 Nov):**
+- The phone keeps one person who's in two accounts (say iCloud and Gmail) as two linked cards. PhoneKeep shows them as one contact, as the phone does: the name and photo are the ones the phone prefers, and a number, email or address in both cards shows once. Before D1 such a person was listed twice.
+- **Lists** in the sidebar are the phone's: All contacts, then every account (when there's more than one) as "All <account>", then every group, each with its count. A click shows only that list.
+- **Photos** are the phone's own pictures in the backup (AddressBookImages): the biggest thumbnail up to 640 px, which the phone has already cropped, or the full-size picture cropped where the phone crops it when there's no thumbnail. They're read once, when Contacts is first opened, not when the backup opens. A contact without one shows their initials.
+- **Decided: a photo kept only as a link on the internet is never fetched.** Nothing leaves the computer.
+- **Decided: a click on a number, email, address or website copies it, nothing more.** No call, no email, no map: a map would send the address to the internet.
+- **Save as vCard** (3.0, what Contacts on a Mac, Outlook, Google and Android import) saves the selected contacts, or everything shown. It's one file, named after the contact, the list shown, or "Contacts". Each card has its photo (a JPEG up to 512 px), addresses, websites, birthday, note and groups (CATEGORIES). A label the owner typed is kept the way Apple's own vCards keep it (X-ABLabel), and lines are folded at 75 bytes. **Excel** and **CSV** have Name, Phone, Email, Address, Website, Company, Lists, Birthday and Note, as text that can't become a formula. The web export's contacts.vcf and contacts.csv are the same.
+- The whole-phone search (E4) also finds a contact by their address or website.
 
 ## D2. Copy contacts to the iPhone
 

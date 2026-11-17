@@ -103,6 +103,7 @@ def entries(key: str, value) -> list:
     if key == "contacts":
         return [Hit("", p["name"], " · ".join(x for x in [p["name"], p.get("org", ""), p.get("title", "")]
                                                + [v for _l, v in p.get("phones", [])] + [v for _l, v in p.get("emails", [])]
+                                               + [v for _l, v in p.get("addresses", [])] + [v for _l, v in p.get("urls", [])]
                                                + [p.get("note", "")] if x), "", i) for i, p in enumerate(value)]
     if key == "calls":
         return [Hit("", str(r[2] or r[3]), f"{r[2]} · {r[3]}", str(r[0]), i, str(r[0])) for i, r in enumerate(value)]

@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import hashlib
+import io
 import json
 import os
 import re
@@ -280,21 +281,43 @@ class Ctx:
 # ---------------------------------------------------------------------------
 
 def _clean_label(l) -> str:
+    """Apple's own labels ("_$!<Mobile>!$_") in small letters; one the owner typed, as they typed it."""
     l = str(l or "")
     m = re.match(r"_\$!<(.+)>!\$_", l)
-    return (m.group(1) if m else l).lower()
+    return m.group(1).lower() if m else l
+
+
+AB_PHONE, AB_EMAIL, AB_ADDRESS, AB_URL = 3, 4, 5, 22        # ABMultiValue.property
+ADDRESS_KEYS = ("Street", "SubLocality", "City", "SubAdministrativeArea", "State", "ZIP", "Country")
+
+
+def _address(parts: dict) -> str:
+    """An address as the phone shows it: street lines, then the town line, then the country."""
+    town = " ".join(x for x in (parts.get("City"), parts.get("State"), parts.get("ZIP")) if x)
+    lines = [parts.get("Street") or "", parts.get("SubLocality") or "", town, parts.get("Country") or ""]
+    return "\n".join(x.strip() for x in lines if x and x.strip())
 
 
 def load_contacts(ctx: Ctx) -> list[dict]:
+    """The contacts as the iPhone's Contacts app shows them (D1): linked cards (the same person in two accounts) are
+    one contact; each knows its lists (the accounts it's in, then its groups), addresses and websites. Photos are
+    read separately (load_contact_photos), only when Contacts is opened."""
     con = ctx.db(HOME, "Library/AddressBook/AddressBook.sqlitedb")
     if con is None:
         return []
+    have = tables(con)
     labels = {}
-    if "ABMultiValueLabel" in tables(con):
+    if "ABMultiValueLabel" in have:
         labels = {r["ROWID"]: r["value"] for r in con.execute("SELECT ROWID, value FROM ABMultiValueLabel")}
+    stores = {}                                  # store id -> account name, for accounts that are on
+    if "ABStore" in have:
+        for r in select(con, "ABStore", ["ROWID", "Name", "Enabled"]):
+            if r["Name"] and r["Enabled"] != 0:
+                stores[r["ROWID"]] = str(r["Name"])
     people: dict[int, dict] = {}
+    links: dict[int, list] = {}                  # PersonLink -> the cards that are one person
     for r in select(con, "ABPerson", ["ROWID", "First", "Middle", "Last", "Organization", "Nickname",
-                                      "JobTitle", "Note", "Birthday"]):
+                                      "JobTitle", "Note", "Birthday", "StoreID", "PersonLink"]):
         name = " ".join(x for x in (r["First"], r["Middle"], r["Last"]) if x) \
             or r["Organization"] or r["Nickname"] or ""
         bday = None
@@ -303,21 +326,62 @@ def load_contacts(ctx: Ctx) -> list[dict]:
                 bday = (dt.datetime(2001, 1, 1) + dt.timedelta(seconds=float(r["Birthday"]))).date()
             except (ValueError, OverflowError):
                 pass
-        people[r["ROWID"]] = {"name": name, "first": r["First"] or "", "last": r["Last"] or "",
-                              "org": r["Organization"] or "", "title": r["JobTitle"] or "",
+        people[r["ROWID"]] = {"id": r["ROWID"], "ids": [r["ROWID"]], "name": name, "first": r["First"] or "",
+                              "last": r["Last"] or "", "org": r["Organization"] or "", "title": r["JobTitle"] or "",
                               "note": r["Note"] or "", "birthday": bday.isoformat() if bday else "",
-                              "phones": [], "emails": []}
-    if "ABMultiValue" in tables(con):
-        for r in select(con, "ABMultiValue", ["record_id", "property", "label", "value"]):
+                              "phones": [], "emails": [], "addresses": [], "urls": [], "adr": {},
+                              "accounts": [stores[r["StoreID"]]] if r["StoreID"] in stores else [], "groups": []}
+        if r["PersonLink"] is not None and r["PersonLink"] > 0:
+            links.setdefault(r["PersonLink"], []).append(r["ROWID"])
+    if "ABMultiValue" in have:
+        entries: dict[int, dict] = {}            # an address's parts, by its ABMultiValue UID
+        if "ABMultiValueEntry" in have and "ABMultiValueEntryKey" in have:
+            keys = {r["ROWID"]: r["value"] for r in con.execute("SELECT ROWID, value FROM ABMultiValueEntryKey")}
+            for r in select(con, "ABMultiValueEntry", ["parent_id", "key", "value"]):
+                if r["value"]:
+                    entries.setdefault(r["parent_id"], {})[keys.get(r["key"], "")] = str(r["value"])
+        for r in select(con, "ABMultiValue", ["UID", "record_id", "property", "label", "value"]):
             p = people.get(r["record_id"])
-            if not p or not r["value"]:
+            if not p:
                 continue
             lab = _clean_label(labels.get(r["label"], ""))
-            if r["property"] == 3:
+            if r["property"] == AB_ADDRESS:
+                parts = entries.get(r["UID"], {})
+                text = _address(parts)
+                if text:
+                    p["addresses"].append((lab, text))
+                    p["adr"][text] = parts
+                continue
+            if not r["value"]:
+                continue
+            if r["property"] == AB_PHONE:
                 p["phones"].append((lab, str(r["value"])))
-            elif r["property"] == 4:
+            elif r["property"] == AB_EMAIL:
                 p["emails"].append((lab, str(r["value"])))
+            elif r["property"] == AB_URL:
+                p["urls"].append((lab, str(r["value"])))
+    if "ABGroup" in have and "ABGroupMembers" in have:
+        names = {r["ROWID"]: str(r["Name"]) for r in select(con, "ABGroup", ["ROWID", "Name"]) if r["Name"]}
+        for r in select(con, "ABGroupMembers", ["group_id", "member_type", "member_id"]):
+            p = people.get(r["member_id"])
+            if p is not None and not r["member_type"] and r["group_id"] in names \
+                    and names[r["group_id"]] not in p["groups"]:
+                p["groups"].append(names[r["group_id"]])
+    preferred = {}                               # PersonLink -> (the card whose name shows, whose photo shows)
+    if "ABPersonLink" in have:
+        for r in select(con, "ABPersonLink", ["ROWID", "PreferredNamePersonID", "PreferredImagePersonID"]):
+            preferred[r["ROWID"]] = (r["PreferredNamePersonID"], r["PreferredImagePersonID"])
     con.close()
+    for link, ids in links.items():
+        if len(ids) < 2:
+            continue
+        name_id, image_id = preferred.get(link, (None, None))
+        first = people[name_id] if name_id in ids else people[ids[0]]
+        for i in ids:
+            if i == first["id"]:
+                continue
+            _merge(first, people.pop(i))
+        first["image_ids"] = ([image_id] if image_id in ids else []) + [i for i in ids if i != image_id]
     result = [p for p in people.values() if p["name"] or p["phones"] or p["emails"]]
     for p in result:
         nm = p["name"] or (p["phones"][0][1] if p["phones"] else p["emails"][0][1])
@@ -328,45 +392,229 @@ def load_contacts(ctx: Ctx) -> list[dict]:
     return result
 
 
+def _merge(into: dict, other: dict) -> None:
+    """One person's second card (in another account) added to the first: nothing shown twice."""
+    into["ids"].append(other["id"])
+    for k in ("name", "first", "last", "org", "title", "birthday"):
+        if not into[k] and other[k]:
+            into[k] = other[k]
+    if other["note"] and other["note"] not in into["note"]:
+        into["note"] = (into["note"] + "\n" + other["note"]).strip()
+    for k, same in (("phones", phone_key), ("emails", str.lower), ("addresses", str.lower), ("urls", str.lower)):
+        seen = {same(v) for _l, v in into[k]}
+        for lab, v in other[k]:
+            if same(v) not in seen:
+                into[k].append((lab, v))
+                seen.add(same(v))
+    for k in ("accounts", "groups"):
+        into[k] += [x for x in other[k] if x not in into[k]]
+    into["adr"] = {**other.get("adr", {}), **into.get("adr", {})}
+
+
+def contact_lists(people: list[dict]) -> list[tuple[str, int]]:
+    """The sidebar, as the phone's Lists: every account ("All <account>"), then every group, each with its count."""
+    accounts: dict[str, int] = {}
+    groups: dict[str, int] = {}
+    for p in people:
+        for a in p.get("accounts", ()):
+            accounts[a] = accounts.get(a, 0) + 1
+        for g in p.get("groups", ()):
+            groups[g] = groups.get(g, 0) + 1
+    out = [(f"All {a}", n) for a, n in sorted(accounts.items(), key=lambda x: x[0].lower())] if len(accounts) > 1 else []
+    return out + sorted(groups.items(), key=lambda x: x[0].lower())
+
+
+def in_list(p: dict, lst: str) -> bool:
+    if not lst:
+        return True
+    if lst.startswith("All ") and lst[4:] in p.get("accounts", ()):
+        return True
+    return lst in p.get("groups", ())
+
+
+def load_contact_photos(ctx: Ctx, people: list[dict]) -> int:
+    """Each contact's photo as the phone shows it (already cropped), into p["photo"] (image bytes), from the backup's
+    own picture database only: a photo kept only as a link on the internet is never fetched. Returns how many have
+    one. The biggest square-ish thumbnail up to 640 px is kept; the full-size picture, cropped, only when there's none."""
+    con = ctx.db(HOME, "Library/AddressBook/AddressBookImages.sqlitedb")
+    if con is None:
+        return 0
+    from PIL import Image
+    have = tables(con)
+    best: dict[int, tuple] = {}                  # record id -> (score, bytes)
+    if "ABThumbnailImage" in have:
+        for r in select(con, "ABThumbnailImage", ["record_id", "data"]):
+            d = r["data"]
+            if not d:
+                continue
+            try:
+                w, h = Image.open(io.BytesIO(d)).size
+            except Exception:
+                continue
+            score = (w <= 640, min(w, h) if w <= 640 else -w)
+            if r["record_id"] not in best or score > best[r["record_id"]][0]:
+                best[r["record_id"]] = (score, bytes(d))
+    if "ABFullSizeImage" in have:
+        for r in select(con, "ABFullSizeImage", ["record_id", "crop_x", "crop_y", "crop_width", "data"]):
+            if r["record_id"] in best or not r["data"]:
+                continue
+            try:
+                im = Image.open(io.BytesIO(r["data"]))
+                w, h = im.size
+                side = int(r["crop_width"] or min(w, h))
+                x = (w - side) // 2 if r["crop_x"] is None else int(r["crop_x"])        # 0 is an edge, not "none"
+                y = (h - side) // 2 if r["crop_y"] is None else int(r["crop_y"])
+                y = max(0, h - y - side)         # the crop is measured from the bottom (Core Graphics)
+                im = im.crop((x, y, min(w, x + side), min(h, y + side))).convert("RGB")
+                im.thumbnail((640, 640))
+                b = io.BytesIO()
+                im.save(b, "JPEG", quality=88)
+                best[r["record_id"]] = ((True, 0), b.getvalue())
+            except Exception:
+                continue
+    con.close()
+    n = 0
+    for p in people:
+        for i in p.get("image_ids") or p.get("ids") or [p.get("id")]:
+            if i in best:
+                p["photo"] = best[i][1]
+                n += 1
+                break
+        else:
+            p.pop("photo", None)
+    return n
+
+
+def _fold(line: str) -> str:
+    """A vCard line folded at 75 bytes (RFC 6350 / 2426): the next part starts with a space."""
+    out, cur = [], b""
+    for ch in line:
+        b = ch.encode("utf-8")
+        if len(cur) + len(b) > (75 if not out else 74):
+            out.append(cur)
+            cur = b""
+        cur += b
+    out.append(cur)
+    return "\r\n ".join(x.decode("utf-8") for x in out) + "\r\n"
+
+
+TEL_TYPES = {"mobile": "CELL", "iphone": "CELL,IPHONE", "home": "HOME", "work": "WORK", "main": "MAIN",
+             "homefax": "HOME,FAX", "workfax": "WORK,FAX", "otherfax": "FAX", "pager": "PAGER", "other": "OTHER"}
+
+
+def vcard(p: dict) -> str:
+    """One contact as a vCard 3.0 (what Contacts on a Mac, Outlook, Google and Android import), with the photo."""
+    def esc(s):
+        s = str(s).replace("\r\n", "\n").replace("\r", "\n")         # no bare CR inside a vCard line
+        return s.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
+    lines = ["BEGIN:VCARD", "VERSION:3.0", f"N:{esc(p['last'])};{esc(p['first'])};;;", f"FN:{esc(p['name'])}"]
+    if p.get("org"):
+        lines.append(f"ORG:{esc(p['org'])}")
+    if p.get("title"):
+        lines.append(f"TITLE:{esc(p['title'])}")
+    item = 0
+
+    def labelled(prop, types, lab, value):
+        nonlocal item
+        if lab and lab not in TEL_TYPES and lab not in ("home", "work", "other", "homepage", "school"):
+            item += 1                            # the label the owner typed: kept the way Apple's own vCards do
+            lines.append(f"item{item}.{prop}{types}:{value}")
+            lines.append(f"item{item}.X-ABLabel:{esc(lab)}")
+        else:
+            lines.append(f"{prop}{types}:{value}")
+    for lab, v in p.get("phones", ()):
+        labelled("TEL", f";TYPE={TEL_TYPES.get(lab, 'VOICE')}", lab, esc(v))
+    for lab, v in p.get("emails", ()):
+        labelled("EMAIL", ";TYPE=INTERNET" + (f",{lab.upper()}" if lab in ("home", "work") else ""), lab, esc(v))
+    for lab, v in p.get("addresses", ()):
+        a = p.get("adr", {}).get(v) or {"Street": v}
+        street = "\n".join(x for x in (a.get("Street"), a.get("SubLocality")) if x)
+        labelled("ADR", f";TYPE={lab.upper()}" if lab in ("home", "work") else "", lab,
+                 ";;" + ";".join(esc(x or "") for x in (street, a.get("City"), a.get("State"), a.get("ZIP"),
+                                                         a.get("Country"))))
+    for lab, v in p.get("urls", ()):
+        labelled("URL", "", lab, esc(v))
+    if p.get("birthday"):
+        b = p["birthday"]                        # a birthday with no year: iOS keeps it as 1604
+        lines.append(f"BDAY:--{b[5:7]}{b[8:10]}" if b.startswith(NO_YEAR) else f"BDAY:{b}")
+    if p.get("note"):
+        lines.append(f"NOTE:{esc(p['note'])}")
+    lists = list(p.get("groups", ()))
+    if lists:
+        lines.append("CATEGORIES:" + ",".join(esc(g) for g in lists))
+    if p.get("photo"):
+        try:
+            import base64
+            from PIL import Image
+            im = Image.open(io.BytesIO(p["photo"]))
+            if im.mode in ("RGBA", "LA", "P"):
+                im = im.convert("RGBA")
+                bg = Image.new("RGB", im.size, (255, 255, 255))
+                bg.paste(im, mask=im.split()[-1])
+                im = bg
+            im = im.convert("RGB")
+            im.thumbnail((512, 512))
+            b = io.BytesIO()
+            im.save(b, "JPEG", quality=85)
+            lines.append("PHOTO;ENCODING=b;TYPE=JPEG:" + base64.b64encode(b.getvalue()).decode("ascii"))
+        except Exception:
+            pass                                 # a picture that can't be read: the card without it
+    lines.append("END:VCARD")
+    return "".join(_fold(x) for x in lines)
+
+
+NO_YEAR = "1604-"                           # the year iOS gives a birthday saved without one
+
+
+def birthday_text(b: str) -> str:
+    """A birthday as people write it ("1 January 1990"; "1 January" when the year wasn't saved)."""
+    try:
+        d = dt.date.fromisoformat(b)
+    except (TypeError, ValueError):
+        return b or ""
+    return f"{d.day} {d:%B}" if b.startswith(NO_YEAR) else f"{d.day} {d:%B %Y}"
+
+
+CONTACT_HEADERS = ["Name", "Phone", "Email", "Address", "Website", "Company", "Lists", "Birthday", "Note"]
+
+
+def contact_row(p: dict) -> list:
+    """One contact as a spreadsheet row (CONTACT_HEADERS)."""
+    def joined(k):
+        return "\n".join(f"{v} ({l})" if l else v for l, v in p.get(k, ()))
+    return [p["name"], joined("phones"), "\n".join(v for _, v in p.get("emails", ())),
+            "\n\n".join(v for _l, v in p.get("addresses", ())), "\n".join(v for _l, v in p.get("urls", ())),
+            " · ".join(x for x in (p["org"], p["title"]) if x),
+            ", ".join(list(p.get("accounts", ())) + list(p.get("groups", ()))),
+            p["birthday"][5:] if p["birthday"].startswith(NO_YEAR) else p["birthday"], p["note"]]
+
+
 def sec_contacts(ctx: Ctx, people: list[dict]) -> dict:
     if not people:
         raise PhoneKeepError("No contacts in this backup.")
     f = ctx.item_filter()
     if f.search:
         people = [p for p in people if f.keep(None, p["name"], p["org"], p["note"], *(v for _l, v in p["phones"]),
-                                               *(v for _l, v in p["emails"]), dated=False)]
+                                               *(v for _l, v in p["emails"]), *(v for _l, v in p.get("addresses", ())),
+                                               *(v for _l, v in p.get("urls", ())), dated=False)]
         if not people:
             raise PhoneKeepError(f"No contacts {f.describe()}.")
     d = ctx.out / "Contacts"
     d.mkdir(parents=True, exist_ok=True)
-
-    def vesc(s):
-        return str(s).replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
+    if not any("photo" in p for p in people):
+        try:
+            load_contact_photos(ctx, people)     # D1: the .vcf carries each contact's photo
+        except Exception:
+            pass
     with open(d / "contacts.vcf", "w", encoding="utf-8", newline="") as f:
         for p in people:
-            f.write("BEGIN:VCARD\r\nVERSION:3.0\r\n")
-            f.write(f"N:{vesc(p['last'])};{vesc(p['first'])};;;\r\nFN:{vesc(p['name'])}\r\n")
-            if p["org"]:
-                f.write(f"ORG:{vesc(p['org'])}\r\n")
-            if p["title"]:
-                f.write(f"TITLE:{vesc(p['title'])}\r\n")
-            for lab, v in p["phones"]:
-                f.write(f"TEL;TYPE={(lab or 'voice').upper().replace(' ', '')}:{vesc(v)}\r\n")
-            for lab, v in p["emails"]:
-                f.write(f"EMAIL;TYPE=INTERNET:{vesc(v)}\r\n")
-            if p["birthday"]:
-                f.write(f"BDAY:{p['birthday']}\r\n")
-            if p["note"]:
-                f.write(f"NOTE:{vesc(p['note'])}\r\n")
-            f.write("END:VCARD\r\n")
-    rows = [[p["name"], "\n".join(f"{v} ({l})" if l else v for l, v in p["phones"]),
-             "\n".join(v for _, v in p["emails"]), " · ".join(x for x in (p["org"], p["title"]) if x),
-             p["birthday"], p["note"]] for p in people]
-    hdr = ["Name", "Phone", "Email", "Company", "Birthday", "Note"]
+            f.write(vcard(p))
+    rows = [contact_row(p) for p in people]
+    hdr = CONTACT_HEADERS
     write_csv(d / "contacts.csv", hdr, rows)
     body = (f'<p class="meta">{len(people):,} contacts · <a href="contacts.vcf">Download vCard (.vcf)</a> '
             f'(import into iPhone, Android, Google, Outlook) · <a href="contacts.csv">CSV</a></p>'
-            + table(hdr, [[*r[:5], r[5]] for r in rows]).replace("\n", "<br>"))
+            + table(hdr, rows).replace("\n", "<br>"))
     (d / "index.html").write_text(page("Contacts", body, filt=True), encoding="utf-8")
     return {"count": len(people), "detail": f"{len(people):,} contacts", "link": "Contacts/index.html"}
 

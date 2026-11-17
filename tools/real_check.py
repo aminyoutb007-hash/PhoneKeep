@@ -22,6 +22,8 @@ What it does, all read-only for the phone:
   * M5: a group chat saved for one person keeps only their messages, in Excel and PDF (counts only).
   * M6: a chat's Media tab shows every attachment sms.db has; one photo shown large; Save all saves the ones the
     backup has, each dated when it was sent (counts only).
+  * D1: the Contacts screen has the contacts as the phone shows them (linked cards as one), its Lists with their
+    counts and every photo the backup has; a vCard of everything has every contact and photo (counts only).
   * P8: one HEVC video from the phone saved "Most compatible" is an H.264 MP4 with its date and location (yes/no).
   * P2: songs that only stream aren't listed in Music, and the screen says why; a song on the phone is saved into
     Artist / Album with its title, artist, album and artwork in the file (counts only).
@@ -799,6 +801,106 @@ try:
               f"{res['missing']} not in the backup, each dated when it was sent: {dated}; a photo shown large: "
               f"{big if photo is not None else 'no photo in the backup'}")
         shutil.rmtree(WORK / "m6", ignore_errors=True)
+
+    # -- D1: Contacts: photos and Lists as on the phone; a saved .vcf has every contact and every photo ---------------
+    # Counted here on their own, straight from AddressBook.sqlitedb and AddressBookImages.sqlitedb: the contacts as the
+    # phone shows them (cards with a name, number or email; linked cards are one person), the Lists (every account
+    # that's on when there's more than one, then every group, with its people), and how many of those people have a
+    # picture the backup holds (a photo kept only as a link on the internet doesn't count: it's never fetched). Then
+    # the Contacts screen and a vCard of everything, saved into this check's temporary folder. Counts only.
+    import base64
+    import io as _io
+    import contacts_ui
+    from PIL import Image as _Image
+    con = ctx.db(sx.HOME, "Library/AddressBook/AddressBook.sqlitedb")
+    icon = ctx.db(sx.HOME, "Library/AddressBook/AddressBookImages.sqlitedb")
+    if con is None:
+        note("D1: no contacts in the backup; not tested on real data")
+    else:
+        have = sx.tables(con)
+        has_value = {r[0] for r in con.execute("SELECT DISTINCT record_id FROM ABMultiValue WHERE property IN (3, 4) "
+                                               "AND IFNULL(value, '') <> ''")} if "ABMultiValue" in have else set()
+        rows1 = sx.select(con, "ABPerson", ["ROWID", "First", "Middle", "Last", "Organization", "Nickname", "StoreID",
+                                            "PersonLink"])
+        person = {}                                   # card -> the person it shows as (its link, or itself)
+        for r in rows1:
+            if any(r[k] for k in ("First", "Middle", "Last", "Organization", "Nickname")) or r["ROWID"] in has_value:
+                person[r["ROWID"]] = ("link", r["PersonLink"]) if (r["PersonLink"] or 0) > 0 else ("card", r["ROWID"])
+        n_people = len(set(person.values()))
+        shown_links = {v for v in person.values() if v[0] == "link"}
+        for r in rows1:                               # a linked card with nothing of its own still lends its photo
+            if r["ROWID"] not in person and ("link", r["PersonLink"]) in shown_links:
+                person[r["ROWID"]] = ("link", r["PersonLink"])
+
+        enabled = {r[0] for r in con.execute("SELECT ROWID FROM ABStore WHERE IFNULL(Name, '') <> '' "
+                                             "AND IFNULL(Enabled, 1) <> 0")} if "ABStore" in have else set()
+        per_account: dict = {}
+        for r in rows1:
+            if r["ROWID"] in person and r["StoreID"] in enabled:
+                per_account.setdefault(r["StoreID"], set()).add(person[r["ROWID"]])
+        lists1 = sorted(len(v) for v in per_account.values()) if len(per_account) > 1 else []
+        if {"ABGroup", "ABGroupMembers"} <= have:
+            for (gid,) in con.execute("SELECT ROWID FROM ABGroup WHERE IFNULL(Name, '') <> ''"):
+                members = {person[m] for (m,) in con.execute(
+                    "SELECT member_id FROM ABGroupMembers WHERE group_id = ? AND IFNULL(member_type, 0) = 0", (gid,))
+                           if m in person}
+                if members:
+                    lists1.append(len(members))
+        pictured = set()
+        if icon is not None:
+            for table in ("ABThumbnailImage", "ABFullSizeImage"):
+                if table in sx.tables(icon):
+                    for rid, data in icon.execute(f"SELECT record_id, data FROM {table} WHERE length(data) > 0"):
+                        if rid in person:
+                            try:
+                                _Image.open(_io.BytesIO(data)).size
+                                pictured.add(person[rid])
+                            except Exception:
+                                pass
+            icon.close()
+        con.close()
+        win.contacts_view = None                      # the screen opened by the "every app screen" step is gone
+        win.open_app("contacts")
+        pump(app, lambda: getattr(win, "contacts_view", None) is not None and not loading(win), 300)
+        cv = getattr(win, "contacts_view", None)
+        if cv is None:
+            check(False, "D1: the Contacts screen didn't open")
+        else:
+            side = [int(cv.lists.item(i, "values")[0].replace(",", "")) for i in cv.lists.get_children()]
+            shown_photos = sum(1 for p in cv.people if p.get("photo"))
+            rows_with_image = sum(1 for i in cv.tree.get_children() if cv.tree.item(i, "image"))
+            check(len(cv.people) == n_people and side[:1] == [n_people] and sorted(side[1:]) == sorted(lists1)
+                  and shown_photos == len(pictured) and rows_with_image == len(cv.tree.get_children()) == n_people,
+                  f"D1 on real data: the Contacts screen has the contacts as the phone shows them ({len(cv.people)} of "
+                  f"{n_people}, linked cards as one), its Lists with their counts ({len(side) - 1} lists, counts match: "
+                  f"{sorted(side[1:]) == sorted(lists1)}), and a photo for every contact the backup has one for "
+                  f"({shown_photos} of {len(pictured)}); every row has a photo or initials")
+            vdir = WORK / "d1"
+            vdir.mkdir(parents=True, exist_ok=True)
+            phone.ask_save_folder = lambda parent, title, start: str(vdir)
+            contacts_ui.ask_conflict = lambda parent, name: "replace"
+            cv.lists.selection_set("l0")
+            cv.q.set("")
+            cv.tree.selection_remove(*cv.tree.selection())
+            app.update()
+            cv.save_vcard()
+            out = vdir / "Contacts.vcf"
+            pump(app, lambda: out.exists() and not (vdir / "Contacts.vcf.part").exists(), 120)
+            raw = out.read_bytes() if out.exists() else b""
+            text = raw.decode("utf-8", "replace")
+            folded_ok = all(len(x) <= 75 for x in raw.split(b"\r\n"))
+            unfolded = text.replace("\r\n ", "")
+            photos_in = [x.split(":", 1)[1] for x in unfolded.split("\r\n") if x.startswith("PHOTO;ENCODING=b;TYPE=JPEG:")]
+            good = 0
+            for b64 in photos_in:
+                try:
+                    good += _Image.open(_io.BytesIO(base64.b64decode(b64))).format == "JPEG"
+                except Exception:
+                    pass
+            check(text.count("BEGIN:VCARD") == n_people and len(photos_in) == good == len(pictured) and folded_ok,
+                  f"D1: Save as vCard saves every contact ({text.count('BEGIN:VCARD')} of {n_people}) with every photo "
+                  f"as a JPEG ({good} of {len(pictured)}), lines folded at 75 bytes: {folded_ok}")
+            shutil.rmtree(vdir, ignore_errors=True)
 
     # -- P2: music: songs that only stream aren't listed and the Music screen says why; a song on the phone is saved
     # into Artist / Album with its tags and artwork. The library's own count of songs with no file comes straight from

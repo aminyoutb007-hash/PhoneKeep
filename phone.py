@@ -223,6 +223,10 @@ class BackupData:
             elif key == "contacts":
                 if not self.contacts:
                     raise wv.PhoneKeepError("No contacts in this backup.")
+                try:
+                    sx.load_contact_photos(c, self.contacts)     # D1: read once, when Contacts is first opened
+                except Exception:
+                    pass                                         # the list without photos
                 v = self.contacts
             elif key == "calls":
                 v = sx.load_calls(c)
@@ -250,6 +254,10 @@ class BackupData:
             return v
 
     def count(self, key: str) -> str:
+        if key == "contacts":                     # the photos wait until Contacts is opened
+            if not self.contacts:
+                raise wv.PhoneKeepError("No contacts in this backup.")
+            return f"{len(self.contacts):,}"
         v = self.get(key)
         if key in CHAT_APPS:
             chats = v if key == "messages" else v["chats"]
@@ -1883,12 +1891,8 @@ class PhoneWindow(tk.Toplevel):
         self.table_view(key, sx.CALL_HEADERS, rows, [150, 80, 180, 140, 110, 70, 120])
 
     def v_contacts(self, key, people):
-        self.view_sub.configure(text=f"{len(people):,} contacts")
-        rows = [[p["name"], "\n".join(v for _l, v in p["phones"]), "\n".join(v for _l, v in p["emails"]),
-                 " · ".join(x for x in (p["org"], p["title"]) if x), p["birthday"], p["note"]] for p in people]
-        self.table_view(key, ["Name", "Phone", "Email", "Company", "Birthday", "Note"], rows,
-                        [200, 160, 200, 160, 90, 200],
-                        actions=[("Save as vCard (.vcf)", lambda sel: self.export_section("contacts", {"web"}))])
+        import contacts_ui
+        contacts_ui.ContactsView(self, key, people)          # D1: photos, the phone's Lists, a contact card
 
     def v_calendar(self, key, events):
         self.view_sub.configure(text=f"{len(events):,} events")
