@@ -167,21 +167,21 @@ def write_notes_pdf(notes: list[dict], dest: Path, read: Callable, title: str = 
     """One PDF with these notes, each on its own page(s). `read(domain, rel)` gives a backup file's bytes."""
     cp._register_fonts()
     import quicklook
-    work = quicklook.private_tmp("phonekeep-notes-pdf-")
-    emoji = cp.EmojiCache(work / "emoji")
-    pics = _Pictures(work / "img", read)
-    st = _styles()
-    story: list = []
-    for i, n in enumerate(notes):
-        if i:
-            story.append(PageBreak())
-        story += note_flowables(n, st, emoji, pics)
-        if progress:
-            progress((i + 1) / max(len(notes), 1))
     dest = Path(dest)
-    dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
-    try:
+    work = quicklook.private_tmp("phonekeep-notes-pdf-")
+    try:                                             # whatever stops it (a damaged picture, a cancel), work goes
+        emoji = cp.EmojiCache(work / "emoji")
+        pics = _Pictures(work / "img", read)
+        st = _styles()
+        story: list = []
+        for i, n in enumerate(notes):
+            if i:
+                story.append(PageBreak())
+            story += note_flowables(n, st, emoji, pics)
+            if progress:
+                progress((i + 1) / max(len(notes), 1))
+        dest.parent.mkdir(parents=True, exist_ok=True)
         doc = SimpleDocTemplate(str(part), pagesize=cp.A4, leftMargin=cp.MARGIN, rightMargin=cp.MARGIN,
                                 topMargin=cp.MARGIN, bottomMargin=cp.MARGIN + 4 * mm, title=title,
                                 author="PhoneKeep")

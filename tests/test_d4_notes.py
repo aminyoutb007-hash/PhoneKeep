@@ -757,6 +757,37 @@ if text is not None and many.exists():
     mt = pdf_text(many) or ""
     check("Bank details" not in mt and "Receipts" in mt and "Door code" in mt, "  the locked note isn't in it")
 
+# a PDF stopped half-way (a picture that fails to read, or a cancel) leaves no scaled pictures behind
+import notes_pdf
+import quicklook
+
+
+class Stop(Exception):
+    pass
+
+
+def bad_read(dom, rel):
+    if rel.endswith("IMG_0102.jpeg"):
+        raise Stop("damaged picture")
+    return ctx.read(dom, rel)
+
+
+def cancel(f):
+    raise Stop("cancelled")
+
+
+stopped = []
+for how, rd, prog in (("a picture that can't be read", bad_read, None), ("a cancel", ctx.read, cancel)):
+    try:
+        notes_pdf.write_notes_pdf([by["Weekend trip"], by["Receipts"]], W / "stopped" / "Stopped.pdf", rd,
+                                  progress=prog)
+    except Stop:
+        stopped.append(how)
+left = list(quicklook.private_dir().glob("phonekeep-notes-pdf-*"))
+half = list((W / "stopped").glob("*")) if (W / "stopped").exists() else []
+check(stopped == ["a picture that can't be read", "a cancel"] and not left and not half,
+      f"a notes PDF stopped by {' or by '.join(stopped)} leaves no scaled pictures and no half-written file ({len(left)})")
+
 # Save this note (.txt)
 choose(0)
 tree.selection_set(str(notes.index(by["Weekend trip"])))
