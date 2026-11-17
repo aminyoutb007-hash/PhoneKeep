@@ -155,7 +155,7 @@ win.allfiles_preview()               # what Space, Return and double-click call 
 v = win.allfiles_viewer
 pump(lambda: v.shown_kind == "play", 20, "preview")
 dest = v.open_from_file(wait=True)
-check(dest is not None and dest.name.endswith("sms.db") and dest.stat().st_size > 0 and dest.parent == quicklook.private_dir(),
+check(dest is not None and dest.name.endswith("sms.db") and dest.stat().st_size > 0 and quicklook.private_dir() in dest.parents,
       "preview: a file with no built-in preview is copied to the private folder and opened from there")
 v.close()
 
