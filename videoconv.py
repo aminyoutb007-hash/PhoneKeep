@@ -68,8 +68,12 @@ def _top_level(path: Path):
         while pos + 8 <= total:
             f.seek(pos)
             h = f.read(16)
+            if len(h) < 8:
+                break
             size, kind = struct.unpack(">I4s", h[:8])
             if size == 1:
+                if len(h) < 16:                               # a damaged last header: stop here
+                    break
                 size = struct.unpack(">Q", h[8:16])[0]
             elif size == 0:
                 size = total - pos
@@ -94,7 +98,7 @@ def video_codec(path: Path) -> Optional[str]:
     """The video track's sample format ('hvc1', 'avc1'…), or None when there is no readable video track."""
     try:
         _off, moov = _moov(Path(path))
-    except OSError:
+    except (OSError, struct.error):                           # a damaged file is "not a video we can read"
         return None
     if not moov:
         return None
@@ -140,7 +144,7 @@ def _rebuild(buf: bytes, start: int, end: int, secs: Optional[int], xyz: Optiona
             continue                                     # replaced by the one below
         else:
             atom = bytearray(buf[s:e])
-            if secs is not None and kind in (b"mvhd", b"tkhd", b"mdhd"):
+            if secs is not None and kind in (b"mvhd", b"tkhd", b"mdhd") and e - s > h:
                 if atom[h] == 1 and e - s >= h + 20:            # version 1: 64-bit created and modified
                     struct.pack_into(">QQ", atom, h + 4, secs, secs)
                 elif atom[h] == 0 and e - s >= h + 12:          # version 0: 32-bit
@@ -267,7 +271,7 @@ def stamp(path: Path, when: Optional[dt.datetime], lat: Optional[float] = None, 
             shutil.copyfileobj(src, dst, 1 << 20)
         os.replace(tmp, path)
         return True
-    except (OSError, struct.error, ValueError, OverflowError):
+    except (OSError, struct.error, ValueError, OverflowError, IndexError, UnicodeError):
         try:
             path.with_name(path.name + ".part").unlink()
         except OSError:

@@ -110,24 +110,48 @@ def free_name(folder: Path, name: str, size: int = 0, when=None) -> str:
     return f"{stem} ({n}){ext}"
 
 
+def _saved_before(path: Path, when) -> bool:
+    """path is missing, or is this item saved before (saved files are dated with the date taken)."""
+    if not path.exists():
+        return True
+    try:
+        return when is not None and abs(path.stat().st_mtime - when.timestamp()) < 2
+    except (OSError, ValueError, OverflowError):
+        return False
+
+
+def _live_stem(folder: Path, item, photo_ext: str) -> str:
+    """A Live Photo's name, free for the photo and for its video as .MOV and .MP4 (or taken by this Live Photo
+    saved before), so neither ever replaces a different file and both keep the same name."""
+    stem = Path(item.name).stem
+    exts = {photo_ext, Path(item.live_video).suffix, ".MP4"}
+    n, cand = 2, stem
+    while not all(_saved_before(Path(folder) / (cand + e), item.when) for e in exts):
+        cand, n = f"{stem} ({n})", n + 1
+    return cand
+
+
 def save_item(source, item, folder: Path, compatible: bool, tmp: Path) -> list[Path]:
     """Save one photo or video (and a Live Photo's short video) into folder. Returns the files written."""
     out = []
     lat, lon = getattr(item, "lat", None), getattr(item, "lon", None)
+    live = getattr(item, "live_video", None)
     if compatible and item.video and videoconv.available():
         saved = _save_video(source, item.id, item.name, folder, item.when, lat, lon, tmp, getattr(item, "size", 0))
         out += [saved] if saved else []
-    else:
-        out += _save_still(source, item, folder, compatible, tmp)
-    if getattr(item, "live_video", None):                           # a Live Photo: the photo and its short video
-        stem = Path(out[0].name).stem if out else Path(item.name).stem
-        mov = stem + Path(item.live_video).suffix
+    elif live:
+        name = jpg_name(item.name) if compatible and not item.video else item.name
+        stem = _live_stem(folder, item, Path(name).suffix)
+        out += _save_still(source, item, folder, compatible, tmp, stem + Path(name).suffix)
+        mov = stem + Path(live).suffix                              # a Live Photo: its short video, same name
         if compatible and videoconv.available():
-            saved = _save_video(source, item.live_video, mov, folder, item.when, lat, lon, tmp, 0, keep_name=True)
+            saved = _save_video(source, live, mov, folder, item.when, lat, lon, tmp, 0, keep_name=True)
             out += [saved] if saved else []
-        elif source.copy(item.live_video, folder / mov):
+        elif source.copy(live, folder / mov):
             set_file_date(folder / mov, item.when)
             out.append(folder / mov)
+    else:
+        out += _save_still(source, item, folder, compatible, tmp)
     return out
 
 
@@ -148,7 +172,16 @@ def _save_video(source, src_id, name: str, folder: Path, when, lat, lon, tmp: Pa
             done = raw
         Path(folder).mkdir(parents=True, exist_ok=True)
         dest = Path(folder) / final
-        shutil.move(str(done), dest)
+        part = dest.with_name(dest.name + ".part")                  # another drive: a copy that can stop half-way
+        try:
+            shutil.move(str(done), part)
+            os.replace(part, dest)
+        except BaseException:
+            try:
+                part.unlink()
+            except OSError:
+                pass
+            raise
         set_file_date(dest, when)
         return dest
     finally:
@@ -159,11 +192,12 @@ def _save_video(source, src_id, name: str, folder: Path, when, lat, lon, tmp: Pa
                 pass
 
 
-def _save_still(source, item, folder: Path, compatible: bool, tmp: Path) -> list[Path]:
-    """A photo (HEIC → JPG when compatible), or a video saved as it is."""
+def _save_still(source, item, folder: Path, compatible: bool, tmp: Path, name: Optional[str] = None) -> list[Path]:
+    """A photo (HEIC → JPG when compatible), or a video saved as it is. name: already chosen (a Live Photo)."""
     out = []
-    name = jpg_name(item.name) if compatible and not item.video else item.name
-    name = free_name(folder, name, getattr(item, "size", 0), item.when)
+    if name is None:
+        name = jpg_name(item.name) if compatible and not item.video else item.name
+        name = free_name(folder, name, getattr(item, "size", 0), item.when)
     dest = folder / name
     if compatible and not item.video and Path(item.name).suffix.lower() in CONVERT:
         raw = tmp / item.name

@@ -101,6 +101,18 @@ check(videoconv.video_codec(junk) is None and videoconv.video_codec(cut) is None
       and videoconv.video_codec(W / "missing.MOV") is None,
       "a file that isn't a readable video (or is cut short, or missing) has no format, without an error")
 
+tail = W / "tail.MOV"
+tail.write_bytes((FIX / "h264.mov").read_bytes() + b"\0\0\0\x01mdat")      # a last header promising a 64-bit size
+empty_hdr = W / "empty.MOV"
+empty_hdr.write_bytes(b"\0\0\0\x14ftypqt  \0\0\0\0qt  " + b"\0\0\0\x10moov\0\0\0\x08mvhd")   # a header with no body
+try:
+    damaged = (videoconv.video_codec(tail), videoconv.video_codec(empty_hdr), videoconv.stamp(empty_hdr, TAKEN, LAT, LON))
+    raised = None
+except Exception as e:                       # noqa: BLE001 - the point is that nothing is raised
+    damaged, raised = None, e
+check(raised is None and damaged[0] == "avc1" and damaged[1] is None,
+      f"a damaged file (a cut-off last header, a header with no body) is read without an error ({raised!r})")
+
 # -- writing the date and the location (any computer) -------------------------------------------------------------
 for name, where in (("h264.mov", "index before the picture data"), ("hevc.mov", "index after the picture data")):
     f = W / f"stamp-{name}"
@@ -254,6 +266,35 @@ if videoconv.available():
           == (FIX / "hevc.mov").read_bytes() and not left
           and abs((W / "failed/IMG_0200.MOV").stat().st_mtime - TAKEN.timestamp()) < 2,
           "a conversion that fails saves the original (dated), and leaves nothing behind")
+
+    real_move = photoconv.shutil.move
+
+    def half_move(a, b):                     # the chosen folder is on another drive and it fills up half-way
+        Path(b).write_bytes(Path(a).read_bytes()[:100])
+        raise OSError(28, "No space left on device")
+    photoconv.shutil.move = half_move
+    try:
+        save(v_hevc, True, "full")
+        stopped = None
+    except OSError as e:
+        stopped = e
+    finally:
+        photoconv.shutil.move = real_move
+    check(stopped is not None and not any((W / "full").iterdir()),
+          f"a disk that fills up while saving leaves no half-written video in the folder, and says so "
+          f"({sorted(p.name for p in (W / 'full').iterdir())})")
+
+    other = W / "live2" / "IMG_0300.MP4"
+    other.parent.mkdir()
+    other.write_bytes(b"a different video from another device")
+    out, _ = save(live, True, "live2")
+    again, _ = save(live, True, "live2")
+    check(sorted(p.name for p in out) == ["IMG_0300 (2).JPG", "IMG_0300 (2).MP4"]
+          and other.read_bytes() == b"a different video from another device"
+          and sorted(p.name for p in again) == sorted(p.name for p in out)
+          and len(list((W / "live2").iterdir())) == 3,
+          f"a Live Photo whose name is taken by another video gets a free name for both, never replacing it, and "
+          f"saving again makes no third copy ({sorted(p.name for p in out)})")
 else:
     print("     (no avconvert on this computer: the conversion checks run on a Mac)")
 
@@ -264,6 +305,16 @@ try:
     live_out, _ = save(live, True, "windows-live")
 finally:
     videoconv.available = real_available
+other = W / "windows-live2" / "IMG_0300.MOV"
+other.parent.mkdir()
+other.write_bytes(b"a different video")
+videoconv.available = lambda: False
+try:
+    taken, _ = save(live, True, "windows-live2")
+finally:
+    videoconv.available = real_available
+check(sorted(p.name for p in taken) == ["IMG_0300 (2).JPG", "IMG_0300 (2).MOV"] and other.read_bytes() == b"a different video",
+      f"without a converter too, a Live Photo never replaces a different file ({sorted(p.name for p in taken)})")
 check([p.name for p in out] == ["IMG_0200.MOV"] and (W / "windows/IMG_0200.MOV").read_bytes()
       == (FIX / "hevc.mov").read_bytes()
       and sorted(p.name for p in live_out) == ["IMG_0300.JPG", "IMG_0300.MOV"],
