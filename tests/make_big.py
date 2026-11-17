@@ -45,12 +45,20 @@ def build() -> Path:
     def fid_of(domain, rel):
         return hashlib.sha1(f"{domain}-{rel}".encode()).hexdigest()
 
+    links: dict = {}
+    copies: dict = {}
+
     def add(domain, rel, path: Path, mtime=None, link=False):
         fid = fid_of(domain, rel)
         (BK / fid[:2]).mkdir(exist_ok=True)
         dest = BK / fid[:2] / fid
         if link:
-            os.link(path, dest)
+            # Windows (NTFS) allows 1,023 links to one file: link to a fresh copy every 1,000
+            n = links[path] = links.get(path, 0) + 1
+            if n % 1000 == 1:
+                copies[path] = path.with_name(f"{path.stem}-{n // 1000}{path.suffix}")
+                shutil.copyfile(path, copies[path])
+            os.link(copies[path], dest)
         else:
             shutil.move(str(path), dest)
         blob = None
