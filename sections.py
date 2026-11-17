@@ -1114,11 +1114,11 @@ def sec_calls(ctx: Ctx) -> dict:
 # Notes
 # ---------------------------------------------------------------------------
 
-def note_text(data: Optional[bytes]) -> Optional[str]:
+def note_text(data: Optional[bytes], raw: Optional[bytes] = None) -> Optional[str]:
     """A note body's text alone (NoteStoreProto.document.note.note_text), or None. Through notes_doc: a damaged or
-    oversized blob gives None, never an error or a hang."""
+    oversized blob gives None, never an error or a hang. `raw`: the body already unpacked (notes_doc.body_unzip)."""
     try:
-        raw = notes_doc.unzip(data)
+        raw = raw if raw is not None else notes_doc.body_unzip(data)
         if not raw:
             return None
         buf = raw
@@ -1160,9 +1160,11 @@ def _note_kind(uti: str) -> str:
     return "file"
 
 
-def _note_attachments(con, dom: str, rels) -> dict[str, dict]:
+def _note_attachments(con, dom: str, rels, budget: Optional[notes_doc.Budget] = None) -> dict[str, dict]:
     """Every attachment in the Notes database by identifier: {kind, uti, name, file: (domain, rel) or None,
-    preview: (domain, rel) or None, rows (tables), items (a gallery's pages), url (links)}."""
+    preview: (domain, rel) or None, rows (tables), items (a gallery's pages), url (links)}. Each identifier is
+    read once (the last row that has it, as before) and each file lookup is done once, so rows that repeat an
+    identifier cost nothing more; tables and galleries unpack within `budget`."""
     files: dict[tuple[str, str], list[str]] = {}
     for rel in rels:
         m = _NOTE_FILE.search("/" + rel)
@@ -1194,32 +1196,44 @@ def _note_attachments(con, dom: str, rels) -> dict[str, dict]:
                 best = (score, rel)
         return (dom, best[1]) if best else None
 
+    found: dict[tuple, Optional[str]] = {}
+
+    def find(folder: str, ident: str, name: str = "", exts: tuple = ()) -> Optional[str]:
+        """The newest file in `folder` for `ident` (named `name` if one is; ending in `exts` if given), once."""
+        key = (folder, ident, name, exts)
+        if key not in found:
+            got = [x for x in files.get((folder, ident), []) if not exts or x.lower().endswith(exts)]
+            named = [x for x in got if name and x.rsplit("/", 1)[-1] == name]
+            found[key] = newest(named or got)
+        return found[key]
+
     out: dict[str, dict] = {}
-    for r in rows:
+    source: dict[str, object] = {}                           # identifier -> the row it was read from
+    for r in reversed(rows):
         if not r["ZTYPEUTI"]:
             continue
         ident = str(r["ZIDENTIFIER"]).upper()
+        if ident in source:                                  # a later row already gave this identifier
+            continue
+        source[ident] = r
         kind = _note_kind(r["ZTYPEUTI"])
         a = {"id": ident, "uti": r["ZTYPEUTI"], "kind": kind, "name": "", "file": None, "preview": preview(ident)}
         media = by_pk.get(r["ZMEDIA"]) if r["ZMEDIA"] else None
         if media is not None:
             a["name"] = media["ZFILENAME"] or ""
-            got = files.get(("Media", str(media["ZIDENTIFIER"]).upper()), [])
-            named = [x for x in got if a["name"] and x.rsplit("/", 1)[-1] == a["name"]]
-            rel = newest(named or got)
+            rel = find("Media", str(media["ZIDENTIFIER"]).upper(), a["name"])
             a["file"] = (dom, rel) if rel else None
         if kind == "drawing":
-            rel = newest([x for x in files.get(("FallbackImages", ident), [])
-                          if x.lower().endswith((".jpg", ".jpeg", ".png"))])
+            rel = find("FallbackImages", ident, exts=(".jpg", ".jpeg", ".png"))
             a["file"] = (dom, rel) if rel else a["file"]
             a["name"] = a["name"] or "Drawing"
         elif kind == "scan":
-            rel = newest(files.get(("FallbackPDFs", ident), []))
+            rel = find("FallbackPDFs", ident)
             a["file"] = (dom, rel) if rel else a["file"]
             a["name"] = a["name"] or "Scanned document.pdf"
         elif kind == "table":
             try:
-                a["rows"] = notes_doc.table(r["ZMERGEABLEDATA1"])
+                a["rows"] = notes_doc.table(r["ZMERGEABLEDATA1"], budget)
             except Exception:
                 a["rows"] = None
         elif kind == "link":
@@ -1236,13 +1250,10 @@ def _note_attachments(con, dom: str, rels) -> dict[str, dict]:
                 if kid["id"] not in have.setdefault(gallery["id"], set()):
                     have[gallery["id"]].add(kid["id"])
                     gallery.setdefault("items", []).append(kid)
-    sorted_ = set()
-    for r in rows:
-        ident = str(r["ZIDENTIFIER"]).upper()
-        g = out.get(ident)
-        if g and g.get("items") and ident not in sorted_:              # each gallery sorted once
-            sorted_.add(ident)
-            order = notes_doc.gallery_order(r["ZMERGEABLEDATA1"], [k["id"] for k in g["items"]])
+    for ident, r in source.items():                          # each gallery sorted once, by its own row
+        g = out[ident]
+        if g.get("items"):
+            order = notes_doc.gallery_order(r["ZMERGEABLEDATA1"], [k["id"] for k in g["items"]], budget)
             place = {i: n for n, i in reversed(list(enumerate(order)))}
             g["items"].sort(key=lambda k: place[k["id"]])
     return out
@@ -1278,19 +1289,24 @@ def load_notes(ctx: Ctx) -> list[dict]:
     data = {}
     if "ZICNOTEDATA" in tables(con):
         data = {r["Z_PK"]: r["ZDATA"] for r in select(con, "ZICNOTEDATA", ["Z_PK", "ZDATA"])}
-    try:
-        attachments = _note_attachments(con, dom, ctx.files(dom))
+    try:                                     # tables and galleries, and the bodies, each unpack within a budget
+        attachments = _note_attachments(con, dom, ctx.files(dom), notes_doc.Budget())
     except Exception:
         attachments = {}
+    bodies = notes_doc.Budget()
     notes = []
     for r in objs:
         if r["ZNOTEDATA"] is None or r["ZMARKEDFORDELETION"]:
             continue
         locked = bool(r["ZISPASSWORDPROTECTED"])
-        blocks, mine = None, {}
+        blocks, mine, raw = None, {}, None
         if not locked:
+            try:
+                raw = notes_doc.body_unzip(data.get(r["ZNOTEDATA"]), bodies)     # once, for body and fallback
+            except Exception:
+                raw = None
             try:                                 # a damaged or hostile body: this note as plain text, the rest as usual
-                parsed = notes_doc.body(data.get(r["ZNOTEDATA"]))
+                parsed = notes_doc.body(None, raw=raw) if raw else None
                 if parsed is not None:
                     blocks = notes_doc.paragraphs(*parsed)
                     for b in blocks:
@@ -1302,7 +1318,7 @@ def load_notes(ctx: Ctx) -> list[dict]:
             except Exception:
                 blocks, mine = None, {}
         if blocks is None:
-            text = None if locked else note_text(data.get(r["ZNOTEDATA"]))
+            text = note_text(None, raw=raw) if raw else None
         folder = folder_name(r["ZFOLDER"])
         notes.append({"title": r["ZTITLE1"] or (text or "").split("\n", 1)[0][:80] or "Untitled",
                       "folder": folder,

@@ -24,29 +24,49 @@ LISTS = ("bullet", "dash", "number", "check")
 OBJ = "￼"
 
 
-MAX_UNZIP = 32 * 1024 * 1024    # a note body or table is a few KB; more than this is a damaged or hostile blob
+MAX_UNZIP = 32 * 1024 * 1024    # a table or gallery is a few KB; more than this is a damaged or hostile blob
+MAX_BODY = 4 * 1024 * 1024      # a note body: its text and styles (pictures are files of their own)
+MAX_TOTAL = 64 * 1024 * 1024    # all the note bodies of one load of the notes, and again all its tables and
+                                # galleries (two budgets), so many blobs just under the limits can't keep it busy
+                                # either; past it, what's left can't be read (snippets, "can't be read" tables)
 MAX_INDENT = 8                  # Notes goes no deeper; a bigger number would build huge margins and strings
 MAX_CELLS = 100_000             # a table's rows x columns; a bigger one is damaged (and the grid alone would be huge)
 _BREAKS = re.compile("(\n|" + OBJ + ")")
 _UUID = re.compile(rb"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
 
 
-def unzip(data) -> Optional[bytes]:
-    """A blob gunzipped (or inflated), at most MAX_UNZIP bytes: None if it would be bigger. Not compressed at all:
-    the bytes as they are."""
+class Budget:
+    """How many more bytes one load of the notes may unpack (MAX_TOTAL)."""
+
+    def __init__(self, total: int = MAX_TOTAL):
+        self.left = total
+
+
+def unzip(data, limit: int = MAX_UNZIP, budget: Optional[Budget] = None) -> Optional[bytes]:
+    """A blob gunzipped (or inflated), at most `limit` bytes: None if it would be bigger, or if `budget` is spent.
+    Not compressed at all: the bytes as they are. What's unpacked (or refused) is taken from `budget`."""
     if not data:
         return None
+    if budget is not None:
+        if budget.left <= 0:
+            return None
+        limit = min(limit, budget.left)
     data = bytes(data)
     for wbits in (16 + zlib.MAX_WBITS, zlib.MAX_WBITS):
         d = zlib.decompressobj(wbits)
         try:
-            out = d.decompress(data, MAX_UNZIP)
+            got = d.decompress(data, limit)
         except zlib.error:
             continue
-        if d.unconsumed_tail:
-            return None                                   # a "gzip bomb": refused, never expanded
-        return out
-    return data
+        out = None if d.unconsumed_tail else got           # a "gzip bomb": refused, never expanded
+        used = len(got)
+        break
+    else:
+        out = data if len(data) <= limit else None
+        used = min(len(data), limit)
+    if budget is not None:
+        budget.left -= max(used, 1)
+    return out
 
 
 def _varint(b: bytes, i: int) -> tuple[int, int]:
@@ -75,6 +95,8 @@ def fields(buf: bytes) -> dict[int, list]:
         while i < len(buf):
             key, i = _varint(buf, i)
             f, wt = key >> 3, key & 7
+            if f == 0:                                     # no field 0 in protobuf: not a message (zeros, junk)
+                break
             if wt == 0:
                 v, i = _varint(buf, i)
             elif wt == 1:
@@ -101,9 +123,8 @@ def _str(v) -> str:
     return v.decode("utf-8", "replace") if isinstance(v, (bytes, bytearray)) else ("" if v is None else str(v))
 
 
-def _note_msg(data) -> Optional[dict]:
-    """NoteStoreProto.document(2).note(3), from a ZICNOTEDATA.ZDATA blob."""
-    raw = unzip(data)
+def _note_msg(raw: Optional[bytes]) -> Optional[dict]:
+    """NoteStoreProto.document(2).note(3), from a ZICNOTEDATA.ZDATA blob already unpacked (body_unzip)."""
     if not raw:
         return None
     doc = _one(fields(raw), 2)
@@ -129,9 +150,15 @@ def _run(r: bytes) -> dict:
             "attachment": (_str(_one(att, 1)), _str(_one(att, 2))) if att.get(1) else None}
 
 
-def body(data) -> Optional[tuple[str, list[dict]]]:
-    """(text, runs) of a note, or None if the blob isn't a note body (a locked note is encrypted)."""
-    note = _note_msg(data)
+def body_unzip(data, budget: Optional[Budget] = None) -> Optional[bytes]:
+    """A ZICNOTEDATA.ZDATA blob unpacked (at most MAX_BODY), once: body() and the plain-text fallback both read it."""
+    return unzip(data, MAX_BODY, budget)
+
+
+def body(data, budget: Optional[Budget] = None, raw: Optional[bytes] = None) -> Optional[tuple[str, list[dict]]]:
+    """(text, runs) of a note, or None if the blob isn't a note body (a locked note is encrypted). `raw`: the blob
+    already unpacked by body_unzip."""
+    note = _note_msg(raw if raw is not None else body_unzip(data, budget))
     if note is None or not note.get(2):
         return None
     text = _str(note[2][0])
@@ -216,10 +243,10 @@ def _split_keep(s: str):
 
 # -- mergeable data: tables and galleries ---------------------------------------------------------------------
 
-def _mergeable(data) -> Optional[dict]:
+def _mergeable(data, budget: Optional[Budget] = None) -> Optional[dict]:
     """MergableDataProto.mergable_data_object(2).mergeable_data_object_data(3) as
     {"entries", "keys", "types", "uuids"}."""
-    raw = unzip(data)
+    raw = unzip(data, MAX_UNZIP, budget)
     if not raw:
         return None
     obj = _one(fields(raw), 2)
@@ -236,10 +263,10 @@ def _objid(b) -> dict:
     return fields(b) if isinstance(b, bytes) else {}
 
 
-def table(data) -> Optional[list[list[str]]]:
+def table(data, budget: Optional[Budget] = None) -> Optional[list[list[str]]]:
     """A table attachment's cells, row by row, as on the phone; None if it can't be read. Every step is linear in
     the blob (UUIDs by a dict, each object read once), so a damaged or hostile table can't hold the backup long."""
-    md = _mergeable(data)
+    md = _mergeable(data, budget)
     if not md:
         return None
     entries, keys, types, uuids = md["entries"], md["keys"], md["types"], md["uuids"]
@@ -338,10 +365,10 @@ def table(data) -> Optional[list[list[str]]]:
     return grid
 
 
-def gallery_order(data, ids: list[str]) -> list[str]:
+def gallery_order(data, ids: list[str], budget: Optional[Budget] = None) -> list[str]:
     """A gallery's pages in its own order (the order their identifiers appear in its data); the rest after. One
     pass over the data, whatever the number of pages."""
-    raw = unzip(data) or b""
+    raw = unzip(data, MAX_UNZIP, budget) or b""
     want = {i.upper() for i in ids}
     first: dict[str, int] = {}
     for m in _UUID.finditer(raw):

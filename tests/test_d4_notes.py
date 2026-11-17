@@ -438,6 +438,21 @@ rows2.append((62, None, None, None, None, None, TALL, "com.apple.notes.table", N
               one_column_table(TALL_ROWS, 200_000)))
 rows2.append((42, "Tall table", None, 1, 142, t0 + 97, U(), None, None, None, None, None, None))
 data2.append((142, 42, tall_note))
+DUPS = 5_000                        # rows sharing one identifier, or one media row, with as many files each
+DUP_DRAW, DUP_MEDIA = U(), U()
+rows2 += [(100_000 + k, None, None, None, None, None, DUP_DRAW, "com.apple.drawing.2", None, None, None, None, None)
+          for k in range(DUPS)]
+rows2.append((99_999, None, None, None, None, None, DUP_MEDIA, None, None, "pic.jpeg", None, None, None))
+DUP_IMGS = [U() for _ in range(DUPS)]
+rows2 += [(200_000 + k, None, None, None, None, None, im, "public.jpeg", 99_999, None, None, None, None)
+          for k, im in enumerate(DUP_IMGS)]
+dup_rels = ([f"Accounts/A/FallbackImages/{DUP_DRAW}/{k}/FallbackImage.png" for k in range(DUPS)]
+            + [f"Accounts/A/Media/{DUP_MEDIA}/{k}/pic.jpeg" for k in range(DUPS)])
+MANY_BOMBS = 100                   # each unpacks to 10 MB of tiny fields: under 32 MB, over MAX_BODY
+small_bomb = gzip.compress(b"\x08\x01" * (5 << 20), 9)
+for k in range(MANY_BOMBS):
+    rows2.append((200 + k, f"Bomb {k}", None, 1, 300 + k, t0 - k, U(), None, None, None, None, f"snippet {k}", None))
+    data2.append((300 + k, 200 + k, small_bomb))
 rows2 += [(1000 + k, None, None, None, None, None, pg, "public.jpeg", None, None, 61, None, None)
           for k, pg in enumerate(GAL_PAGES)]
 c2.executemany("INSERT INTO ZICCLOUDSYNCINGOBJECT VALUES (" + ",".join("?" * 13) + ")", rows2)
@@ -466,7 +481,7 @@ def load_bad():
         got["notes"] = sx.load_notes(ctx2)
         con2 = sqlite3.connect(p2)
         con2.row_factory = sqlite3.Row
-        got["atts"] = sx._note_attachments(con2, DOM, [])
+        got["atts"] = sx._note_attachments(con2, DOM, dup_rels)
         con2.close()
     except BaseException as e:            # noqa: BLE001 - reported below
         got["error"] = e
@@ -499,6 +514,13 @@ check(BIGGAL in ga and [k["id"] for k in ga[BIGGAL]["items"][:3]] == list(revers
       "  a gallery of 20,000 pages in 30 MB of data is put in order in one pass")
 check(TALL in ga and ga[TALL]["rows"] == [["x"]] * TALL_ROWS,
       "  a 1-column table of 50,000 rows whose column is named 200,000 times reads each row once")
+check(ga.get(DUP_DRAW, {}).get("file") == (DOM, max(r_ for r_ in dup_rels if "FallbackImages" in r_))
+      and all(ga.get(im, {}).get("file") == (DOM, max(r_ for r_ in dup_rels if "/Media/" in r_)) for im in DUP_IMGS),
+      f"  {DUPS:,} rows sharing one identifier, and {DUPS:,} images sharing one media row, each with {DUPS:,} files, "
+      f"look their files up once")
+check(all(bn.get(f"Bomb {k}", {}).get("text") == f"snippet {k}" for k in range(MANY_BOMBS)),
+      f"  {MANY_BOMBS} note bodies that each unpack to 10 MB are refused (4 MB a body, 64 MB in all) and show their "
+      f"snippets")
 tn = bn.get("Tall table", {})
 check([b["id"] for b in tn.get("blocks") or [] if b["kind"] == "attachment"] == [TALL]
       and tn["text"].count("\n") < TALL_ROWS + 5,
@@ -652,6 +674,23 @@ lock = next(i for i in tree.get_children() if "Bank details" in tree.item(i, "va
 tree.selection_set(lock)
 a.update()
 check("Locked on your iPhone" in txt.get("1.0", "end"), "a locked note shows a lock and 'Locked on your iPhone'")
+
+# a note's big tables draw at most NoteView.MAX_CELLS cells (each a widget), whole rows, then say where the rest is
+big_tables = {f"T{k}": {"id": f"T{k}", "kind": "table", "rows": rows_}
+              for k, rows_ in enumerate([[["a"]] * 300, [["b", "c"]] * 1_000, [["d"]] * 10])}
+t1 = time.time()
+view.show({"title": "Big tables", "locked": False, "attachments": big_tables, "text": "",
+           "blocks": [{"kind": "attachment", "id": k, "uti": "com.apple.notes.table"} for k in big_tables]})
+a.update()
+took = time.time() - t1
+shown_txt = txt.get("1.0", "end")
+check(view.MAX_CELLS == 400 and view.shown["cells"] == 400 and took < 10
+      and [len(f.grid_slaves()) for f in view.tables] == [300, 100, 0],
+      f"three tables of 300, 2,000 and 10 cells draw 400 cells in all, whole rows "
+      f"({[len(f.grid_slaves()) for f in view.tables]}; {took:.1f} s)")
+check("950 more rows: save this note as PDF or text to see them all" in shown_txt
+      and "A table of 10 rows is too big to show here: save this note as PDF or text" in shown_txt,
+      "  the table cut short says how many rows are left out, the one that doesn't fit says it's too big")
 
 # E4's jump from a search hit lands on the note, whichever folder was chosen
 idx = notes.index(by["Old list"])

@@ -54,6 +54,9 @@ class NoteView:
     the UI thread, and each goes into the note when it's ready. Without it they're read straight away (tests)."""
 
     CACHE = 48                                       # decoded pictures kept, by backup file
+    MAX_CELLS = 400                                  # table cells drawn in one note: each is a widget, and Tk lays
+                                                     # out many slowly (500: 0.6 s, 1,500: 17 s); the rest are in
+                                                     # the note's PDF and text
 
     def __init__(self, txt: tk.Text, read: Callable, open_attachment: Callable[[dict], None],
                  submit: Optional[Callable] = None):
@@ -64,7 +67,7 @@ class NoteView:
         self.cache: dict = {}
         self.images: list = []                       # PhotoImages must outlive their place in the text
         self.tables: list[tk.Frame] = []
-        self.shown: dict = {"images": 0, "tables": 0, "files": 0}
+        self.shown: dict = {"images": 0, "tables": 0, "files": 0, "cells": 0}
         ink, muted = theme.TEXT, theme.TEXT_2
         t = txt
         t.tag_configure("title", font=font(20, "bold"), spacing1=4, spacing3=8)
@@ -98,7 +101,7 @@ class NoteView:
         for f in self.tables:
             f.destroy()
         self.images, self.tables = [], []
-        self.shown = {"images": 0, "tables": 0, "files": 0}
+        self.shown = {"images": 0, "tables": 0, "files": 0, "cells": 0}
         self.gen += 1
         self.pending = 0
         self.txt.configure(state="normal")
@@ -199,15 +202,26 @@ class NoteView:
         return True
 
     def _table(self, rows: list[list[str]]) -> None:
+        left = self.MAX_CELLS - self.shown["cells"]
+        width = max((len(row) for row in rows), default=0)
+        fit = min(len(rows), left // width) if width else len(rows)   # whole rows only, within the note's cells
+        if fit < len(rows):
+            rest = len(rows) - fit
+            more = (f"{rest:,} more row{'s' if rest != 1 else ''}" if fit else
+                    f"A table of {len(rows):,} row{'s' if len(rows) != 1 else ''} is too big to show here")
         f = tk.Frame(self.txt, bg=theme.BORDER, bd=0)
-        for r, row in enumerate(rows):
+        for r, row in enumerate(rows[:fit]):
             for c, cell in enumerate(row):
                 tk.Label(f, text=cell, bg=theme.CARD, fg=theme.TEXT, font=font(12, "bold" if r == 0 else "normal"),
                          anchor="nw", justify="left", wraplength=180, padx=6, pady=4
                          ).grid(row=r, column=c, sticky="nsew", padx=(0 if c else 1, 1), pady=(0 if r else 1, 1))
+        self.shown["cells"] += sum(len(row) for row in rows[:fit])
         self.tables.append(f)
-        self.txt.window_create("end", window=f, padx=2, pady=6)
-        self.txt.insert("end", "\n")
+        if fit:
+            self.txt.window_create("end", window=f, padx=2, pady=6)
+            self.txt.insert("end", "\n")
+        if fit < len(rows):
+            self.txt.insert("end", f"{more}: save this note as PDF or text to see them all\n", ("meta",))
         self.shown["tables"] += 1
 
     def _file_line(self, a: dict, at: str = "end", newline: bool = True) -> None:
