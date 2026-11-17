@@ -134,8 +134,8 @@ class ContactsView:
         lists = [("All contacts", len(people))] + sx.contact_lists(people)
         self.lists = ttk.Treeview(side, columns=("n",), show="tree", selectmode="browse",
                                   height=max(4, min(len(lists), 16)), style="Contacts.Treeview")
-        self.lists.column("#0", width=190)
-        self.lists.column("n", width=56, anchor="e")
+        self.lists.column("#0", width=150)
+        self.lists.column("n", width=48, anchor="e")
         self.list_of: dict[str, str] = {}
         for i, (name, n) in enumerate(lists):
             iid = f"l{i}"
@@ -147,15 +147,15 @@ class ContactsView:
 
         self.card_box = card(body)
         self.card_box.pack(side="right", fill="y", padx=(10, 0))
-        self.card_box.configure(width=340)
+        self.card_box.configure(width=300)
         self.card_box.pack_propagate(False)
 
         mid = card(body)
         mid.pack(side="left", fill="both", expand=True, padx=(10, 0))
         self.tree = ttk.Treeview(mid, columns=("detail",), show="tree", selectmode="extended",
                                  style="Contacts.Treeview")
-        self.tree.column("#0", width=260, stretch=True)
-        self.tree.column("detail", width=200, stretch=True)
+        self.tree.column("#0", width=190, minwidth=140, stretch=True)      # fits a laptop's window; wider ones
+        self.tree.column("detail", width=140, minwidth=100, stretch=True)  # share the extra room
         sb = ttk.Scrollbar(mid, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side="left", fill="both", expand=True, padx=(4, 0), pady=4)
@@ -240,17 +240,17 @@ class ContactsView:
         head.pack(fill="x", padx=16, pady=(16, 8))
         self.card_photo = tk.Label(head, image=self.image(p, CARD_PX), bg=CARD)
         self.card_photo.pack()
-        tk.Label(head, text=p["name"], bg=CARD, fg=INK, font=font(17, "bold"), wraplength=300).pack(pady=(8, 0))
+        tk.Label(head, text=p["name"], bg=CARD, fg=INK, font=font(17, "bold"), wraplength=260).pack(pady=(8, 0))
         sub = " · ".join(x for x in (p.get("title"), p.get("org")) if x)
         if sub and sub != p["name"]:
-            tk.Label(head, text=sub, bg=CARD, fg=MUTED, font=font(12), wraplength=300).pack()
+            tk.Label(head, text=sub, bg=CARD, fg=MUTED, font=font(12), wraplength=260).pack()
         rows = tk.Frame(self.card_box, bg=CARD)
         rows.pack(fill="both", expand=True, padx=16)
 
         def field(label, value, kind=None):
             tk.Label(rows, text=label, bg=CARD, fg=MUTED, font=font(11), anchor="w").pack(fill="x", pady=(6, 0))
             w = tk.Label(rows, text=value, bg=CARD, fg=theme.LINK if kind else INK, font=font(13), anchor="w",
-                         justify="left", wraplength=300, cursor="hand2" if kind else "")
+                         justify="left", wraplength=260, cursor="hand2" if kind else "")
             w.pack(fill="x")
             if kind:
                 w.bind("<Button-1>", lambda e, v=value, k=kind: self.copy(v, k))
@@ -276,7 +276,7 @@ class ContactsView:
             field("note", p["note"][:600] + ("…" if len(p["note"]) > 600 else ""))
         if self.links:
             tk.Label(self.card_box, text="Click a number, email, address or link to copy it", bg=CARD, fg=MUTED,
-                     font=font(11)).pack(side="bottom", pady=(4, 12))
+                     font=font(11), wraplength=260, justify="center").pack(side="bottom", pady=(4, 12))
 
     def copy(self, value: str, what: str):
         """Copies, nothing more: no call, no email, no map (a map would send the address to the internet)."""
