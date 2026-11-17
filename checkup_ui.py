@@ -117,6 +117,7 @@ def details(win, key: str):
     if r is None:
         return
     c = r.card(key)
+    opened = win.current != f"checkup:{key}"      # opened now, not redrawn
     win.current = f"checkup:{key}"
     win._clear()
     top = tk.Frame(win.content, bg=BG)
@@ -138,7 +139,7 @@ def details(win, key: str):
         RoundButton(box, more[0], more[1], "secondary", 190, 34, 12).pack(anchor="w", padx=18, pady=(10, 0))
     tk.Frame(box, bg=CARD, height=14).pack()
     if key == "storage":
-        storage_suggestions(win, r)
+        storage_suggestions(win, r, again=opened)
     elif key == "battery":
         battery_history_view(win, r)
     elif key == "stability":
@@ -445,7 +446,7 @@ def open_cleanup(win, card: str):
     win.open_app("photos")
 
 
-def storage_suggestions(win, r: checkup.Report):
+def storage_suggestions(win, r: checkup.Report, again: bool = False):
     import datetime as dt
     import deviceinfo as di
     import phonekeep as wv
@@ -467,7 +468,7 @@ def storage_suggestions(win, r: checkup.Report):
     holder.pack(fill="x", padx=18, pady=(0, 14))
     win.storage_suggestions = None
     if callable(getattr(win, "load_apps", None)):
-        win.load_apps()                     # 5.1.3: the app list, in the background; shown again when it's in
+        win.load_apps(again=again)          # 5.1.3: the app list, in the background; shown again when it's in
     data, live, ov = getattr(win, "data", None), getattr(win, "live", None), getattr(win, "overview", None)
     day = ""
     try:

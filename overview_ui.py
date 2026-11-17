@@ -219,11 +219,12 @@ def storage_view(win, ov: di.Overview):
     except tk.TclError:
         keep = 0.0
     win.apps_canvas = None
+    opened = win.current != "storage"       # opened now, not redrawn
     win.current = "storage"
     win._clear()
     _header(win, "Storage", f"{ov.model} · {ov.capacity_label()}")
     if callable(getattr(win, "load_apps", None)):
-        win.load_apps()                     # 5.1.3: the app list, in the background
+        win.load_apps(again=opened)         # 5.1.3: the app list, in the background
     cats = di.categories(ov, getattr(win, "photos_bytes", None), getattr(win, "messages_bytes", None))
     c = tk.Frame(win.content, bg=CARD, highlightthickness=1, highlightbackground=LINE)
     c.pack(fill="x")
