@@ -264,11 +264,7 @@ class ContactsView:
         for lab, v in p.get("urls", ()):
             field(lab if lab and lab != "homepage" else "website", v, "web address")
         if p.get("birthday"):
-            try:
-                d = dt.date.fromisoformat(p["birthday"])
-                field("birthday", f"{d.day} {d:%B %Y}")
-            except ValueError:
-                field("birthday", p["birthday"])
+            field("birthday", sx.birthday_text(p["birthday"]))
         lists = list(p.get("accounts", ())) + list(p.get("groups", ()))
         if lists:
             field("lists", ", ".join(lists))
@@ -309,10 +305,13 @@ class ContactsView:
 
         def go():
             tmp = path.with_name(path.name + ".part")
-            with open(tmp, "w", encoding="utf-8", newline="") as f:
-                for p in people:
-                    f.write(sx.vcard(p))
-            tmp.replace(path)
+            try:
+                with open(tmp, "w", encoding="utf-8", newline="") as f:
+                    for p in people:
+                        f.write(sx.vcard(p))
+                tmp.replace(path)
+            finally:
+                tmp.unlink(missing_ok=True)          # a save that stopped half-way leaves nothing behind
             return [path]
         self.win.run_save(f"{len(people):,} contact{'s' if len(people) != 1 else ''}", go, folder, "file")
 
@@ -332,10 +331,13 @@ class ContactsView:
         def go():
             import tables as tb
             tmp = path.with_name(path.name + ".part")     # never a half-written file under the real name
-            if kind == "excel":
-                tb.write_table_xlsx(tmp, "Contacts", sx.CONTACT_HEADERS, rows)
-            else:
-                tb.write_csv_rows(tmp, sx.CONTACT_HEADERS, rows)
-            tmp.replace(path)
+            try:
+                if kind == "excel":
+                    tb.write_table_xlsx(tmp, "Contacts", sx.CONTACT_HEADERS, rows)
+                else:
+                    tb.write_csv_rows(tmp, sx.CONTACT_HEADERS, rows)
+                tmp.replace(path)
+            finally:
+                tmp.unlink(missing_ok=True)
             return [path]
         self.win.run_save(f"{len(people):,} contacts", go, folder, "file")

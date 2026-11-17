@@ -462,7 +462,8 @@ def load_contact_photos(ctx: Ctx, people: list[dict]) -> int:
                 im = Image.open(io.BytesIO(r["data"]))
                 w, h = im.size
                 side = int(r["crop_width"] or min(w, h))
-                x, y = int(r["crop_x"] or (w - side) // 2), int(r["crop_y"] or (h - side) // 2)
+                x = (w - side) // 2 if r["crop_x"] is None else int(r["crop_x"])        # 0 is an edge, not "none"
+                y = (h - side) // 2 if r["crop_y"] is None else int(r["crop_y"])
                 y = max(0, h - y - side)         # the crop is measured from the bottom (Core Graphics)
                 im = im.crop((x, y, min(w, x + side), min(h, y + side))).convert("RGB")
                 im.thumbnail((640, 640))
@@ -504,7 +505,8 @@ TEL_TYPES = {"mobile": "CELL", "iphone": "CELL,IPHONE", "home": "HOME", "work": 
 def vcard(p: dict) -> str:
     """One contact as a vCard 3.0 (what Contacts on a Mac, Outlook, Google and Android import), with the photo."""
     def esc(s):
-        return str(s).replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
+        s = str(s).replace("\r\n", "\n").replace("\r", "\n")         # no bare CR inside a vCard line
+        return s.replace("\\", "\\\\").replace(",", "\\,").replace(";", "\\;").replace("\n", "\\n")
     lines = ["BEGIN:VCARD", "VERSION:3.0", f"N:{esc(p['last'])};{esc(p['first'])};;;", f"FN:{esc(p['name'])}"]
     if p.get("org"):
         lines.append(f"ORG:{esc(p['org'])}")
@@ -533,7 +535,8 @@ def vcard(p: dict) -> str:
     for lab, v in p.get("urls", ()):
         labelled("URL", "", lab, esc(v))
     if p.get("birthday"):
-        lines.append(f"BDAY:{p['birthday']}")
+        b = p["birthday"]                        # a birthday with no year: iOS keeps it as 1604
+        lines.append(f"BDAY:--{b[5:7]}{b[8:10]}" if b.startswith(NO_YEAR) else f"BDAY:{b}")
     if p.get("note"):
         lines.append(f"NOTE:{esc(p['note'])}")
     lists = list(p.get("groups", ()))
@@ -560,6 +563,18 @@ def vcard(p: dict) -> str:
     return "".join(_fold(x) for x in lines)
 
 
+NO_YEAR = "1604-"                           # the year iOS gives a birthday saved without one
+
+
+def birthday_text(b: str) -> str:
+    """A birthday as people write it ("1 January 1990"; "1 January" when the year wasn't saved)."""
+    try:
+        d = dt.date.fromisoformat(b)
+    except (TypeError, ValueError):
+        return b or ""
+    return f"{d.day} {d:%B}" if b.startswith(NO_YEAR) else f"{d.day} {d:%B %Y}"
+
+
 CONTACT_HEADERS = ["Name", "Phone", "Email", "Address", "Website", "Company", "Lists", "Birthday", "Note"]
 
 
@@ -570,7 +585,8 @@ def contact_row(p: dict) -> list:
     return [p["name"], joined("phones"), "\n".join(v for _, v in p.get("emails", ())),
             "\n\n".join(v for _l, v in p.get("addresses", ())), "\n".join(v for _l, v in p.get("urls", ())),
             " · ".join(x for x in (p["org"], p["title"]) if x),
-            ", ".join(list(p.get("accounts", ())) + list(p.get("groups", ()))), p["birthday"], p["note"]]
+            ", ".join(list(p.get("accounts", ())) + list(p.get("groups", ()))),
+            p["birthday"][5:] if p["birthday"].startswith(NO_YEAR) else p["birthday"], p["note"]]
 
 
 def sec_contacts(ctx: Ctx, people: list[dict]) -> dict:

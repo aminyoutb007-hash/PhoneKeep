@@ -196,6 +196,38 @@ check("item1.TEL;TYPE=VOICE:+44 7700 900222" in rcard and "item1.X-ABLabel:Boat"
       "a label the owner typed is kept, the way Apple's own vCards keep it")
 r.close()
 
+
+class OneDb:
+    """A stand-in for the backup: just a picture database."""
+    def __init__(self, rows):
+        self.con = sqlite3.connect(":memory:")
+        self.con.row_factory = sqlite3.Row
+        self.con.execute("CREATE TABLE ABFullSizeImage(ROWID INTEGER PRIMARY KEY, record_id, crop_x, crop_y, crop_width, data)")
+        self.con.executemany("INSERT INTO ABFullSizeImage(record_id, crop_x, crop_y, crop_width, data) VALUES (?,?,?,?,?)", rows)
+
+    def db(self, domain, rel):
+        return self.con if rel.endswith("AddressBookImages.sqlitedb") else None
+
+
+edge = Image.new("RGB", (300, 200), (128, 128, 128))
+edge.paste(Image.new("RGB", (150, 150), (250, 250, 0)), (0, 50))        # the bottom-left square: yellow
+eb = io.BytesIO()
+edge.save(eb, "JPEG", quality=95)
+jo = {"id": 7, "ids": [7]}
+sx.load_contact_photos(OneDb([(7, 0, 0, 150, eb.getvalue())]), [jo])
+jim = Image.open(io.BytesIO(jo["photo"])).convert("RGB")
+corners = [all(abs(c - t) < 40 for c, t in zip(jim.getpixel(xy), (250, 250, 0))) for xy in ((4, 4), (145, 145))]
+check(jim.size == (150, 150) and all(corners),
+      f"a picture cropped at the very edge (0, 0: the bottom left) is cropped there, not in the middle ({corners})")
+odd = sx.vcard({"name": "Jo Edge", "first": "Jo", "last": "Edge", "org": "", "title": "",
+                "note": "line one\r\nline two\rline three", "birthday": "1604-03-05",
+                "addresses": [("home", "1 Test Street\r\nTestbury")], "adr": {}})
+check("\r" not in odd.replace("\r\n", "") and "NOTE:line one\\nline two\\nline three" in odd.replace("\r\n ", ""),
+      "a note or address with Windows or old Mac line ends has no bare CR in the vCard: each line end is \\n")
+check("BDAY:--0305" in odd and sx.birthday_text("1604-03-05") == "5 March" and sx.birthday_text("1990-01-01") == "1 January 1990"
+      and sx.contact_row({"name": "J", "org": "", "title": "", "note": "", "birthday": "1604-03-05"})[7] == "03-05",
+      "a birthday saved without a year (iOS keeps 1604) shows and saves with no year")
+
 # -- the real phone window ---------------------------------------------------------------------------------------
 import keychain
 keychain.use_memory()
