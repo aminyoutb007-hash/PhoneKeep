@@ -186,6 +186,34 @@ ps = [subprocess.Popen([sys.executable, "-c", code, tag, str(go)]) for tag in ("
 rec = tamper._record()
 check(all(f"U/{t}-{i}" in rec for t in ("window", "helper") for i in range(25)),
       f"seals added by two processes at the same time are all recorded ({sum(k.startswith('U/') for k in rec)} of 50)")
+# ... and on Windows, where opening the lock while the other process deletes it raises PermissionError, and the record
+# can be held open by a reader for a moment: the seal waits its turn instead of being dropped (5.2.2; a Windows CI flake)
+real_open, real_replace, tries = tamper.os.open, Path.replace, {"open": 0, "replace": 0}
+
+
+def busy_open(path, *a, **k):
+    if str(path).endswith(".lock") and tries["open"] < 2:
+        tries["open"] += 1
+        raise PermissionError(13, "Access is denied", str(path))
+    return real_open(path, *a, **k)
+
+
+def busy_replace(self, target):
+    if self.name.endswith(".tmp") and tries["replace"] < 30:      # longer than the old 20 tries
+        tries["replace"] += 1
+        raise PermissionError(13, "Access is denied", str(target))
+    return real_replace(self, target)
+
+
+tamper.os.open, Path.replace = busy_open, busy_replace
+try:
+    busy = W / "Backups" / "00008030-S8REC" / "snapshots" / "20261120-000000"
+    tamper._note(busy, {"version": 1, "n": "busy"})
+finally:
+    tamper.os.open, Path.replace = real_open, real_replace
+check(tries == {"open": 2, "replace": 30} and tamper._seal_id(busy) in tamper._record()
+      and not list(W.glob("seals*.tmp")) and not (W / "seals.lock").exists(),
+      "a busy lock or record (Windows: Access is denied for a moment) waits, and the seal is still recorded")
 made = []
 _kb = keychain._backend
 store = {}
