@@ -167,6 +167,59 @@ check(len(pp.pool) < 200 and len(pp.images) <= pp.KEEP_IMAGES,
 print(f"     scrolled {len(pp.months[key]):,} photos in {steps} steps", flush=True)
 timed("photo grid scroll: slowest step", worst, 0.1)
 
+# -- reused tiles show and act on the right photo (a month of photos and videos, scrolled part of the way) --------
+month = pp.month_keys[0]
+pp.mlist.selection_set(month)
+pump(lambda: pp._month() == month, 10)
+pp.canvas.yview_moveto(0.4)
+pump(lambda: False, 0.5)
+items = pp.months[month]
+cols, step = pp._cols(), pp.tile + pp.GAP
+wrong = []
+for c in pp.pool:
+    if c.item is None:
+        continue
+    x, y = pp.canvas.coords(c.win)
+    n = int((y - pp.GAP) // step) * cols + int((x - pp.GAP) // step)
+    if items[n] is not c.item or pp.tiles.get(c.item.id) is not c:
+        wrong.append(c.item.name)
+check(pp.canvas.canvasy(0) > 0 and pp.tiles and not wrong,
+      f"after scrolling, every tile shows the photo of its own place in the grid ({len(pp.tiles)} tiles, wrong: {wrong[:3]})")
+c = next(c for c in pp.pool if c.item is not None and c.item is not items[pp.pool.index(c)])     # a reused tile
+target = c.item
+t1 = time.perf_counter()
+c.event_generate("<ButtonRelease-1>", x=5, y=5)
+a.update_idletasks()
+timed("click a photo: it's selected", time.perf_counter() - t1, 0.1)
+check(pp.selected == {target.id} and any(c.itemcget(k, "outline") == ui.SELECT_BLUE for k in c.find_all()
+                                         if c.type(k) == "rectangle"),
+      f"  a click on a reused tile selects the photo it shows now ({target.name}), with the frame")
+away = next(i for i in items if i.id not in pp.tiles and not i.video)
+drawn = []
+real_draw = pp._draw_tile
+pp._draw_tile = lambda item: (drawn.append(item.name), real_draw(item))
+before = {id(c): c.item for c in pp.pool}
+pp._thumb_ready(away, None, month)
+pp._draw_tile = real_draw
+check(not drawn and {id(c): c.item for c in pp.pool} == before,
+      f"a late thumbnail for a photo scrolled away changes no tile on screen ({away.name}; redrawn: {drawn})")
+t1 = time.perf_counter()
+pp._set_all(True)
+a.update_idletasks()
+timed("Select all 50,000", time.perf_counter() - t1, 0.1)
+framed = [c for c in pp.pool if c.item is not None and not getattr(c.item, "cloud_only", False)
+          and any(c.itemcget(k, "outline") == ui.SELECT_BLUE for k in c.find_all() if c.type(k) == "rectangle")]
+check(len(framed) == sum(1 for c in pp.pool if c.item is not None), f"  every tile on screen has the frame ({len(framed)})")
+t1 = time.perf_counter()
+pp._set_all(False)
+a.update_idletasks()
+timed("Select none", time.perf_counter() - t1, 0.1)
+pp.canvas.yview_moveto(0.8)
+pump(lambda: False, 0.3)
+pp._set_month(True)
+check(all(any(c.itemcget(k, "outline") == ui.SELECT_BLUE for k in c.find_all() if c.type(k) == "rectangle")
+          for c in pp.pool if c.item is not None), "  after Select this month, tiles further down have the frame too")
+
 print("\nE7 TIMES " + json.dumps(times), flush=True)
 a.destroy()
 print("\nE7 TESTS:", "PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures))
