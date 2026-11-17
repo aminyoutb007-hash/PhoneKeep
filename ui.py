@@ -2371,8 +2371,12 @@ PHOTO_FORMATS = [("Original (HEIC)", "Exactly as on the iPhone: smallest files, 
 
 
 def ask_photo_format(parent, initial: int = 0):
-    """P1: "Original (HEIC) / Most compatible (JPG)". True = JPG, False = original, None = cancelled."""
-    d = ChoiceDialog(parent, "Save photos as", "Videos are always saved as they are.", PHOTO_FORMATS, initial)
+    """P1: "Original (HEIC) / Most compatible (JPG)". True = JPG, False = original, None = cancelled.
+    P8: on a Mac, "Most compatible" also turns HEVC videos into H.264 MP4; elsewhere videos stay as they are."""
+    import videoconv
+    note = ("“Most compatible” also turns iPhone (HEVC) videos into MP4 (H.264), which plays everywhere; "
+            "long videos take a while." if videoconv.available() else "Videos are always saved as they are.")
+    d = ChoiceDialog(parent, "Save photos as", note, PHOTO_FORMATS, initial)
     parent.wait_window(d)
     return None if d.result is None else d.result == 1
 

@@ -22,6 +22,7 @@ What it does, all read-only for the phone:
   * M5: a group chat saved for one person keeps only their messages, in Excel and PDF (counts only).
   * M6: a chat's Media tab shows every attachment sms.db has; one photo shown large; Save all saves the ones the
     backup has, each dated when it was sent (counts only).
+  * P8: one HEVC video from the phone saved "Most compatible" is an H.264 MP4 with its date and location (yes/no).
   * P2: songs that only stream aren't listed in Music, and the screen says why; a song on the phone is saved into
     Artist / Album with its title, artist, album and artwork in the file (counts only).
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
@@ -325,6 +326,58 @@ try:
             check(good == len(with_gps), f"saved as JPG keeps the date and location ({good} of {len(with_gps)})")
         else:
             note("no photo with a location on the phone to save as JPG")
+
+        # -- P8: an HEVC video saved "Most compatible" becomes an H.264 MP4 with its date and location -------------
+        import videoconv
+        if videoconv.available():
+            vids = sorted((i for i in local if i.video and i.size), key=lambda i: (i.lat is None, i.size))[:30]
+            hevc, looked = None, 0
+            for i in vids:                      # the smallest with a location first, then without; the first HEVC
+                probe = WORK / "p8-probe" / i.name
+                probe.parent.mkdir(exist_ok=True)
+                looked += 1
+                if src.copy(i.id, probe) and videoconv.is_hevc(probe):
+                    hevc = i
+                probe.unlink(missing_ok=True)
+                if hevc:
+                    break
+            if hevc:
+                out8 = WORK / "p8"
+                t0 = time.time()
+                tmp8 = quicklook.private_tmp("phonekeep-p8-")
+                try:
+                    files = photoconv.save_item(src, hevc, out8, True, tmp8)
+                finally:
+                    shutil.rmtree(tmp8, ignore_errors=True)
+                took = time.time() - t0
+                f = next((p for p in files if p.suffix == ".MP4"), None)
+                import struct
+                checks = {}
+                if f is not None:
+                    _off, moov = videoconv._moov(f)
+                    w = hevc.when if hevc.when.tzinfo else hevc.when.astimezone()
+                    secs = int((w - videoconv.EPOCH_1904).total_seconds())
+                    times = []
+                    for k, s, h, e in videoconv._atoms(moov, 8):
+                        if k == b"mvhd":
+                            v = moov[s + h]
+                            times.append(struct.unpack(">Q" if v == 1 else ">I", moov[s + h + 4:s + h + (12 if v == 1 else 8)])[0])
+                    checks = {"H.264": videoconv.video_codec(f) == "avc1",
+                              "date inside": bool(times) and all(abs(t - secs) < 2 for t in times),
+                              "Apple date key": b"com.apple.quicktime.creationdate" in moov,
+                              "file date": abs(f.stat().st_mtime - hevc.when.timestamp()) < 2}
+                    if hevc.lat is not None:
+                        checks["location"] = b"\xa9xyz" in moov and b"com.apple.quicktime.location.ISO6709" in moov
+                    else:
+                        note("P8: no HEVC video with a location among the smallest; the location wasn't checked")
+                check(f is not None and all(checks.values()),
+                      f"P8: an HEVC video saved Most compatible is an H.264 MP4 with its date and location "
+                      f"({', '.join(k + (' ok' if v else ' MISSING') for k, v in checks.items()) or 'not saved'}; "
+                      f"{took:.0f} s)")
+            else:
+                note(f"P8: none of the {looked} smallest videos on the phone is HEVC (already H.264); nothing to convert")
+        else:
+            note("P8: no avconvert on this computer; videos are saved as they are")
 
         # -- C1: Photo clean-up --------------------------------------------------------------------------------
         import checkup_ui as cku, cleanup as cl, cleanup_ui
