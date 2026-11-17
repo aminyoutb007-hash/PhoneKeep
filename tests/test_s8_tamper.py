@@ -175,17 +175,23 @@ ts = [threading.Thread(target=tamper._note, args=(d, {"version": 1, "n": i})) fo
 [t.join() for t in ts]
 check(all(tamper._seal_id(d) in tamper._record() for d in ids) and not list(W.glob("seals*.tmp"))
       and not (W / "seals.lock").exists(), "seals added at the same time are all recorded (a lock, own temporary files)")
-# ... and two processes at once (the window and the menu bar helper)
+# ... and two processes at once (the window and the menu bar helper); five rounds, as a lost write showed only now and
+# then on Windows (5.2.2)
 code = (f"import sys, os; sys.path.insert(0, {str(HERE.parent)!r}); import tamper, pathlib, time;"
         f"tamper._record_file = lambda: pathlib.Path({str(W / 'seals.json')!r});"
         "time.sleep(max(0, float(sys.argv[2]) - time.time()));"
         "[tamper._note(pathlib.Path('B') / 'U' / 'snapshots' / f'{sys.argv[1]}-{i}', {'n': i}) for i in range(25)]")
-go = time.time() + 1.5
-ps = [subprocess.Popen([sys.executable, "-c", code, tag, str(go)]) for tag in ("window", "helper")]
-[p.wait(60) for p in ps]
-rec = tamper._record()
-check(all(f"U/{t}-{i}" in rec for t in ("window", "helper") for i in range(25)),
-      f"seals added by two processes at the same time are all recorded ({sum(k.startswith('U/') for k in rec)} of 50)")
+lost = []
+for rnd in range(5):
+    go = time.time() + 1.5
+    tags = (f"window{rnd}", f"helper{rnd}")
+    ps = [subprocess.Popen([sys.executable, "-c", code, tag, str(go)]) for tag in tags]
+    [p.wait(60) for p in ps]
+    rec = tamper._record()
+    lost += [f"round {rnd + 1}: {50 - sum(f'U/{t}-{i}' in rec for t in tags for i in range(25))} lost"
+             for _ in [0] if not all(f"U/{t}-{i}" in rec for t in tags for i in range(25))]
+check(not lost, "seals added by two processes at the same time are all recorded, 5 rounds of 50"
+      + (f": {'; '.join(lost)}" if lost else ""))
 # ... and on Windows, where opening the lock while the other process deletes it raises PermissionError, and the record
 # can be held open by a reader for a moment: the seal waits its turn instead of being dropped (5.2.2; a Windows CI flake)
 real_open, real_replace, tries = tamper.os.open, Path.replace, {"open": 0, "replace": 0}
