@@ -228,6 +228,11 @@ def sheet_senders(path, sheet):
 
 
 def pdf_text(path):
+    if sys.platform == "darwin":                   # pypdfium2 is installed off the Mac only (requirements.txt)
+        from Quartz import PDFDocument
+        from Foundation import NSURL
+        d = PDFDocument.alloc().initWithURL_(NSURL.fileURLWithPath_(str(path)))
+        return str(d.string()) if d else ""
     import pypdfium2 as pdfium
     doc = pdfium.PdfDocument(str(path))
     try:
