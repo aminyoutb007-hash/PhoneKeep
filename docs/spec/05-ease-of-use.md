@@ -102,7 +102,14 @@ The first search reads each app from the open backup once (a few seconds on a la
 **Requirements:** lists and grids show only what's visible (virtual scrolling); data loads in pages; nothing loads all messages or photos into memory at once. Meets the speed targets in [00-user-experience.md](00-user-experience.md).
 
 **Done when**
-- [ ] With a test backup of 300,000 messages and 50,000 photos, all speed targets are met on a base-model Mac.
+- [ ] With a test backup of 300,000 messages and 50,000 photos, all speed targets are met on a base-model Mac. *(17 Nov: all met on this project's Mac, an M4 Pro, not a base model: `tests/test_e7_large.py` on `tests/make_big.py`'s invented backup. Phone window home grid 0.09 s (target 1 s), counts 2.3 s (5 s), a chat with 10,000 messages 0.01 s (1 s), search of 300,000 messages 0.5 s (1 s), clicks 0.03-0.04 s (0.1 s), first photos 0.66 s (1 s), slowest step scrolling all 10,000 videos 0.03 s (0.1 s). Times and a screenshot in `docs/evidence/e7-large-phones/`. A base-model Mac is still to try.)*
+
+**How it's built (17 Nov):**
+- The photo grid scrolls virtually. The scroll area is as tall as the whole group, but tiles exist only for the rows on screen and one row either side. As the grid scrolls, the same tiles move to the new rows and show their photos. Only the thumbnails on screen are asked for, and at most 1,500 are kept in memory. Before, the grid made a tile for every photo it had shown, 240 at a time, so a long scroll got slower and slower.
+- A thumbnail or an edit is found through an index of the backup's camera-roll files, built once. Before, each one looked through all 50,000 file names, which took 2.5 s per screen of tiles.
+- Reading the photo list uses plain string operations instead of path objects, which is 0.2 s faster on 50,000 photos.
+- The list's "selected/total" column is as wide as its biggest number. With 10,000 videos it read "0/1000".
+- Messages, search and the counts already met their targets on this backup. Chats still load whole into memory (a chat shows its latest 600 messages), and that is fast enough for the targets. Paging them from the database is left for when a target needs it.
 
 ## E8. Languages and accessibility
 

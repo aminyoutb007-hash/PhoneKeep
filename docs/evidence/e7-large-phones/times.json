@@ -1,0 +1,16 @@
+{
+  "mac": "MacBook Pro, Apple M4 Pro, 24 GB (not a base model)",
+  "date": "2026-11-17",
+  "backup": "tests/make_big.py: 300,000 messages in 400 chats (one of 10,000), 50,000 photos and videos (10,000 videos)",
+  "seconds": {
+    "open the phone window: home grid visible": 0.088,
+    "counts fill in": 2.265,
+    "click Messages: visible response": 0.03,
+    "Messages: chat list shown": 0.232,
+    "open a chat with 10,000 messages: first screen of messages": 0.009,
+    "search 300,000 messages: first results": 0.5,
+    "click Photos: visible response": 0.041,
+    "Photos: first photos shown": 0.66,
+    "photo grid scroll: slowest step": 0.027
+  }
+}

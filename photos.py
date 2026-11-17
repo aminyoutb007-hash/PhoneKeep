@@ -117,12 +117,13 @@ def _apply_library(items: list[PhotoItem], lib, has_file=None) -> list[PhotoItem
 
 def _pair_live_photos(items: list[PhotoItem]) -> list[PhotoItem]:
     """Hide the .MOV half of a Live Photo and attach it to its still image."""
-    stills = {(os.path.dirname(i.id), Path(i.name).stem.upper()): i for i in items if not i.video}
+    def key(i):                                    # os.path, not Path: E7, 50,000 photos (a quarter of a second)
+        return os.path.dirname(i.id), os.path.splitext(i.name)[0].upper()
+    stills = {key(i): i for i in items if not i.video}
     out = []
     for i in items:
-        key = (os.path.dirname(i.id), Path(i.name).stem.upper())
-        if i.video and Path(i.name).suffix.lower() == ".mov" and key in stills:
-            stills[key].live_video = i.id
+        if i.video and i.name.lower().endswith(".mov") and key(i) in stills:
+            stills[key(i)].live_video = i.id
             continue
         out.append(i)
     out.sort(key=lambda i: i.when, reverse=True)
@@ -207,17 +208,32 @@ class BackupPhotoSource(PhotoSource):
         super().__init__(cache_dir)
         self.reader = reader
         self.meta = reader.file_meta("CameraRollDomain", "Media/")  # rel -> (fileID, mtime, size)
+        self._in_folder: Optional[dict] = None
+
+    def _folder(self, folder: str) -> list[str]:
+        """The files under `folder` (any depth). E7: built once from the backup's file list, so a thumbnail or an
+        edit doesn't look through every file of the camera roll again (50,000 photos: 2.5 s per screen of tiles)."""
+        if self._in_folder is None:
+            idx: dict = {}
+            for rel in self.meta:
+                i = rel.find("/")
+                while i != -1:
+                    idx.setdefault(rel[:i], []).append(rel)
+                    i = rel.find("/", i + 1)
+            self._in_folder = idx
+        return self._in_folder.get(folder, [])
 
     def items(self) -> list[PhotoItem]:
         out = []
+        kinds = IMG_EXT | VID_EXT
         for rel, (fid, mtime, size) in self.meta.items():
             if not rel.startswith("Media/DCIM/"):
                 continue
-            ext = Path(rel).suffix.lower()
-            if ext not in IMG_EXT | VID_EXT:
+            ext = os.path.splitext(rel)[1].lower()       # os.path, not Path: E7, 50,000 photos
+            if ext not in kinds:
                 continue
             when = dt.datetime.fromtimestamp(mtime) if mtime else dt.datetime(1970, 1, 1)
-            out.append(PhotoItem(rel[len("Media/"):], Path(rel).name, size or 0, when, ext in VID_EXT))
+            out.append(PhotoItem(rel[len("Media/"):], rel.rsplit("/", 1)[-1], size or 0, when, ext in VID_EXT))
         items = _apply_library(_pair_live_photos(out), self.library(),
                                has_file=lambda key: ("Media/" + key) in self.meta)
         for i in items:
@@ -259,15 +275,14 @@ class BackupPhotoSource(PhotoSource):
         return (m[2] or 0) if m else 0
 
     def edits(self, item: PhotoItem) -> list[str]:
-        prefix = "Media/" + edits_folder(item) + "/FullSizeRender"
-        return sorted(r[len("Media/"):] for r in self.meta if r.startswith(prefix))
+        folder = "Media/" + edits_folder(item)
+        return sorted(r[len("Media/"):] for r in self._folder(folder) if r.startswith(folder + "/FullSizeRender"))
 
     def thumbnail(self, item: PhotoItem) -> Optional[Path]:
         tp = self._thumb_path(item)
         if tp.exists():
             return tp
-        prefix = f"Media/PhotoData/Thumbnails/V2/{item.id}/"
-        ios_thumbs = sorted((r for r in self.meta if r.startswith(prefix) and r.lower().endswith(".jpg")),
+        ios_thumbs = sorted((r for r in self._folder(f"Media/PhotoData/Thumbnails/V2/{item.id}") if r.lower().endswith(".jpg")),
                             key=lambda r: self.meta[r][2] or 0, reverse=True)
         src = self.cache / "src" / tp.name
         if ios_thumbs and self._extract(ios_thumbs[0], src):
