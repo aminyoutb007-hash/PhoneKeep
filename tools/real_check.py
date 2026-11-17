@@ -24,6 +24,8 @@ What it does, all read-only for the phone:
     backup has, each dated when it was sent (counts only).
   * D1: the Contacts screen has the contacts as the phone shows them (linked cards as one), its Lists with their
     counts and every photo the backup has; a vCard of everything has every contact and photo (counts only).
+  * D4: every note's body read with its styles, every attachment found with its file, every picture drawn in the
+    Notes screen, and a PDF of every note with the same pictures (counts only).
   * P8: one HEVC video from the phone saved "Most compatible" is an H.264 MP4 with its date and location (yes/no).
   * P2: songs that only stream aren't listed in Music, and the screen says why; a song on the phone is saved into
     Artist / Album with its title, artist, album and artwork in the file (counts only).
@@ -901,6 +903,83 @@ try:
                   f"D1: Save as vCard saves every contact ({text.count('BEGIN:VCARD')} of {n_people}) with every photo "
                   f"as a JPEG ({good} of {len(pictured)}), lines folded at 75 bytes: {folded_ok}")
             shutil.rmtree(vdir, ignore_errors=True)
+
+    # -- D4: Notes as on the phone: every note's body read with its styles, every attachment found in the Notes
+    # database with its file in the backup, every picture drawn in the Notes screen, and a PDF of every note that has
+    # the same pictures. The attachments are counted straight from NoteStore.sqlite (rows that are attachments of a
+    # note, not pages inside a gallery). Counts only: no titles, folder names or text.
+    import notes_doc
+    try:
+        dnotes = sx.load_notes(ctx)
+    except wv.PhoneKeepError:
+        dnotes = []
+    if not dnotes:
+        note("D4: no notes in the backup; not tested on real data")
+    else:
+        ncon, ndom = None, None
+        for ndom in win.data.reader.domains("%group.com.apple.notes%"):
+            ncon = ctx.db(ndom, "NoteStore.sqlite")
+            if ncon:
+                break
+        ncols = sx.cols(ncon, "ZICCLOUDSYNCINGOBJECT")
+        rows_db = {str(r[0]).upper() for r in ncon.execute(
+            "SELECT ZIDENTIFIER FROM ZICCLOUDSYNCINGOBJECT WHERE ZTYPEUTI IS NOT NULL AND ZIDENTIFIER IS NOT NULL")} \
+            if {"ZTYPEUTI", "ZIDENTIFIER"} <= ncols else set()
+        bodies = sum(1 for (d,) in ncon.execute("SELECT ZDATA FROM ZICNOTEDATA WHERE ZDATA IS NOT NULL")
+                     if notes_doc.body(d) is not None)
+        ncon.close()
+        readable = [n for n in dnotes if n["blocks"] is not None]
+        refs = [(n, n["attachments"][b["id"]]) for n in readable for b in n["blocks"] if b["kind"] == "attachment"]
+        found = sum(1 for _n, a in refs if a["id"].upper() in rows_db)
+        files = [a["file"] for _n, a in refs if a.get("file")] + [k["file"] for _n, a in refs
+                                                                   for k in a.get("items") or [] if k.get("file")]
+        ok_files = sum(1 for f in files if win.data.read(*f))
+        kinds = {}
+        for _n, a in refs:
+            kinds[a["kind"]] = kinds.get(a["kind"], 0) + 1
+        checks_n = sum(1 for n in readable for b in n["blocks"] if b["kind"] == "para" and b["style"] == "check")
+        check(len(readable) == bodies and found == len(refs) and ok_files == len(files),
+              f"D4 on real data: every note's body is read with its styles ({len(readable)} of {bodies}; "
+              f"{checks_n} checklist items), every attachment in them is in the Notes database ({found} of {len(refs)}: "
+              + ", ".join(f"{v} {k}" for k, v in sorted(kinds.items())) + f") and every file they name is in the "
+              f"backup and reads ({ok_files} of {len(files)})")
+        if not kinds.get("table"):
+            note("D4: no table in this phone's notes; tables are checked on invented data (tests/test_d4_notes.py)")
+        win.open_app("notes")
+        pump(app, lambda: getattr(win, "notes_folders", None) is not None and not loading(win), 120)
+        view = getattr(win, "note_view", None)
+        if view is None:
+            check(False, "D4: the Notes screen didn't open")
+        else:
+            drawn = want = 0
+            for n in readable:
+                view.show(n)
+                pump(app, lambda: view.pending == 0, 60)        # pictures are read in the background
+                drawn += view.shown["images"]
+                for b in n["blocks"]:
+                    if b["kind"] != "attachment":
+                        continue
+                    a = n["attachments"][b["id"]]
+                    if a["kind"] == "gallery":
+                        want += sum(1 for k in a.get("items") or [] if k.get("file") or k.get("preview"))
+                    elif a["kind"] in ("image", "drawing") or (a["kind"] in ("scan", "pdf", "video") and a.get("preview")):
+                        want += bool(a.get("file") or a.get("preview"))
+            app.update()
+            check(drawn == want, f"D4: the Notes screen draws every picture in the notes ({drawn} of {want}: images, "
+                                 f"drawings, scanned pages and previews)")
+            ddir = WORK / "d4"
+            ddir.mkdir(parents=True, exist_ok=True)
+            phone.ask_save_folder = lambda parent, title, start: str(ddir)
+            win.notes_save_pdf(readable, "All notes")
+            pdf = ddir / "All notes.pdf"
+            pump(app, lambda: pdf.exists(), 300)
+            raw = pdf.read_bytes() if pdf.exists() else b""
+            n_pages = len(re.findall(rb"/Type\s*/Page(?!s)", raw))
+            n_imgs = len(re.findall(rb"/DCTDecode", raw))
+            check(pdf.exists() and n_pages >= len(readable) and n_imgs == drawn,
+                  f"D4: a PDF of every note ({n_pages} pages for {len(readable)} notes) has the same pictures "
+                  f"({n_imgs} of {drawn})")
+            shutil.rmtree(ddir, ignore_errors=True)
 
     # -- P2: music: songs that only stream aren't listed and the Music screen says why; a song on the phone is saved
     # into Artist / Album with its tags and artwork. The library's own count of songs with no file comes straight from
