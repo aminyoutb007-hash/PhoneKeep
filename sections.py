@@ -1307,12 +1307,22 @@ SECTIONS = [
 DEFAULT_SECTIONS = [k for k, *_ in SECTIONS if k != "files"]
 
 
-class ChatPreview:
-    """What the chat picker shows when you click a chat: its latest messages and photo thumbnails."""
+# M6: what a chat's Media tab shows, by message type (stickers count as photos, GIFs as videos)
+MEDIA_KIND = {"image": "photo", "sticker": "photo", "video": "video", "gif": "video", "audio": "audio",
+              "document": "document"}
 
-    def __init__(self, ctx: Ctx):
+
+class ChatPreview:
+    """What the chat picker shows when you click a chat: its latest messages, photo thumbnails and (M6) every
+    attachment, to view large or save.
+
+    lock / closed: the phone window passes its backup's lock and "is it closed?", so a thumbnail or a save
+    running in the background never reads a backup that is being closed (16 Nov: that crashed PhoneKeep)."""
+
+    def __init__(self, ctx: Ctx, lock=None, closed: Optional[Callable[[], bool]] = None):
         self.ctx = ctx
-        self.lock = threading.Lock()
+        self.lock = lock or threading.Lock()
+        self.closed = closed or (lambda: False)
 
     def _chats(self, key):
         loaded = self.ctx.cache.get(key)
@@ -1374,22 +1384,115 @@ class ChatPreview:
         """Small JPEG of a message's photo, or None."""
         if Image is None or m.get("type") not in ("image", "sticker", "gif"):
             return None
-        if key == "messages":
-            domain, rel = MEDIA, m.get("media_rel")
-        else:
-            loaded = self.ctx.cache.get(key) or {}
-            domain, rel = loaded.get("domain"), wv.whatsapp_media_rel(loaded, m) if loaded else None
-        if not rel:
+        where = self.media_source(key, m)
+        if where is None:
             return None
+        domain, rel = where
         h = hashlib.sha1(f"{domain}/{rel}".encode(), usedforsecurity=False).hexdigest()[:20]
         thumb = self.ctx.tmp / "preview" / (h + ".jpg")
         if thumb.exists():
             return thumb
         src = self.ctx.tmp / "preview" / (h + Path(rel).suffix)
         with self.lock:
-            if not self.ctx.copy(domain, rel, src, keep_time=False):
+            if self.closed() or not self.ctx.copy(domain, rel, src, keep_time=False):
                 return None
         return thumb if self.ctx.web_image(src, thumb, 260) else None
+
+    # M6: a chat's attachments ---------------------------------------------------------------------------------
+    def media_source(self, key: str, m: dict) -> Optional[tuple[str, str]]:
+        """(domain, path) of a message's attachment in the backup, or None when the backup hasn't got it."""
+        if m.get("type") not in MEDIA_KIND:
+            return None
+        if key == "messages":
+            rel = m.get("media_rel")
+            return (MEDIA, rel) if rel else None
+        loaded = self.ctx.cache.get(key) or {}
+        rel = wv.whatsapp_media_rel(loaded, m) if loaded else None
+        return (loaded.get("domain"), rel) if rel else None
+
+    def media(self, key: str, chat_id, people: Optional[set] = None) -> list[dict]:
+        """Every message of a chat with an attachment (photo, video, voice note, document), oldest first; with
+        `people` (M5), only theirs. Those whose file isn't in the backup are there too (shown, not saved)."""
+        for c in self._chats(key):
+            if c["id"] == chat_id:
+                msgs = c["messages"]
+                if people:
+                    import exportfilter
+                    got = exportfilter.only_people([c], {chat_id: people})
+                    msgs = got[0]["messages"] if got else []
+                return [m for m in msgs if m.get("type") in MEDIA_KIND]
+        return []
+
+    def media_name(self, key: str, m: dict) -> str:
+        """The attachment's own file name (Messages keeps the one it was sent with)."""
+        where = self.media_source(key, m)
+        if key == "messages" and m.get("caption"):
+            name = m["caption"]
+        elif where:
+            name = Path(where[1]).name
+        else:
+            name = Path(m.get("media_src") or "").name
+        if where and not Path(name).suffix:
+            name += Path(where[1]).suffix
+        return name or MEDIA_KIND[m["type"]]
+
+    def read_media(self, key: str, m: dict) -> Optional[bytes]:
+        """The attachment in memory (the large view): nothing decrypted is written to disk for it."""
+        where = self.media_source(key, m)
+        if where is None:
+            return None
+        with self.lock:
+            return None if self.closed() else self.ctx.read(*where)
+
+    def copy_media(self, key: str, m: dict, dest: Path) -> bool:
+        """Copy the attachment to dest, dated when its message was sent (the backup's own date if it has none)."""
+        where = self.media_source(key, m)
+        if where is None:
+            return False
+        with self.lock:
+            if self.closed() or not self.ctx.copy(*where, dest, keep_time=not m.get("time")):
+                return False
+        if m.get("time"):
+            try:
+                t = dt.datetime.fromisoformat(m["time"]).timestamp()
+                os.utime(dest, (t, t))
+            except (ValueError, OSError):
+                pass
+        return True
+
+    def save_media(self, key: str, chat_id, folder: Path, people: Optional[set] = None,
+                   progress: Optional[Callable[[int, int], None]] = None,
+                   stop: Optional[Callable[[], bool]] = None) -> dict:
+        """Save all (M6): every attachment of the chat into `folder`, each named after when it was sent and its
+        own name ("2024-05-31 14.22.05 IMG_1234.HEIC") and dated then too, so they sort and show in order.
+        Returns {"saved", "missing" (not in the backup), "failed", "folder"}."""
+        folder = Path(folder)
+        folder.mkdir(parents=True, exist_ok=True)
+        items = self.media(key, chat_id, people)
+        saved = missing = failed = 0
+        used: set = set()
+        for n, m in enumerate(items, 1):
+            if stop and stop():
+                break
+            if self.media_source(key, m) is None:
+                missing += 1
+            else:
+                when = dt.datetime.fromisoformat(m["time"]).strftime("%Y-%m-%d %H.%M.%S ") if m.get("time") else ""
+                own = Path(self.media_name(key, m))       # a long name is cut, never its extension
+                ext = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", own.suffix)[:12]
+                stem = safe_name(when + (own.stem if ext else own.name), 100) + ext
+                name, k = stem, 2
+                while name.lower() in used or (folder / name).exists():
+                    p = Path(stem)
+                    name, k = f"{p.stem} ({k}){p.suffix}", k + 1
+                used.add(name.lower())
+                if self.copy_media(key, m, folder / name):
+                    saved += 1
+                else:
+                    failed += 1
+            if progress:
+                progress(n, len(items))
+        return {"saved": saved, "missing": missing, "failed": failed, "folder": folder}
 
 
 def _msg_text(m: dict) -> str:

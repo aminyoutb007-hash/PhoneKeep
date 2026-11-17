@@ -595,6 +595,7 @@ def load_photo(path, max_px: int, square: bool = False, faded: bool = False) -> 
 # ---------------------------------------------------------------------------
 # Chat picker with preview
 # ---------------------------------------------------------------------------
+MEDIA_TYPES = {"image", "sticker", "gif", "video", "audio", "document"}     # M6: what a chat's Media tab has
 TYPE_LABEL = {"image": "📷 Photo", "video": "🎬 Video", "audio": "🎤 Voice note", "document": "📄 Document",
               "sticker": "Sticker", "gif": "GIF", "location": "📍 Location", "contact": "👤 Contact",
               "deleted": "🚫 Deleted message", "system": "Group update", "link": "🔗 Link"}
@@ -737,7 +738,25 @@ class ChatPanel(tk.Frame):
         self.pv_sub = tk.Label(right, text="Click a chat on the left to see its latest messages.",
                                bg=CARD, fg=MUTED, font=font(11), anchor="w")
         self.pv_sub.pack(fill="x", padx=14, pady=(0, 6))
-        tf = tk.Frame(right, bg=theme.CHAT_BG)
+        # M6: the chat's messages, or all its photos, videos, voice notes and documents
+        self.tab = "messages"
+        self.tabs = tk.Frame(right, bg=CARD)
+        self.tab_btns = {}
+        for name, label in (("messages", "Messages"), ("media", "Media")):
+            b = RoundButton(self.tabs, label, lambda n=name: self.show_tab(n),
+                            "primary" if name == "messages" else "secondary", 104, 28, 12, bg=CARD)
+            b.pack(side="left", padx=(0, 6))
+            self.tab_btns[name] = b
+        self.save_media_btn = RoundButton(self.tabs, "Save all", self.save_all_media, "secondary", 100, 28, 12, bg=CARD)
+        if preview is not None and hasattr(preview, "media"):
+            self.tabs.pack(fill="x", padx=14, pady=(0, 6))
+        self.pv_body = tk.Frame(right, bg=theme.CHAT_BG)
+        self.pv_body.pack(fill="both", expand=True)
+        self.media_grid = None
+        self.saving = None                  # Save all running: its stop flag
+        self.bind("<Destroy>", lambda e: self.saving.set() if e.widget is self and self.saving is not None else None,
+                  add="+")                  # closing the chat list stops a Save all still running
+        tf = self.text_frame = tk.Frame(self.pv_body, bg=theme.CHAT_BG)
         tf.pack(fill="both", expand=True)
         # fg must be set: in macOS dark mode Tk's default text colour is white, which vanished on the light
         # bubbles (owner, 12 Nov: "all messages look empty")
@@ -758,6 +777,8 @@ class ChatPanel(tk.Frame):
                                 spacing1=12, spacing3=4)
         self.text.tag_configure("sys", justify="center", foreground=AMBER, font=font(11), spacing1=6)
         self.text.tag_configure("hit", background=theme.HIT, foreground=INK)
+        # ink, bold and underlined: green on the "me" bubbles was too faint in dark mode (E6's 4.5:1)
+        self.text.tag_configure("link", foreground=INK, font=font(13, "bold"), underline=True)
         self.text.tag_raise("hit")
         body.add(right, minsize=300)
 
@@ -903,6 +924,9 @@ class ChatPanel(tk.Frame):
         iid = next((str(i) for i, (k, _l, c) in enumerate(self.rows) if k == key and c["id"] == chat_id), None)
         if iid is None or not self.tree.exists(iid):
             return
+        if self.tab != "messages":              # a search result is a message: show the conversation
+            self.text_chat = self.shown_chat    # (drawn just below, at the result)
+            self.show_tab("messages")
         self.at_for, self.at_time = (key, chat_id), at
         self.current = None
         self.tree.selection_set(iid)
@@ -938,9 +962,17 @@ class ChatPanel(tk.Frame):
             self.people_btn.pack(side="right")
         else:
             self.people_btn.pack_forget()
+        if self.tab == "media":
+            self._show_media()
+            self.text_chat = None           # the conversation is drawn when its tab is shown again
+            return
+        self.text_chat = self.current
         t = self.text
         t.configure(state="normal")
         t.delete("1.0", "end")
+        old = [n for n in t.tag_names() if n.startswith("open")]
+        if old:
+            t.tag_delete(*old)                  # the chat shown before's attachments (and their clicks)
         self.images.clear()
         import search
         last_day, first = None, None
@@ -956,18 +988,28 @@ class ChatPanel(tk.Frame):
             tag = "me" if m.get("from_me") else "them"
             if c["group"] and not m.get("from_me"):
                 t.insert("end", (m.get("sender") or "") + "\n", (tag, "sender"))
+            # M6: a click on a photo, video, voice note or document opens it large
+            otag = f"open{i}" if m.get("type") in MEDIA_TYPES and hasattr(self.preview, "media") else None
+            if otag:
+                t.tag_bind(otag, "<ButtonRelease-1>", lambda e, m=m, k=key, cid=c["id"]: self.open_media(k, cid, m))
+                t.tag_bind(otag, "<Enter>", lambda e: t.configure(cursor="hand2"))
+                t.tag_bind(otag, "<Leave>", lambda e: t.configure(cursor="arrow"))
+            open_tags = (otag,) if otag else ()
             if m.get("type") in ("image", "sticker", "gif"):
                 mark = f"img{i}"
                 t.mark_set(mark, "end-1c")
                 t.mark_gravity(mark, "left")
-                t.insert("end", "📷 Photo", (tag, mark + "ph"))
+                t.insert("end", "📷 Photo", (tag, mark + "ph") + open_tags)
                 t.insert("end", "\n", tag)
                 self.worker.submit(lambda m=m: self.preview.thumbnail(key, m),
-                                   lambda path, mark=mark, cur=self.current: self._put_image(path, mark, cur))
+                                   lambda path, mark=mark, cur=self.current, ot=otag: self._put_image(path, mark, cur, ot))
+            elif otag:
+                t.insert("end", TYPE_LABEL[m["type"]], (tag, "link", otag))
+                t.insert("end", "\n", tag)
             body = m.get("text") or ""
             if m.get("caption") and m.get("type") not in ("image",):
                 body = (body + "\n" + m["caption"]).strip()
-            if not body and m.get("type") not in ("image", "sticker", "gif"):
+            if not body and m.get("type") not in ("image", "sticker", "gif") and not otag:
                 body = TYPE_LABEL.get(m.get("type"), m.get("type", ""))
             if body:
                 # the searched words marked as the text goes in, matched the way the search matches (accents,
@@ -985,7 +1027,7 @@ class ChatPanel(tk.Frame):
         t.configure(state="disabled")
         t.see(first or "end")
 
-    def _put_image(self, path, mark, cur):
+    def _put_image(self, path, mark, cur, otag=None):
         if cur != self.current or not path:
             return
         img = load_photo(path, 220)
@@ -999,10 +1041,142 @@ class ChatPanel(tk.Frame):
             if rng:
                 t.delete(rng[0], rng[1])
             t.image_create(mark, image=img, padx=4, pady=4)
+            if otag:                         # M6: the photo itself opens it large
+                t.tag_add(otag, mark, f"{mark} +1c")
         except tk.TclError:
             pass
         t.configure(state="disabled")
         t.see("end")
+
+    # media (M6) ---------------------------------------------------------
+    def show_tab(self, name: str) -> None:
+        """Messages: the conversation. Media: every photo, video, voice note and document in it, with Save all."""
+        self.tab = name
+        for n, b in self.tab_btns.items():
+            b.kind = "primary" if n == name else "secondary"
+            b._draw()
+        if name == "media":
+            self.text_frame.pack_forget()
+            if self.media_grid is None:
+                self.media_grid = MediaGrid(self.pv_body, self.preview, self.open_media_list)
+            self.media_grid.pack(fill="both", expand=True)
+            self.save_media_btn.pack(side="right")
+            self._show_media()
+        else:
+            if self.media_grid is not None:
+                self.media_grid.pack_forget()
+            self.save_media_btn.pack_forget()
+            self.text_frame.pack(fill="both", expand=True)
+            if self.shown_chat is not None and getattr(self, "text_chat", None) != self.shown_chat:
+                iid, _c = self._row_of(*self.shown_chat)
+                self.current = None
+                self._show(iid)
+
+    def _show_media(self):
+        if self.media_grid is None or self.shown_chat is None:
+            return
+        key, cid = self.shown_chat
+        self.media_grid.show(key, cid, self.people.get((key, cid)))
+        self.save_media_btn.set_enabled(bool(self.media_grid.all) and self.saving is None)
+
+    def _viewer_items(self, key: str, media: list) -> list:
+        import quicklook
+        pv = self.preview
+        out = []
+        for m in media:
+            here = pv.media_source(key, m) is not None
+            out.append(quicklook.Item(
+                pv.media_name(key, m), kind="" if here else "image",      # not in the backup: say so, don't offer Play
+                read=lambda m=m: pv.read_media(key, m),
+                to_file=(lambda dest, m=m: pv.copy_media(key, m, dest)) if here else None,
+                why=None if here else (lambda: "It isn't in the backup: the iPhone never had it, or left it out.")))
+        return out
+
+    def open_media_list(self, key: str, media: list, index: int) -> None:
+        """Show one attachment large; the arrow keys go through the others in `media`."""
+        import quicklook
+        if media:
+            self.media_viewer = quicklook.Viewer(self, self._viewer_items(key, media), index)
+
+    def open_media(self, key: str, cid, m: dict) -> None:
+        """A click on an attachment in the conversation: it opens large, and the arrows go through the chat's
+        other attachments, oldest to newest as in the conversation."""
+        media = self.preview.media(key, cid, self.people.get((key, cid)))
+        index = next((n for n, x in enumerate(media) if x is m), None)
+        if index is None:
+            index = next((n for n, x in enumerate(media) if x.get("id") == m.get("id")), 0)
+        self.open_media_list(key, media, index)
+
+    def save_all_media(self) -> None:
+        """Save all (M6): the shown chat's attachments into a new folder, each dated when it was sent."""
+        if self.shown_chat is None or self.saving is not None:
+            return
+        key, cid = self.shown_chat
+        _iid, c = self._row_of(key, cid)
+        names = self.people.get((key, cid))
+        media = self.preview.media(key, cid, names)
+        if c is None or not media:
+            return
+        where = ask_folder(self, f"Where should the media from {c['name']} go?")
+        if not where:
+            return
+        import re
+        base = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", f"{c['name']} media").strip(" .")[:80] or "Chat media"
+        folder, k = Path(where) / base, 2
+        while folder.exists():
+            folder, k = Path(where) / f"{base} ({k})", k + 1
+        stop = threading.Event()
+        self.saving = stop
+        self.save_media_btn.set_enabled(False)
+        news: queue.Queue = queue.Queue()
+
+        def run():
+            try:
+                res = self.preview.save_media(key, cid, folder, names, progress=lambda n, of: news.put(("at", (n, of))),
+                                              stop=stop.is_set)
+                news.put(("done", res))
+            except Exception as e:  # noqa: BLE001 - shown under the grid
+                news.put(("error", e))
+
+        def poll():
+            try:
+                while True:
+                    what, value = news.get_nowait()
+                    if what == "at":
+                        self._media_note(f"Saving {value[0]:,} of {value[1]:,}…")
+                    else:
+                        self.saving = None
+                        self.save_media_btn.set_enabled(True)
+                        self.saved_media = value
+                        import phone
+                        self._media_note(self._saved_text(value) if what == "done" else
+                                         f"Couldn't save them: {phone.describe_error(value)}")
+                        if what == "done" and value["saved"] and self.media_grid is not None:
+                            self.media_grid.offer_folder(value["folder"])     # "Show folder", as other saves have
+                        return
+            except queue.Empty:
+                pass
+            try:
+                self.after(100, poll)
+            except tk.TclError:
+                stop.set()
+        threading.Thread(target=run, daemon=True).start()
+        self._media_note("Saving…")
+        poll()
+
+    @staticmethod
+    def _saved_text(res: dict) -> str:
+        n, missing, failed = res["saved"], res["missing"], res["failed"]
+        text = f"Saved {n:,} file{'s' if n != 1 else ''} to “{res['folder'].name}”, each dated when it was sent."
+        if missing:
+            text += f" {missing:,} {'weren’t' if missing != 1 else 'wasn’t'} in the backup."
+        if failed:
+            text += f" {failed:,} couldn't be copied."
+        return text
+
+    def _media_note(self, text: str) -> None:
+        if self.media_grid is not None:
+            self.media_grid.note.configure(text=text)
 
     # people in a group chat (M5) ---------------------------------------
     def _people_of(self, key, c) -> list:
@@ -1123,6 +1297,215 @@ class ChatPanel(tk.Frame):
         if people:
             out["_people"] = people
         return out
+
+
+def ask_folder(parent, title: str):
+    """The folder dialog for Save all (one place, so the tests can stand in for it)."""
+    from tkinter import filedialog
+    return filedialog.askdirectory(parent=parent, title=title, initialdir=str(Path.home()), mustexist=True)
+
+
+class MediaGrid(tk.Frame):
+    """M6: a chat's photos, videos, voice notes and documents as tiles, newest first, with a choice of which kind.
+    As in the photo grid (E7), only the rows on screen have tiles, so a chat with thousands of attachments scrolls
+    like one with ten, and only the thumbnails on screen are made. A click shows one large; the arrows then go
+    through the others shown."""
+
+    TILE, GAP = 116, 6
+    KEEP_IMAGES = 600
+    ICON = {"photo": "🖼", "video": "🎬", "audio": "🎤", "document": "📄"}
+    KINDS = (("all", "All media"), ("photo", "Photos"), ("video", "Videos"), ("audio", "Voice notes and audio"),
+             ("document", "Documents"))
+
+    def __init__(self, parent, preview, on_open: Callable):
+        super().__init__(parent, bg=CARD)
+        from sections import MEDIA_KIND
+        self.kind_of = lambda m: MEDIA_KIND[m["type"]]
+        self.preview, self.on_open = preview, on_open
+        self.key = self.chat = None
+        self.all: list = []                  # every attachment of the chat, newest first
+        self.items: list = []                # those of the kind chosen
+        self.here: dict = {}                 # message id -> its file is in the backup
+        self.paths: dict = {}
+        self.images: dict = {}
+        self.tiles: dict = {}
+        self.pool: list = []
+        self.worker = BgWorker(self)
+        self.bind("<Destroy>", lambda e: self.worker.stop() if e.widget is self else None)
+        bar = tk.Frame(self, bg=CARD)
+        bar.pack(fill="x", padx=10, pady=(0, 6))
+        self.kind = tk.StringVar(value=self.KINDS[0][1])
+        box = ttk.Combobox(bar, textvariable=self.kind, values=[label for _k, label in self.KINDS], state="readonly",
+                           width=20)
+        box.pack(side="left")
+        box.bind("<<ComboboxSelected>>", lambda e: self._filter())
+        # the counts on a line of their own, wrapped: the preview is often narrow
+        self.summary = tk.Label(self, text="", bg=CARD, fg=MUTED, font=font(11), anchor="w", justify="left",
+                                wraplength=300)
+        self.summary.pack(fill="x", padx=10, pady=(0, 6))
+        self.summary.bind("<Configure>", lambda e: self.summary.configure(wraplength=max(160, e.width - 4)))
+        foot = tk.Frame(self, bg=CARD)
+        foot.pack(side="bottom", fill="x", padx=10, pady=(4, 6))
+        self.show_btn = RoundButton(foot, "Show folder", lambda: None, "secondary", 120, 28, 12, bg=CARD)
+        self.note = tk.Label(foot, text="", bg=CARD, fg=INK, font=font(11), anchor="w", justify="left", wraplength=300)
+        self.note.pack(side="left", fill="x", expand=True)
+        foot.bind("<Configure>", lambda e: self.note.configure(wraplength=max(160, e.width - 140)))
+        frame = tk.Frame(self, bg=CARD)
+        frame.pack(fill="both", expand=True)
+        self.canvas = tk.Canvas(frame, bg=CARD, highlightthickness=0)
+        sb = ttk.Scrollbar(frame, orient="vertical", command=self.canvas.yview)
+
+        def scrolled(first, last):
+            sb.set(first, last)
+            if not self._relayout_due:          # once per redraw, however many scroll events came
+                self._relayout_due = True
+                self.after_idle(self._relayout)
+        self._relayout_due = False
+        self._laid_out = self._region = None
+        self.canvas.configure(yscrollcommand=scrolled)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        self.canvas.bind("<Configure>", lambda e: self._relayout())
+        wheel_scroll(self.canvas)
+
+    def show(self, key: str, chat_id, people=None) -> None:
+        """The chat's attachments (only those people's, M5)."""
+        media = self.preview.media(key, chat_id, people)
+        self.key, self.chat = key, chat_id
+        self.all = media[::-1]
+        self.here = {m["id"]: self.preview.media_source(key, m) is not None for m in media}
+        self.paths, self.images = {}, {}
+        n = {k: 0 for k, _l in self.KINDS}
+        for m in media:
+            n[self.kind_of(m)] += 1
+        words = (("photo", "photo", "photos"), ("video", "video", "videos"), ("audio", "voice note or audio",
+                 "voice notes and audio"), ("document", "document", "documents"))
+        parts = [f"{n[k]:,} {one if n[k] == 1 else many}" for k, one, many in words if n[k]]
+        gone = sum(1 for v in self.here.values() if not v)
+        self.summary.configure(text=(" · ".join(parts) if parts else "No photos, videos, voice notes or documents")
+                               + (f" · {gone:,} not in the backup" if gone else ""))
+        self.note.configure(text="")
+        self.show_btn.pack_forget()
+        self._filter()
+
+    def offer_folder(self, folder) -> None:
+        """After Save all: a button that shows the folder in Finder / Explorer."""
+        import phone
+        self.show_btn.command = lambda: phone.reveal(folder)
+        self.show_btn.pack(side="right", before=self.note)      # its room first; the note wraps in the rest
+
+    def _filter(self):
+        label = self.kind.get()
+        k = next((k for k, l in self.KINDS if l == label), "all")
+        self.items = [m for m in self.all if k == "all" or self.kind_of(m) == k]
+        self.worker.clear()
+        self._laid_out = None
+        self.canvas.yview_moveto(0)
+        self._relayout()
+
+    def _cols(self) -> int:
+        return max(2, (self.canvas.winfo_width() - self.GAP) // (self.TILE + self.GAP))
+
+    def _new_tile(self, size: int) -> tk.Canvas:
+        c = tk.Canvas(self.canvas, width=size, height=size, bg=theme.TILE_BG, highlightthickness=0, cursor="hand2")
+        c.item = None
+        c.bind("<ButtonRelease-1>", lambda e, c=c: self.open(c.item) if c.item is not None else None)
+        c.win = self.canvas.create_window(0, 0, window=c, anchor="nw")
+        self.pool.append(c)
+        return c
+
+    def open(self, m: dict) -> None:
+        index = next((n for n, x in enumerate(self.items) if x is m), 0)
+        self.on_open(self.key, self.items, index)
+
+    def _relayout(self):
+        """The rows on screen and one either side get tiles; scrolling moves the same tiles to the new rows."""
+        self._relayout_due = False
+        try:
+            cols = self._cols()
+            width, view = self.canvas.winfo_width(), self.canvas.winfo_height()
+        except tk.TclError:
+            return
+        tile = max(self.TILE, (width - self.GAP * (cols + 1)) // cols)
+        if tile != getattr(self, "tile", None):
+            self.tile = tile
+            self.images = {}
+            self._laid_out = None
+            for c in self.pool:
+                c.configure(width=tile, height=tile)
+        step = tile + self.GAP
+        items = self.items
+        rows = -(-len(items) // cols)
+        region = (0, 0, width, self.GAP + rows * step + self.GAP)
+        if region != self._region:              # setting it reports a scroll, which lays out again
+            self._region = region
+            self.canvas.configure(scrollregion=region)
+        top = self.canvas.canvasy(0)
+        r0 = max(0, int(top // step) - 1)
+        r1 = min(rows, int((top + max(view, step)) // step) + 2)
+        first, last = r0 * cols, min(len(items), r1 * cols)
+        key = (id(items), cols, tile, first, last)
+        if key == self._laid_out:
+            return
+        self._laid_out = key
+        self.tiles = {}
+        want = []
+        for n in range(last - first):
+            m = items[first + n]
+            c = self.pool[n] if n < len(self.pool) else self._new_tile(tile)
+            r, col = divmod(first + n, cols)
+            self.canvas.coords(c.win, self.GAP + col * step, self.GAP + r * step)
+            self.canvas.itemconfigure(c.win, state="normal")
+            c.item = m
+            self.tiles[m["id"]] = c
+            self._draw(m)
+            if self.kind_of(m) == "photo" and self.here.get(m["id"]) and m["id"] not in self.paths:
+                want.append(m)
+        for c in self.pool[last - first:]:
+            c.item = None
+            self.canvas.itemconfigure(c.win, state="hidden")
+        self.worker.clear()                     # only the thumbnails on screen are asked for
+        chat = (self.key, self.chat)
+        for m in want:
+            self.worker.submit(lambda m=m, k=self.key: self.preview.thumbnail(k, m),
+                               lambda path, m=m: self._thumb_ready(m, path, chat))
+        if len(self.images) > self.KEEP_IMAGES:
+            for k in [k for k in self.images if k not in self.tiles][:len(self.images) - self.KEEP_IMAGES]:
+                del self.images[k]
+
+    def _thumb_ready(self, m, path, chat):
+        if chat != (self.key, self.chat):       # another chat by now
+            return
+        self.paths[m["id"]] = path
+        c = self.tiles.get(m["id"])
+        if c is not None and c.item is m:
+            self._draw(m)
+
+    def _draw(self, m):
+        c = self.tiles.get(m["id"])
+        if c is None:
+            return
+        c.delete("all")
+        T = self.tile
+        kind, here = self.kind_of(m), self.here.get(m["id"])
+        img = self.images.get(m["id"])
+        if img is None and self.paths.get(m["id"]):
+            img = load_photo(self.paths[m["id"]], T, square=True)
+            if img is not None:
+                self.images[m["id"]] = img
+        when = dt.datetime.fromisoformat(m["time"]).strftime("%d %b %Y") if m.get("time") else ""
+        if img is not None:
+            c.create_image(T // 2, T // 2, image=img)
+        else:
+            c.create_text(T // 2, T // 2 - 16, text=self.ICON[kind], font=font(26), fill=INK if here else MUTED)
+            name = self.preview.media_name(self.key, m) if kind != "photo" else ""
+            if name:
+                c.create_text(T // 2, T // 2 + 16, text=name if len(name) <= 18 else name[:17] + "…",
+                              fill=INK if here else MUTED, font=font(9))
+            c.create_text(T // 2, T - 12, text=when if here else "Not in the backup", fill=MUTED, font=font(9))
+        if kind == "video" and img is not None:
+            c.create_rectangle(4, T - 20, 30, T - 4, fill=theme.BADGE_BG, outline="")
+            c.create_text(17, T - 12, text="▶", fill=theme.ON_DARK, font=font(10))
 
 
 class PeopleWindow(tk.Toplevel):

@@ -232,9 +232,13 @@ try:
     check(v.shown_kind == "play" and v.index == 3, "a video shows a Play button")
     check(not written, f"nothing was written to disk for the photo, text and PDF previews ({written})")
     path = v.open_from_file(wait=True)
+    # the private folder, and the viewer's own folder in it (M6), each only the user's
     mode = stat.S_IMODE(os.stat(ql.private_dir()).st_mode)
-    check(path is not None and path.parent == ql.private_dir() and played == [path] and (os.name == "nt" or mode == 0o700),
-          f"Play copies the video to the private folder (mode {oct(mode)}) and plays it from there")
+    own = stat.S_IMODE(os.stat(path.parent).st_mode) if path else 0
+    check(path is not None and ql.private_dir() in path.parents and played == [path]
+          and (os.name == "nt" or (mode == 0o700 and own == 0o700)),
+          f"Play copies the video to the private folder (mode {oct(mode)}; the viewer's own folder in it "
+          f"{oct(own)}) and plays it from there")
     check(os.name == "nt" or stat.S_IMODE(os.stat(path).st_mode) == 0o600, "the copy is readable only by the user")
     v.move(1)
     wait(v, lambda: v.shown_kind == "play")

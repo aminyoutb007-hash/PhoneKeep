@@ -194,16 +194,17 @@ class BackupData:
         self.reader = wv.BackupReader(self.path, password, log)
         tmp = Path(self.reader._tmp.name)
         self.ctx = sx.Ctx(self.reader, tmp / "out", log, True, self.info)
-        self.preview = sx.ChatPreview(self.ctx)
+        self.lock = threading.Lock()
+        self.closed = threading.Event()     # set once the backup's files have been let go
+        self._closing = False
+        # chat thumbnails, the large view and Save all (M6) read under the same lock, never a closed backup
+        self.preview = sx.ChatPreview(self.ctx, self.lock, lambda: self._closing)
         self.contacts = []
         try:
             self.contacts = sx.load_contacts(self.ctx)   # also gives names to calls & chats
         except Exception:
             pass
         self.cache: dict = {}
-        self.lock = threading.Lock()
-        self.closed = threading.Event()     # set once the backup's files have been let go
-        self._closing = False
 
     def get(self, key: str):
         with self.lock:

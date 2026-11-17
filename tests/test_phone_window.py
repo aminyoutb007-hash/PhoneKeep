@@ -355,7 +355,7 @@ for _key, _want in (("music", "Artist A - Song One.m4a"), ("books", "Writer - A 
     if _v is not None:
         pump(root, lambda: _v.shown_kind == "play", 20, "play card")
         _p = _v.open_from_file(wait=True)
-        check(_p is not None and _p.read_bytes() == b"simulated" and _p.parent == _ql.private_dir(),
+        check(_p is not None and _p.read_bytes() == b"simulated" and _ql.private_dir() in _p.parents,
               f"Q1: {_key}: Play copies it from the iPhone into the private folder")
         _v.close()
     del win.table_preview
