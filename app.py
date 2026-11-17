@@ -347,12 +347,25 @@ class Bar(tk.Canvas):
 
 
 def _dnd_root():
-    """tk.Tk with drag-and-drop when tkinterdnd2 is available (B5: drop a backup folder onto the window)."""
+    """tk.Tk with drag-and-drop when tkinterdnd2 is available (B5: drop a backup folder onto the window).
+    tkinterdnd2 loads its tkdnd library only once the window exists, and raises if it can't (its Mac library needs
+    macOS 14): PhoneKeep then opens without drag-and-drop instead of not opening at all (5.2.2)."""
     try:
         from tkinterdnd2 import TkinterDnD
-        return TkinterDnD.Tk
     except Exception:
         return tk.Tk
+
+    class DnDRoot(TkinterDnD.Tk):
+        dnd_ok = True
+
+        def __init__(self, *args, **kwargs):
+            try:
+                super().__init__(*args, **kwargs)
+            except RuntimeError:
+                if "tk" not in self.__dict__:       # the window itself wasn't made: a real failure
+                    raise
+                self.dnd_ok = False
+    return DnDRoot
 
 
 class App(_dnd_root()):
@@ -1007,12 +1020,13 @@ class App(_dnd_root()):
         self.menubar = bar
         self.configure(menu=bar)
         self.bind_all("<Command-o>" if sys.platform == "darwin" else "<Control-o>", lambda e: self.open_backup_dialog())
-        try:
-            from tkinterdnd2 import DND_FILES
-            self.drop_target_register(DND_FILES)
-            self.dnd_bind("<<Drop>>", self._on_drop)
-        except Exception:
-            pass
+        if getattr(self, "dnd_ok", False):
+            try:
+                from tkinterdnd2 import DND_FILES
+                self.drop_target_register(DND_FILES)
+                self.dnd_bind("<<Drop>>", self._on_drop)
+            except Exception:
+                self.dnd_ok = False
 
     def _on_drop(self, event):
         """A folder dropped onto the window: open it as a backup if it is one."""
@@ -2140,7 +2154,8 @@ class OpenBackupDialog(tk.Toplevel):
         tk.Label(head, text="Open a backup", bg=theme.HEADER_BG, fg=theme.HEADER_TITLE, font=font(17, "bold")).pack(side="left", padx=18, pady=12)
         body = tk.Frame(self, bg=BG)
         body.pack(fill="both", expand=True, padx=18, pady=14)
-        tk.Label(body, text="Backups on this computer. You can also drop a backup folder onto the main window.",
+        tk.Label(body, text="Backups on this computer." + (" You can also drop a backup folder onto the main window."
+                                                         if getattr(app, "dnd_ok", False) else ""),
                  bg=BG, fg=MUTED, font=font(12), anchor="w", wraplength=600, justify="left").pack(fill="x")
         c = ui.card(body)
         c.pack(fill="both", expand=True, pady=(8, 8))
