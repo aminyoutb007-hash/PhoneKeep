@@ -127,11 +127,12 @@ CREATE TABLE message_attachment_join(message_id, attachment_id);""")
     c.executemany("INSERT INTO handle VALUES (?,?)", [(1, ALEX), (2, ROBIN), (3, KIM)])
     c.executemany("INSERT INTO chat VALUES (?,?,?,?,?)", [(1, ALEX, "Film club", 45, "iMessage"),
                                                           (2, "chat900", "Book club", 43, "iMessage"),
-                                                          (3, KIM, "Holiday", 45, "iMessage")])
-    c.executemany("INSERT INTO chat_handle_join VALUES (?,?)", [(1, 1), (2, 1), (2, 2), (2, 3), (3, 3)])
+                                                          (3, KIM, "Holiday", 45, "iMessage"),
+                                                          (4, ROBIN, "Choir", 45, "iMessage")])
+    c.executemany("INSERT INTO chat_handle_join VALUES (?,?)", [(1, 1), (2, 1), (2, 2), (2, 3), (3, 3), (4, 2)])
     rid = aid = 0
 
-    def msg(chat, minutes, handle, me, text, mime=None, name=None, here=True, k=None):
+    def msg(chat, minutes, handle, me, text, mime=None, name=None, here=True, k=None, data=None):
         nonlocal rid, aid
         rid += 1
         c.execute("INSERT INTO message VALUES (?,?,NULL,?,?,?,0,0,NULL,'iMessage')", (rid, text, handle, ns(minutes), me))
@@ -147,7 +148,7 @@ CREATE TABLE message_attachment_join(message_id, attachment_id);""")
                 elif k is not None:
                     data = None
                 else:
-                    data = CONTENT[mime]
+                    data = data or CONTENT[mime]
                 if k is None:
                     ORIGINAL[(chat, name)] = data
                     add_file(sx.MEDIA, rel, data)
@@ -162,6 +163,9 @@ CREATE TABLE message_attachment_join(message_id, attachment_id);""")
     msg(2, 10, 1, 0, None, "image/jpeg", "Alex.JPG")
     msg(2, 11, 2, 0, None, "image/jpeg", "Robin.JPG")
     msg(2, 12, 3, 0, "Kim: no photo from me")
+    # another chat's voice note: the same name as Film club's (every iMessage voice note has it), other bytes
+    msg(4, 15, 2, 0, None, "audio/x-caf", "Audio Message.caf", data=b"caff\0\x01\0\0" + b"\x07" * 40)
+    msg(4, 16, 2, 0, None, "application/pdf", "Programme " + "very long title " * 12 + ".pdf")   # cut, not its .pdf
     for k in range(BIG):
         msg(3, 20 + k, 3, 0, None, "image/jpeg", f"IMG_{k:05d}.JPG", True, k)
 
@@ -317,6 +321,33 @@ v.event_generate("<Right>")
 a.update()
 check(v.name_lbl.cget("text") == "Audio Message.caf" and viewer_shown("play"), "→ goes on to the voice note, which plays")
 v.close()
+# two chats' voice notes, both "Audio Message.caf", each the first attachment shown: the same name and place
+film_voice = next(m for m in win.data.preview.media("messages", next(c["id"] for _k, _l, c in panel.rows
+                                                                      if c["name"] == "Film club"))
+                  if m.get("caption") == "Audio Message.caf")
+panel.open_media_list("messages", [film_voice], 0)
+v = ql.Viewer.current
+voice1 = v.open_from_file(wait=True) if viewer_shown("play") else None
+v.close()
+choose(panel, "Choir")
+choir_id = next(c["id"] for _k, _l, c in panel.rows if c["name"] == "Choir")
+panel.open_media("messages", choir_id, win.data.preview.media("messages", choir_id)[0])
+v = ql.Viewer.current
+voice2 = v.open_from_file(wait=True) if viewer_shown("play") else None
+check(voice1 is not None and voice2 is not None and voice1.read_bytes() == ORIGINAL[(1, "Audio Message.caf")]
+      and voice2.read_bytes() == ORIGINAL[(4, "Audio Message.caf")],
+      "two chats' voice notes, both \"Audio Message.caf\" and first in their viewer, each play their own recording "
+      "(not the first one's copy)")
+v.close()
+panel.save_all_media()
+pump(lambda: panel.saving is None and getattr(panel, "saved_media", None)
+     and panel.saved_media["folder"].name.startswith("Choir"), 30)
+long_one = [n for n in saved_files(panel.saved_media["folder"]) if "Programme" in n]
+check(len(long_one) == 1 and long_one[0].endswith(".pdf") and len(long_one[0]) <= 112
+      and (panel.saved_media["folder"] / long_one[0]).read_bytes() == PDF,
+      f"a very long name is cut to fit, keeping its extension: {long_one}")
+panel.saved_media = None
+choose(panel, "Film club")
 a.update()
 
 # ---- the Media tab ----
@@ -362,7 +393,7 @@ panel.save_all_media()
 check(pump(lambda: panel.saving is None and getattr(panel, "saved_media", None), 30), "Save all finishes")
 res = panel.saved_media
 folder = dest_dir / "Film club media"
-check(res["folder"] == folder and folder.is_dir() and asked and "Film club" in asked[0],
+check(res["folder"] == folder and folder.is_dir() and asked and "Film club" in asked[-1],
       f"it asks where, and saves into a new folder named after the chat ({res['folder']})")
 names = saved_files(folder)
 want = [f"{when(m):%Y-%m-%d %H.%M.%S} {n}" for m, _me, _mi, n, here in FILM if here]

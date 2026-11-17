@@ -754,6 +754,8 @@ class ChatPanel(tk.Frame):
         self.pv_body.pack(fill="both", expand=True)
         self.media_grid = None
         self.saving = None                  # Save all running: its stop flag
+        self.bind("<Destroy>", lambda e: self.saving.set() if e.widget is self and self.saving is not None else None,
+                  add="+")                  # closing the chat list stops a Save all still running
         tf = self.text_frame = tk.Frame(self.pv_body, bg=theme.CHAT_BG)
         tf.pack(fill="both", expand=True)
         # fg must be set: in macOS dark mode Tk's default text colour is white, which vanished on the light
@@ -775,7 +777,8 @@ class ChatPanel(tk.Frame):
                                 spacing1=12, spacing3=4)
         self.text.tag_configure("sys", justify="center", foreground=AMBER, font=font(11), spacing1=6)
         self.text.tag_configure("hit", background=theme.HIT, foreground=INK)
-        self.text.tag_configure("link", foreground=GREEN, font=font(13, "bold"))
+        # ink, bold and underlined: green on the "me" bubbles was too faint in dark mode (E6's 4.5:1)
+        self.text.tag_configure("link", foreground=INK, font=font(13, "bold"), underline=True)
         self.text.tag_raise("hit")
         body.add(right, minsize=300)
 
@@ -1157,7 +1160,6 @@ class ChatPanel(tk.Frame):
                 self.after(100, poll)
             except tk.TclError:
                 stop.set()
-        self.bind("<Destroy>", lambda e: stop.set() if e.widget is self else None, add="+")
         threading.Thread(target=run, daemon=True).start()
         self._media_note("Saving…")
         poll()

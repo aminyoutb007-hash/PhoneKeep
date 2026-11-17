@@ -445,7 +445,11 @@ class Viewer(tk.Toplevel):
         """Copy the item to the private folder (in the background) and play / open it there.
         wait=True copies right away and returns the path (used by the tests)."""
         it = self.items[self.index]
-        dest = private_dir() / f"{self.index}-{Path(it.name).name}"
+        # a folder of this viewer's own: two viewers' items can share a name and a place (every iMessage voice note
+        # is "Audio Message.caf"), and a copy already there is reused, so it must be this item's (M6 review)
+        if getattr(self, "_own_dir", None) is None:
+            self._own_dir = private_tmp("viewer-")
+        dest = self._own_dir / f"{self.index}-{Path(it.name).name}"
 
         def copy():
             ok = dest.exists() and dest.stat().st_size > 0

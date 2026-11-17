@@ -1478,7 +1478,9 @@ class ChatPreview:
                 missing += 1
             else:
                 when = dt.datetime.fromisoformat(m["time"]).strftime("%Y-%m-%d %H.%M.%S ") if m.get("time") else ""
-                stem = safe_name(when + self.media_name(key, m), 150)
+                own = Path(self.media_name(key, m))       # a long name is cut, never its extension
+                ext = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", own.suffix)[:12]
+                stem = safe_name(when + (own.stem if ext else own.name), 100) + ext
                 name, k = stem, 2
                 while name.lower() in used or (folder / name).exists():
                     p = Path(stem)
