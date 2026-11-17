@@ -139,13 +139,13 @@ def _note(sdir: Path, seal: dict) -> None:
         while fd is None:
             try:
                 fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            except FileExistsError:
+            except (FileExistsError, PermissionError):    # Windows: PermissionError while the other's is deleted
                 try:
                     if time.time() - lock.stat().st_mtime > 30:      # left by a process that died
                         lock.unlink()
                         continue
                 except OSError:
-                    continue
+                    pass
                 if time.time() > end:
                     return
                 time.sleep(0.05)
@@ -156,14 +156,15 @@ def _note(sdir: Path, seal: dict) -> None:
             rec[_seal_id(sdir)] = _body_hash(seal)
             tmp = f.with_name(f"seals.{os.getpid()}.{threading.get_ident()}.tmp")
             tmp.write_text(json.dumps(rec, sort_keys=True), encoding="utf-8")
-            for _ in range(20):                      # Windows: a reader may have it open for a moment
+            while True:                              # Windows: a reader may have it open for a moment
                 try:
                     tmp.replace(f)
                     break
                 except PermissionError:
+                    if time.time() > end:
+                        tmp.unlink()
+                        break
                     time.sleep(0.05)
-            else:
-                tmp.unlink()
         except OSError:
             pass
         finally:
