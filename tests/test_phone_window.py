@@ -413,7 +413,9 @@ pp.mlist.selection_set("2025-06"); root.update()
 
 def _placed():
     root.update()
-    return [i for i in pp.months["2025-06"] if i.id in pp.tiles and pp.tiles[i.id].winfo_manager() == "grid"]
+    # E7: the tiles are placed on the grid's canvas, one per photo on screen
+    return [i for i in pp.months["2025-06"] if i.id in pp.tiles and pp.tiles[i.id].winfo_manager() == "canvas"
+            and pp.tiles[i.id].item is i and pp.canvas.itemcget(pp.tiles[i.id].win, "state") != "hidden"]
 
 
 check(len(_placed()) == 4, f"June shows its 4 photos ({len(_placed())})")

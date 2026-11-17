@@ -60,6 +60,7 @@ STEPS = [
     ("Closing the window while backing up (B9): the backup carries on, notifies, then quits; Quit asks first (5.3)", "test_b9_close_while_backing_up.py", True),
     ("One search across the phone (E4): every app at once, accents and Arabic marks ignored, 200,000 messages in under 1 s", "test_e4_search.py", True),
     ("Activity record (S7): each backup and save once, kept 12 months, listed in Settings and saved as CSV", "test_s7_activity.py", True),
+    ("Large phones (E7): 300,000 messages and 50,000 photos meet every speed target; the photo grid scrolls only what's on screen", "test_e7_large.py", True),
     ("Dark mode (E6): the mode chosen, contrast, every widget dark and readable, no white flash, Settings → Appearance", "test_e6_dark_mode.py", True),
     ("Tamper check (S8): each snapshot sealed and signed; one byte changed shows the amber banner on the full check", "test_s8_tamper.py", True),
     ("Closing a phone window while it reads its backup: the read finishes, then the files are let go (no crash)", "test_close_while_reading.py", True),
