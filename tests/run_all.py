@@ -55,6 +55,7 @@ STEPS = [
     ("No real names: the owner's surname and first name are in no tracked file (checked by hash)", "test_no_owner_names.py", False),
     ("Theme: Direction A colours from theme.py only; buttons and selected rows", "test_theme.py", False),
     ("Mac window tabs: every window is made with tabs off (5.1.2)", "test_mac_tabs.py", False),
+    ("PhoneKeep opens when drag-and-drop can't load (macOS 11-13; 5.2.2)", "test_dnd_start.py", True),
     ("Reconnect: the iPhone unplugged and plugged back in (5.1.3)", "test_reconnect.py", True),
     ("Fast overview: the window fills in without waiting for the app list; Wi-Fi asks less (5.1.3)", "test_fast_overview.py", True),
     ("Main window: the iPhone's home screen in the small phone picture (5.1.3)", "test_main_wallpaper.py", True),
