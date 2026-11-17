@@ -559,6 +559,67 @@ check(len(notes_doc.plain(deep, {})) < 100, "  plain text caps an indent that ca
 check(notes_doc.unzip(bomb(200)) is None and notes_doc.unzip(gzip.compress(b"ok")) == b"ok",
       "  a gzip bomb is refused, a normal blob unpacks")
 
+# -- MAX_ALL: everything one load unpacks, however well it packs ----------------------------------------------------
+# Bodies that unpack to just under 20x their packed size never count against the bombs' budget; MAX_ALL (1 GiB)
+# bounds them all the same. Here it's set to 32 MB for one load, so the check stays quick: 20 ordinary notes first
+# (5 MB) are read in full, then 100 copies of one crafted ~3 MB body packed ~19 to 1, until the 32 MB are used up;
+# the rest show their snippets.
+rnd3 = random.Random(3)
+crafted_text = "".join(f"the quick lamp{rnd3.randrange(5_000)} sat by the river near the station "
+                       for _ in range(60_000))
+crafted = note_blob([run("Crafted\n", "title"), run(crafted_text)])
+crafted_ratio = len(gzip.decompress(crafted)) / len(crafted)
+p3 = W / "NoteStore3.sqlite"
+c3 = sqlite3.connect(p3)
+c3.executescript("""
+CREATE TABLE ZICCLOUDSYNCINGOBJECT(Z_PK INTEGER PRIMARY KEY, ZTITLE1, ZTITLE2, ZFOLDER, ZNOTEDATA, ZMODIFICATIONDATE1,
+ ZIDENTIFIER, ZTYPEUTI, ZMEDIA, ZFILENAME, ZPARENTATTACHMENT, ZSNIPPET, ZMERGEABLEDATA1);
+CREATE TABLE ZICNOTEDATA(Z_PK INTEGER PRIMARY KEY, ZNOTE, ZDATA);""")
+rows3 = [(1, None, "Tests", None, None, None, U(), None, None, None, None, None, None)]
+data3 = []
+for k in range(20):
+    rows3.append((10 + k, f"Ordinary {k}", None, 1, 1000 + k, t0 - k, U(), None, None, None, None, "x", None))
+    data3.append((1000 + k, 10 + k, note_blob([run(f"Ordinary {k}\n", "title"),
+                                                run(ord_text[k][len(f"Ordinary {k}\n"):])])))
+for k in range(100):
+    rows3.append((100 + k, f"Crafted {k}", None, 1, 2000 + k, t0 - 100 - k, U(), None, None, None, None,
+                  f"crafted snippet {k}", None))
+    data3.append((2000 + k, 100 + k, crafted))
+c3.executemany("INSERT INTO ZICCLOUDSYNCINGOBJECT VALUES (" + ",".join("?" * 13) + ")", rows3)
+c3.executemany("INSERT INTO ZICNOTEDATA VALUES (?,?,?)", data3)
+c3.commit()
+c3.close()
+BK3 = W / "Backups" / "00008030-D4ALLNOTES00000000"
+BK3.mkdir(parents=True)
+for f_ in ("Info.plist", "Manifest.plist"):
+    shutil.copy(BK / f_, BK3 / f_)
+m3 = sqlite3.connect(BK3 / "Manifest.db")
+m3.execute("CREATE TABLE Files(fileID TEXT PRIMARY KEY, domain TEXT, relativePath TEXT, flags INTEGER, file BLOB)")
+(BK3 / fid2[:2]).mkdir(exist_ok=True)
+(BK3 / fid2[:2] / fid2).write_bytes(p3.read_bytes())
+m3.execute("INSERT INTO Files VALUES (?,?,?,1,NULL)", (fid2, DOM, "NoteStore.sqlite"))
+m3.commit()
+m3.close()
+real_all = notes_doc.MAX_ALL
+notes_doc.MAX_ALL = 32 << 20
+try:
+    t1 = time.time()
+    n3 = {n["title"]: n for n in sx.load_notes(sx.Ctx(wv.BackupReader(BK3, None, lambda m: None), W / "out3",
+                                                      lambda m: None, False, {}))}
+    took = time.time() - t1
+finally:
+    notes_doc.MAX_ALL = real_all
+read_full = [k for k in range(100) if n3[f"Crafted {k}"]["text"] == "Crafted\n" + crafted_text]
+snippets = [k for k in range(100) if n3[f"Crafted {k}"]["text"] == f"crafted snippet {k}"]
+size = len(gzip.decompress(crafted))
+check(real_all == 1 << 30 and 18 <= crafted_ratio < 20
+      and all(n3[f"Ordinary {k}"]["text"] == ord_text[k] for k in range(20))
+      and read_full == list(range(len(read_full))) and snippets == list(range(len(read_full), 100))
+      and 1 <= len(read_full) <= (32 << 20) // size + 1,
+      f"MAX_ALL (1 GiB; 32 MB for this check) bounds what one load unpacks, however well it packs: the ordinary "
+      f"notes are read in full, then {len(read_full)} bodies of {size / (1 << 20):.1f} MB packed {crafted_ratio:.0f} to "
+      f"1, and the {len(snippets)} after them show their snippets ({took:.1f} s)")
+
 # -- the phone window ----------------------------------------------------------------------------------------------
 import keychain
 keychain.use_memory()

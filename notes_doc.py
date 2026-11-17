@@ -33,6 +33,10 @@ MAX_TOTAL = 64 * 1024 * 1024    # how far one load of the notes may unpack *beyo
                                 # blobs that unpack far more than real ones (bombs) use it up. Past it, the rest of
                                 # those can't be read (snippets, "can't be read" tables)
 EXPANSION = 20
+MAX_ALL = 1024 * 1024 * 1024    # and everything one load unpacks, bodies, tables and galleries together, however
+                                # well or badly it packs: a heavy user's notes are tens of MB; past it, the rest can't
+                                # be read (snippets, "can't be read" tables), so many crafted blobs just under the
+                                # other limits can't make a load parse for ever
 MAX_INDENT = 8                  # Notes goes no deeper; a bigger number would build huge margins and strings
 MAX_CELLS = 100_000             # a table's rows x columns; a bigger one is damaged (and the grid alone would be huge)
 _BREAKS = re.compile("(\n|" + OBJ + ")")
@@ -40,10 +44,16 @@ _UUID = re.compile(rb"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4
 
 
 class Budget:
-    """How much more one load of the notes may unpack beyond EXPANSION x the packed size (MAX_TOTAL)."""
+    """How much more one load of the notes may unpack beyond EXPANSION x the packed size (MAX_TOTAL, `left`), and
+    how much it may unpack at all (MAX_ALL, `all_left`: one count shared with the Budget given as `share`)."""
 
-    def __init__(self, total: int = MAX_TOTAL):
-        self.left = total
+    def __init__(self, share: Optional["Budget"] = None):
+        self.left = MAX_TOTAL
+        self._all = share._all if share is not None else [MAX_ALL]
+
+    @property
+    def all_left(self) -> int:
+        return self._all[0]
 
 
 def unzip(data, limit: int = MAX_UNZIP, budget: Optional[Budget] = None) -> Optional[bytes]:
@@ -54,6 +64,8 @@ def unzip(data, limit: int = MAX_UNZIP, budget: Optional[Budget] = None) -> Opti
     if not data:
         return None
     data = bytes(data)
+    if budget is not None and budget.all_left <= 0:
+        return None
     if budget is not None and budget.left <= 0:
         limit = min(limit, EXPANSION * len(data))
     for wbits in (16 + zlib.MAX_WBITS, zlib.MAX_WBITS):
@@ -70,6 +82,7 @@ def unzip(data, limit: int = MAX_UNZIP, budget: Optional[Budget] = None) -> Opti
         used = min(len(data), limit)
     if budget is not None:
         budget.left -= max(0, used - EXPANSION * len(data))
+        budget._all[0] -= used
     return out
 
 

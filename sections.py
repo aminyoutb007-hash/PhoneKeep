@@ -1298,11 +1298,12 @@ def load_notes(ctx: Ctx) -> list[dict]:
     data = {}
     if "ZICNOTEDATA" in tables(con):
         data = {r["Z_PK"]: r["ZDATA"] for r in select(con, "ZICNOTEDATA", ["Z_PK", "ZDATA"])}
-    try:                                     # tables and galleries, and the bodies, each unpack within a budget
-        attachments = _note_attachments(con, dom, ctx.files(dom), notes_doc.Budget())
+    att_budget = notes_doc.Budget()              # tables and galleries, and the bodies, each unpack within a budget
+    bodies = notes_doc.Budget(share=att_budget)  # (MAX_TOTAL each) and within MAX_ALL together
+    try:
+        attachments = _note_attachments(con, dom, ctx.files(dom), att_budget)
     except Exception:
         attachments = {}
-    bodies = notes_doc.Budget()
     notes = []
     for r in objs:
         if r["ZNOTEDATA"] is None or r["ZMARKEDFORDELETION"]:
