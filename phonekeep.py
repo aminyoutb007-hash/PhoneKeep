@@ -1237,20 +1237,22 @@ def parse_whatsapp(db_path: Path, log: Log = _print,
     member_jid: dict[int, str] = {}
     if "ZWAGROUPMEMBER" in tables:
         rows = _select(con, "ZWAGROUPMEMBER", ["Z_PK", "ZMEMBERJID", "ZCONTACTNAME", "ZFIRSTNAME", "ZCHATSESSION"])
-        # a number several member IDs of one group share as their "name" names none of them (seen on a real phone:
-        # every member's ZFIRSTNAME was the same number), so it's skipped for them (M5: People must tell them
-        # apart). A real name two IDs share stays: one person can be in a group as a phone-number ID and a @lid ID.
+        # a "name" several people in one group share names none of them (seen on a real phone: every member's
+        # ZFIRSTNAME was the same), so it's skipped for them (M5: People must tell them apart). One person can be
+        # in a group under two IDs, a phone-number one and a @lid one, with one contact name: that name stays.
         shared: dict = {}
         for r in rows:
             for col in ("ZCONTACTNAME", "ZFIRSTNAME"):
                 if r[col]:
-                    shared.setdefault((r["ZCHATSESSION"], col, r[col]), set()).add(r["ZMEMBERJID"])
+                    shared.setdefault((r["ZCHATSESSION"], col, r[col]), set()).add(r["ZMEMBERJID"] or "")
 
         def own(r, col):
             v = r[col]
-            if v and len(shared[(r["ZCHATSESSION"], col, v)]) > 1 and not any(ch.isalpha() for ch in v):
+            if not v:
                 return None
-            return v
+            ids = shared[(r["ZCHATSESSION"], col, v)]
+            kinds = {i.partition("@")[2] for i in ids}
+            return v if len(ids) == 1 or (len(ids) == 2 and len(kinds) == 2) else None
         for r in rows:
             jid = r["ZMEMBERJID"]
             member_jid[r["Z_PK"]] = jid or ""

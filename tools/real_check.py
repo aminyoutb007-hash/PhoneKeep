@@ -579,10 +579,17 @@ try:
     import exportfilter
 
     def told_apart(c, per, label):
+        """per: {database id of a person: their message ids}. A person is who the chat shows as the sender, so ids
+        shown under one name are one person (WhatsApp: a phone-number ID and a @lid ID with one contact name)."""
         labels = {k: label(k) for k in per}
-        if len(per) >= 2 and None not in labels.values() and len(set(labels.values())) == len(labels):
-            k = max(per, key=lambda k: len(per[k]))
-            return c, labels[k], per[k], [v for j, v in labels.items() if j != k]
+        if None in labels.values():
+            return None
+        by_name: dict = {}
+        for k, ids in per.items():
+            by_name.setdefault(labels[k], set()).update(ids)
+        if len(by_name) >= 2:
+            who = max(by_name, key=lambda n: len(by_name[n]))
+            return c, who, by_name[who], [n for n in by_name if n != who]
         return None
     pick = None
     con = ctx.db(sx.HOME, "Library/SMS/sms.db")
