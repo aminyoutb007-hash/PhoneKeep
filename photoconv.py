@@ -2,7 +2,8 @@
 
 "Most compatible" turns HEIC/HEIF into JPG and keeps what makes a photo findable: the date taken and the location
 (the original EXIF is carried over; when it lacks them, they're filled from the Photos library), and the file's date
-is set to the date taken. Other photos (JPG, PNG…) and videos are saved as they are (video conversion is P8).
+is set to the date taken. Other photos (JPG, PNG…) are saved as they are. HEVC videos become H.264 MP4 on a Mac
+(videoconv.py, P8); other videos, and every video on Windows, are saved as they are.
 """
 from __future__ import annotations
 
@@ -11,6 +12,8 @@ import os
 import shutil
 from pathlib import Path
 from typing import Optional
+
+import videoconv
 
 try:
     from PIL import Image
@@ -107,11 +110,94 @@ def free_name(folder: Path, name: str, size: int = 0, when=None) -> str:
     return f"{stem} ({n}){ext}"
 
 
+def _saved_before(path: Path, when) -> bool:
+    """path is missing, or is this item saved before (saved files are dated with the date taken)."""
+    if not path.exists():
+        return True
+    try:
+        return when is not None and abs(path.stat().st_mtime - when.timestamp()) < 2
+    except (OSError, ValueError, OverflowError):
+        return False
+
+
+def _live_stem(folder: Path, item, photo_ext: str) -> str:
+    """A Live Photo's name, free for the photo and for its video as .MOV and .MP4 (or taken by this Live Photo
+    saved before), so neither ever replaces a different file and both keep the same name."""
+    stem = Path(item.name).stem
+    exts = {photo_ext, Path(item.live_video).suffix, ".MP4"}
+    n, cand = 2, stem
+    while not all(_saved_before(Path(folder) / (cand + e), item.when) for e in exts):
+        cand, n = f"{stem} ({n})", n + 1
+    return cand
+
+
 def save_item(source, item, folder: Path, compatible: bool, tmp: Path) -> list[Path]:
     """Save one photo or video (and a Live Photo's short video) into folder. Returns the files written."""
     out = []
-    name = jpg_name(item.name) if compatible and not item.video else item.name
-    name = free_name(folder, name, getattr(item, "size", 0), item.when)
+    lat, lon = getattr(item, "lat", None), getattr(item, "lon", None)
+    live = getattr(item, "live_video", None)
+    if compatible and item.video and videoconv.available():
+        saved = _save_video(source, item.id, item.name, folder, item.when, lat, lon, tmp, getattr(item, "size", 0))
+        out += [saved] if saved else []
+    elif live:
+        name = jpg_name(item.name) if compatible and not item.video else item.name
+        stem = _live_stem(folder, item, Path(name).suffix)
+        out += _save_still(source, item, folder, compatible, tmp, stem + Path(name).suffix)
+        mov = stem + Path(live).suffix                              # a Live Photo: its short video, same name
+        if compatible and videoconv.available():
+            saved = _save_video(source, live, mov, folder, item.when, lat, lon, tmp, 0, keep_name=True)
+            out += [saved] if saved else []
+        elif source.copy(live, folder / mov):
+            set_file_date(folder / mov, item.when)
+            out.append(folder / mov)
+    else:
+        out += _save_still(source, item, folder, compatible, tmp)
+    return out
+
+
+def _save_video(source, src_id, name: str, folder: Path, when, lat, lon, tmp: Path, size: int = 0,
+                keep_name: bool = False) -> Optional[Path]:
+    """P8: an HEVC video becomes an H.264 MP4 (date and location kept); any other video, or one that can't be
+    converted, is saved as it is. Works in tmp; the folder only gets the finished file."""
+    raw, conv = Path(tmp) / f"src-{name}", Path(tmp) / f"conv-{Path(name).stem}.mp4"
+    try:
+        if not source.copy(src_id, raw):
+            return None
+        if videoconv.is_hevc(raw) and videoconv.to_h264(raw, conv, when, lat, lon):
+            final = videoconv.mp4_name(name)
+            final = final if keep_name else free_name(folder, final, 0, when)
+            done = conv
+        else:
+            final = name if keep_name else free_name(folder, name, size, when)
+            done = raw
+        Path(folder).mkdir(parents=True, exist_ok=True)
+        dest = Path(folder) / final
+        part = dest.with_name(dest.name + ".part")                  # another drive: a copy that can stop half-way
+        try:
+            shutil.move(str(done), part)
+            os.replace(part, dest)
+        except BaseException:
+            try:
+                part.unlink()
+            except OSError:
+                pass
+            raise
+        set_file_date(dest, when)
+        return dest
+    finally:
+        for f in (raw, conv):
+            try:
+                f.unlink()
+            except OSError:
+                pass
+
+
+def _save_still(source, item, folder: Path, compatible: bool, tmp: Path, name: Optional[str] = None) -> list[Path]:
+    """A photo (HEIC → JPG when compatible), or a video saved as it is. name: already chosen (a Live Photo)."""
+    out = []
+    if name is None:
+        name = jpg_name(item.name) if compatible and not item.video else item.name
+        name = free_name(folder, name, getattr(item, "size", 0), item.when)
     dest = folder / name
     if compatible and not item.video and Path(item.name).suffix.lower() in CONVERT:
         raw = tmp / item.name
@@ -119,12 +205,11 @@ def save_item(source, item, folder: Path, compatible: bool, tmp: Path) -> list[P
             out.append(dest)
         elif source.copy(item.id, folder / item.name):              # couldn't convert: keep the original
             out.append(folder / item.name)
+        try:
+            raw.unlink()                                            # the temp folder holds one item at a time
+        except OSError:
+            pass
     elif source.copy(item.id, dest):
         set_file_date(dest, item.when)
         out.append(dest)
-    if getattr(item, "live_video", None):                           # a Live Photo: the photo and its short video
-        mov = folder / (Path(name).stem + Path(item.live_video).suffix)
-        if source.copy(item.live_video, mov):
-            set_file_date(mov, item.when)
-            out.append(mov)
     return out

@@ -6,7 +6,7 @@
 
 **Requirements**
 - Albums, favourites and media types read from the phone's Photos library database (live) or the backup.
-- "Most compatible" converts HEIC photos to JPG, keeping the date taken and location in the file, and the file date set to the date taken. Videos are always saved as originals in P1 (conversion is P8, P2).
+- "Most compatible" converts HEIC photos to JPG, keeping the date taken and location in the file, and the file date set to the date taken. Videos are always saved as originals in P1 (on a Mac, P8 now converts HEVC videos to H.264 MP4).
 - Live Photos save as the photo plus its short video, same name.
 - Thumbnails appear immediately as placeholders, then fill in; the grid stays smooth with 50,000 items.
 - Never draw selection with see-through/stippled overlays (they render solid on macOS); use a frame and tick.
@@ -20,7 +20,14 @@
 
 ## P8. Video conversion
 
-**P2 (moved from P1).** "Most compatible" also converts HEVC videos to H.264 MP4, keeping date and location. Needs ffmpeg bundled in the installers (size and licence to be agreed before building). Done when a converted video plays in Windows Media Player and QuickTime with the original date.
+**P2 (moved from P1).** "Most compatible" also converts HEVC videos to H.264 MP4, keeping date and location. (The plan was ffmpeg bundled in the installers, size and licence to be agreed first; the Mac needs none, see below.)
+
+**How it's built (17 Nov, Mac):** no ffmpeg. On a Mac, `videoconv.py` runs `avconvert`, the command-line tool macOS ships in /usr/bin (Apple's own video encoder, run as a subprocess; no app is scripted and nothing is added to the installer), with its 4K H.264 preset, which never upscales: a 1080p or portrait video keeps its size. Only videos that are HEVC (read from the file: `hvc1`, `hev1`, and Dolby Vision HDR on HEVC) are converted; an H.264 video already plays everywhere and is saved as it is. `avconvert` doesn't keep the date taken or the location, so PhoneKeep writes them back into the new file: the date taken into the movie, track and media headers (what Windows shows as "Media created"), Apple's QuickTime keys for the date and the location (what macOS and Apple's Photos read; other keys already there are kept), and the location again as `©xyz` (ISO 6709). The file's own dates (and its "created" date on a Mac) are the date taken, as for photos. A Live Photo's short video is converted too and keeps the photo's name. The work happens on copies in PhoneKeep's private temp folder, one video at a time; the saved folder only ever gets a finished file, and a conversion that fails saves the original. The Save dialog says what happens to videos on this computer.
+
+**Windows (decided by the owner later):** there is no encoder PhoneKeep can count on: Windows can only read these videos with Microsoft's paid HEVC extension, and bundling ffmpeg brings size and licence questions (H.264/HEVC patents, LGPL/GPL). Until the owner decides, Windows saves videos as they are and the Save dialog says so.
+
+**Done when**
+- [ ] A converted video plays in Windows Media Player and QuickTime with the original date. *(17 Nov: `tests/test_p8_video.py` converts a generated HEVC clip on a Mac and checks the H.264 MP4's date taken (in the movie, track and media headers, Apple's date key, and the file's dates), its location, that the picture data is still where the index points, and that macOS's own video framework reads the whole file back; `tools/real_check.py` does the same with one HEVC video with a location from the owner's iPhone, read-only. Still to do by hand: open a converted video in QuickTime Player and in Windows Media Player and look at the date. Windows itself doesn't convert yet: see above.)*
 
 ## P2. Music
 
