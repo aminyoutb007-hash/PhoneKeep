@@ -22,14 +22,31 @@ import sections as sx
 UNKNOWN_ARTIST, UNKNOWN_ALBUM = "Unknown Artist", "Unknown Album"
 
 
-def save_path(t) -> str:
+RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+ROOM = 160      # the most a song's place inside the chosen folder takes: with the folder, within Windows' 260
+
+
+def _part(s: str, n: int) -> str:
+    """One folder or file name: no characters a disk refuses, at most n long, never a name Windows keeps for
+    itself (CON, aux.txt...), never ending in a space or a dot, never empty or "..". """
+    s = sx.safe_name(s, n).rstrip(" .") or "untitled"
+    if s.split(".")[0].strip().upper() in RESERVED:
+        s = s + "_" if "." not in s else s.replace(".", "_.", 1)
+    return s
+
+
+def save_path(t, room: int = ROOM) -> str:
     """Where a song goes inside the chosen folder: Artist/Album/NN Title.ext (as iTunes and Music lay them out)."""
-    artist = sx.safe_name(t.album_artist or t.artist or UNKNOWN_ARTIST, 80)
-    album = sx.safe_name(t.album or UNKNOWN_ALBUM, 80)
+    ext = Path(t.path).suffix.lower()[:8]
     title = t.title or Path(t.path).stem
     if t.track_no:
         title = (f"{t.disc_no}-" if t.disc_count > 1 and t.disc_no else "") + f"{t.track_no:02d} {title}"
-    return f"{artist}/{album}/{sx.safe_name(title, 120)}{Path(t.path).suffix.lower()}"
+    # artist and album take up to a quarter of the room each, the file's name the rest
+    each = max(8, (room - len(ext) - 2) // 4)
+    artist = _part(t.album_artist or t.artist or UNKNOWN_ARTIST, each)
+    album = _part(t.album or UNKNOWN_ALBUM, each)
+    name = _part(title, max(8, room - len(ext) - len(artist) - len(album) - 2))
+    return f"{artist}/{album}/{name}{ext}"
 
 
 def _cover(art: Optional[bytes]) -> Optional[tuple[bytes, str]]:
@@ -128,18 +145,21 @@ def write_tags(path: Path, t, art: Optional[bytes] = None) -> bool:
 def finish(part: Path, dest: Path, t, art: Optional[bytes] = None) -> bool:
     """`part` holds the song as copied from the iPhone. Put it at `dest` with its tags; True if tags were written.
     The tags go into a copy first, so a file mutagen can't handle is saved exactly as it came off the phone."""
-    if getattr(t, "protected", False):
-        os.replace(part, dest)
-        return False
     work = part.with_name(part.name + ".tagging")
     try:
-        shutil.copyfile(part, work)
-        if write_tags(work, t, art):
-            os.replace(work, dest)
-            part.unlink(missing_ok=True)
-            return True
-    except Exception:
-        pass
-    work.unlink(missing_ok=True)
-    os.replace(part, dest)
-    return False
+        if not getattr(t, "protected", False):
+            try:
+                shutil.copyfile(part, work)
+                if write_tags(work, t, art):
+                    os.replace(work, dest)
+                    part.unlink(missing_ok=True)
+                    return True
+            except Exception:
+                pass
+            work.unlink(missing_ok=True)
+        os.replace(part, dest)
+        return False
+    except BaseException:           # the song couldn't be put in place (disk full, a name the disk refuses...)
+        work.unlink(missing_ok=True)
+        part.unlink(missing_ok=True)
+        raise

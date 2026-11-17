@@ -1479,12 +1479,15 @@ class PhoneWindow(tk.Toplevel):
 
     def saved(self, paths: list, folder: Path, what: str = "file"):
         n = len([p for p in paths if p])
+        skipped, self.save_skipped = getattr(self, "save_skipped", []), []     # P2: songs the disk refused
+        left = (f". {len(skipped):,} couldn't be saved ({skipped[0][0]}: {skipped[0][1]})" if skipped else "")
         if not n:
-            messagebox.showwarning(wv.APP_NAME, "Nothing could be saved.", parent=self)
+            messagebox.showwarning(wv.APP_NAME, "Nothing could be saved" + (left or "."), parent=self)
             return
         activity.saved(n, what, folder, self.name, plural="photos/videos" if what == "photo/video" else None)
-        self.banner(f"✓ Saved {n:,} {what}{'s' if n != 1 else ''} to {folder}", ("Show in Finder" if sys.platform == "darwin"
-                    else "Show folder", lambda: reveal(folder)))
+        self.banner(f"✓ Saved {n:,} {what}{'s' if n != 1 else ''} to {folder}" + left,
+                    ("Show in Finder" if sys.platform == "darwin" else "Show folder", lambda: reveal(folder)),
+                    theme.ERROR_BG if skipped else GREEN_SOFT)
 
     def run_save(self, label: str, fn, folder: Path, what: str = "file", runner=None):
         self.banner(f"Saving {label}…")
@@ -2204,9 +2207,16 @@ class PhoneWindow(tk.Toplevel):
                     if len(more) > 1:
                         copy = more[1]
                     dest = unique_path(folder / (more[0] if more else name))
-                    if copy(dest):
-                        done.append(dest)
+                    try:
+                        if copy(dest):
+                            done.append(dest)
+                    except OSError as e:          # this one's name or place the disk refuses: save the others
+                        if not more:
+                            raise
+                        skipped.append((name, describe_error(e)))
                 return done
+            skipped: list = []
+            self.save_skipped = skipped
             self.run_save(f"{len(sel):,} item(s)", go, folder, "file",
                           self.live_runner if key in ("music", "books") else self.backup_runner)
         return play, save

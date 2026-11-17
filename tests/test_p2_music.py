@@ -311,6 +311,49 @@ left = [p.name for p in OUT.rglob("*") if p.suffix in (".part", ".tagging") or "
 check(not left, f"no half-written files are left ({left})")
 check(phone_hash() == before, "nothing on the iPhone changed (Apple's file service was only read)")
 
+# odd names: nothing a disk refuses, nothing Windows keeps for itself, within Windows' path length
+import dataclasses
+odd = [("CON", "AUX", "nul"), ("aux.x", "Lpt1.disc", "com9.final"), ("..", "..", ".."), ("", "", ""),
+       ("Ünïcode ✓ " + "y" * 300, "a/b:c\\d" * 60, "z" * 400), ("ends with dot.", "ends with space ", "x. ")]
+for artist, album, title in odd:
+    t = dataclasses.replace(by["Lantern Street"], artist=artist, album_artist=artist, album=album, title=title)
+    p = music_tags.save_path(t)
+    parts = p.split("/")
+    stems = [x.split(".")[0].strip().upper() for x in parts]
+    check(len(parts) == 3 and len(p) <= music_tags.ROOM and not any(s in music_tags.RESERVED for s in stems)
+          and all(x and x not in (".", "..") and not x.endswith((" ", ".")) and not any(c in x for c in ':\\?*<>|"')
+                  for x in parts) and p.endswith(".m4a"),
+          f"an odd name makes a safe place: {p[:90]!r}{'...' if len(p) > 90 else ''} ({len(p)} long)")
+
+# a copy that fails half-way (cable pulled), and a song that can't be put in place, leave nothing behind
+real_pull = FakeAfc.pull
+
+
+async def half_then_fail(self, src, dest, progress_bar=False):
+    Path(dest).write_bytes((PHONE / src).read_bytes()[:100])
+    raise RuntimeError("the copy stopped half-way (simulated)")
+FakeAfc.pull = half_then_fail
+dest = OUT / "half" / "song.m4a"
+try:
+    live.copy_song(by["Lantern Street"], dest)
+    raised = False
+except RuntimeError:
+    raised = True
+FakeAfc.pull = real_pull
+check(raised and (not dest.parent.exists() or not any(dest.parent.iterdir())),
+      f"a copy that stops half-way says so and leaves no half-copied file ({list(dest.parent.glob('*')) if dest.parent.exists() else []})")
+blocked = OUT / "blocked" / "song.m4a"
+blocked.mkdir(parents=True)                     # a folder where the song should go: the disk refuses the move
+try:
+    live.copy_song(by["Lantern Street"], blocked)
+    raised = False
+except OSError:
+    raised = True
+check(raised and sorted(p.name for p in blocked.parent.iterdir()) == ["song.m4a"] and blocked.is_dir()
+      and not any(blocked.iterdir()),
+      f"a song that can't be put in place leaves no .part or .tagging file ({sorted(p.name for p in blocked.parent.iterdir())})")
+shutil.rmtree(OUT / "blocked")
+
 # the artwork alone (the Music screen's panel)
 check(live.artwork(by["Lantern Street"]) == JPEG and live.artwork(by["LOOSE"]) is None,
       "a song's artwork is read on its own; a song without any has none")
@@ -434,13 +477,19 @@ shutil.rmtree(dest_dir, ignore_errors=True)
 dest_dir.mkdir(parents=True)
 phone.ask_save_folder = lambda parent, title, start: str(dest_dir)
 phone.reveal = lambda p: None
+(dest_dir / "Kit Marlow").write_text("a file where one artist's folder would go")   # the disk refuses that one
 tree.selection_set(rows)
 save = next(b for b in widgets(win.content, ui.RoundButton) if b.text == "Save selected")
 save.command()
 check(pump(lambda: str(win.bar_text.cget("text")).startswith("✓ Saved"), 60),
       f"Save selected saves them: {win.bar_text.cget('text')!r}")
+bar = str(win.bar_text.cget("text"))
+check(bar.startswith("✓ Saved 5 files") and "1 couldn't be saved (Kit Marlow - Bad _ File_.m4a" in bar,
+      f"a song the disk refuses doesn't stop the others, and the banner says which: {bar!r}")
+(dest_dir / "Kit Marlow").unlink()
 got = sorted(p.relative_to(dest_dir).as_posix() for p in dest_dir.rglob("*") if p.is_file())
-check(got == sorted(want_paths.values()), f"into Artist / Album folders: {got}")
+check(got == sorted(v for v in want_paths.values() if not v.startswith("Kit Marlow/")),
+      f"into Artist / Album folders: {got}")
 f = mutagen.File(dest_dir / want_paths["Lantern Street"])
 check(f.tags["\xa9nam"] == ["Lantern Street"] and bytes(f.tags["covr"][0]) == JPEG,
       "with the tags and artwork in each file")

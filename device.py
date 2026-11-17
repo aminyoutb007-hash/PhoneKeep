@@ -274,17 +274,22 @@ class LiveDevice:
             return self.run(self._music(), 1800)
 
     async def _copy_song(self, t: Track, dest: Path) -> bool:
-        afc = await self._afc()
-        try:
-            part = dest.with_name(dest.name + ".part")
-            if not await self._pull(afc, t.path, part):
-                return False
-            art = await self._artwork(afc, t)
-        finally:
-            await self._close(afc)
         import music_tags
-        music_tags.finish(part, dest, t, art)
-        return True
+        part = dest.with_name(dest.name + ".part")
+        try:
+            afc = await self._afc()
+            try:
+                if not await self._pull(afc, t.path, part):
+                    part.unlink(missing_ok=True)
+                    return False
+                art = await self._artwork(afc, t)
+            finally:
+                await self._close(afc)
+            music_tags.finish(part, dest, t, art)
+            return True
+        except BaseException:          # unplugged, locked or timed out mid-copy: leave nothing half-copied behind
+            part.unlink(missing_ok=True)
+            raise
 
     @retry_once
     def copy_song(self, t: Track, dest: Path) -> bool:
@@ -543,7 +548,8 @@ def _tracks_from_db(db: Path) -> MusicList:
             try:
                 for r in con.execute("SELECT k.entity_pid, k.entity_type, w.relative_path FROM artwork_token k "
                                      "JOIN artwork w ON w.artwork_token = k.artwork_token "
-                                     "WHERE k.entity_type IN (0, 4) AND w.relative_path != ''"):
+                                     "WHERE k.entity_type IN (0, 4) AND w.relative_path != '' "
+                                     "ORDER BY k.entity_pid, k.entity_type, k.artwork_type, w.relative_path"):
                     art.setdefault((r[1], r[0]), r[2])
             except sqlite3.Error:
                 art = {}
