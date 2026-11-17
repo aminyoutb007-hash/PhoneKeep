@@ -88,7 +88,7 @@ The usability test (five people, five tasks; P1's task 2 is one of them) and Q1'
 | E6 | Dark mode | Light only | Done | [05-ease-of-use.md](05-ease-of-use.md#e6-dark-mode) |
 | E7 | Fast with very large phones | Lists slow above ~20,000 items | Partial (every speed target met on 300,000 messages and 50,000 photos on an M4 Pro, 17 Nov; a base-model Mac to try) | [05-ease-of-use.md](05-ease-of-use.md#e7-fast-with-very-large-phones) |
 | M4 | Full detail in Excel and CSV | Basic columns | Partial (17 Nov: all seven columns built and tested; WhatsApp gives group numbers only; a real chat with a reply, a reaction and an edit to try) | [06-messages.md](06-messages.md#m4-full-detail-in-excel-and-csv) |
-| M5 | Show one person in a group chat | Not available | To build | [06-messages.md](06-messages.md#m5-show-one-person-in-a-group-chat) |
+| M5 | Show one person in a group chat | Not available | Done (17 Nov: People button; preview, counts and every save keep only the chosen people) | [06-messages.md](06-messages.md#m5-show-one-person-in-a-group-chat) |
 | M6 | Media viewer for chat attachments | Thumbnails only | Partial | [06-messages.md](06-messages.md#m6-media-viewer-for-chat-attachments) |
 | P2 | Music export with tags and artwork | Files saved without tags | Partial | [07-photos-media.md](07-photos-media.md#p2-music) |
 | P8 | Video conversion HEVC to H.264 when saving "Most compatible" (moved from P1) | Videos saved as originals | To build | [07-photos-media.md](07-photos-media.md#p8-video-conversion) |

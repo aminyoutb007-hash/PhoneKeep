@@ -1592,7 +1592,7 @@ class PhoneWindow(tk.Toplevel):
             sel = panel.selection(confirm_empty=False)
             if sel is None:
                 return
-            if not any(v for k, v in sel.items() if k != "_dates"):
+            if not any(v for k, v in sel.items() if not k.startswith("_")):
                 messagebox.showinfo(wv.APP_NAME, "Tick the chats you want to save first (or Select all).", parent=self)
                 return
             dates = sel.pop("_dates", None)
@@ -1601,13 +1601,13 @@ class PhoneWindow(tk.Toplevel):
             sel = panel.selection(confirm_empty=False)
             if sel is None:
                 return None
-            if not any(v for k, v in sel.items() if k != "_dates"):
+            if not any(v for k, v in sel.items() if not k.startswith("_")):
                 messagebox.showinfo(wv.APP_NAME, "Tick the chats you want first (or Select all).", parent=self)
                 return None
             return sel
 
         def n_ticked(sel) -> int:
-            return sum(len(v) if hasattr(v, "__len__") else 1 for k, v in sel.items() if k != "_dates")
+            return sum(len(v) if hasattr(v, "__len__") else 1 for k, v in sel.items() if not k.startswith("_"))
 
         def export_pdf():
             sel = ticked()

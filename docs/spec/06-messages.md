@@ -54,7 +54,13 @@ All three work the same way: a chat list on the left, the conversation as bubble
 **What the user sees and does:** in a group chat, a "People" button lists participants with message counts; ticking one or more shows only their messages. Save uses the same filter.
 
 **Done when**
-- [ ] Filtering a group to one person shows only their messages, in preview and in the saved Excel and PDF.
+- [x] Filtering a group to one person shows only their messages, in preview and in the saved Excel and PDF. *(17 Nov: `tests/test_m5_group_person.py`, in the real phone window on an invented backup, ticks one person in a Messages group and in a WhatsApp group: the preview, the chat's row and the footer show only theirs, and Excel, CSV and Save ticked as PDF keep only their messages, with a date range too. On the owner's iPhone, `tools/real_check.py` takes a real group from the latest backup (Messages, or WhatsApp when Messages has none), sorts its messages by person straight from the database, saves it for the busiest person through the phone window's own save, and checks that the Excel file has exactly their messages and the PDF no one else's name: it passes on a WhatsApp group.)*
+
+**How it's built (17 Nov):** a group chat's preview has a **People** button. It opens a list of the people in the chat with how many messages each sent, most first ("You" for your own). Ticking one or more shows only their messages; nobody ticked, or **Everyone**, shows the whole chat. While some people are ticked, the chat's row says "only <name>" (or "only 3 people") and counts only their messages, with the date range too, and so does the footer. Save, Print and the exports (Excel, CSV, PDF, web page) of the ticked chats keep the same choice; other ticked chats are saved whole.
+- A person is who the chat shows as the sender. Group updates (renamed, joined) aren't anyone's, so they're left out while some people are ticked.
+- WhatsApp: a first name or contact name that several people in one group share names none of them (on a real phone every member had the same "first name"), so those members are shown by their push name or WhatsApp ID instead, and the People list tells them apart. This also fixes the sender shown in those groups' previews and saves. "Several people" means more than two member IDs, or two of the same kind: one person can be in a group under a phone-number ID and a hidden-number (@lid) ID with one contact name, and that name stays.
+- Showing another chat closes the People list; each chat keeps its own choice.
+- The choice is kept while the chat list is open; it isn't saved.
 
 ## M6. Media viewer for chat attachments
 

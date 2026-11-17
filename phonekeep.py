@@ -1236,10 +1236,27 @@ def parse_whatsapp(db_path: Path, log: Log = _print,
     members: dict[int, str] = {}
     member_jid: dict[int, str] = {}
     if "ZWAGROUPMEMBER" in tables:
-        for r in _select(con, "ZWAGROUPMEMBER", ["Z_PK", "ZMEMBERJID", "ZCONTACTNAME", "ZFIRSTNAME"]):
+        rows = _select(con, "ZWAGROUPMEMBER", ["Z_PK", "ZMEMBERJID", "ZCONTACTNAME", "ZFIRSTNAME", "ZCHATSESSION"])
+        # a "name" several people in one group share names none of them (seen on a real phone: every member's
+        # ZFIRSTNAME was the same), so it's skipped for them (M5: People must tell them apart). One person can be
+        # in a group under two IDs, a phone-number one and a @lid one, with one contact name: that name stays.
+        shared: dict = {}
+        for r in rows:
+            for col in ("ZCONTACTNAME", "ZFIRSTNAME"):
+                if r[col]:
+                    shared.setdefault((r["ZCHATSESSION"], col, r[col]), set()).add(r["ZMEMBERJID"] or "")
+
+        def own(r, col):
+            v = r[col]
+            if not v:
+                return None
+            ids = shared[(r["ZCHATSESSION"], col, v)]
+            kinds = {i.partition("@")[2] for i in ids}
+            return v if len(ids) == 1 or (len(ids) == 2 and len(kinds) == 2) else None
+        for r in rows:
             jid = r["ZMEMBERJID"]
             member_jid[r["Z_PK"]] = jid or ""
-            members[r["Z_PK"]] = (names.get(jid) or r["ZCONTACTNAME"] or r["ZFIRSTNAME"]
+            members[r["Z_PK"]] = (names.get(jid) or own(r, "ZCONTACTNAME") or own(r, "ZFIRSTNAME")
                                   or name_for(jid_label(jid))
                                   or (("~" + push[jid]) if jid in push else None) or jid_label(jid))
 
@@ -1444,10 +1461,12 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
                     binfo: Optional[dict] = None, name_for=None, hub: bool = False,
                     strict: bool = False, only_chats: Optional[set] = None,
                     formats: Optional[set] = None, loaded: Optional[dict] = None,
-                    dates=None, pdf_combined: bool = False, search: str = "") -> dict:
+                    dates=None, pdf_combined: bool = False, search: str = "",
+                    people: Optional[dict] = None) -> dict:
     """Build the WhatsApp (or WhatsApp Business) archive in `out` from an open backup.
     loaded: the result of load_whatsapp(), when the chats were already read (e.g. for the picker).
-    dates: (from, to) to keep only messages in that period."""
+    dates: (from, to) to keep only messages in that period.
+    people (M5): {chat id: names}: those group chats keep only those people's messages."""
     out = Path(out)
     loaded = loaded or load_whatsapp(reader, business, strict, name_for, log)
     domain, files = loaded["domain"], loaded["files"]
@@ -1458,6 +1477,7 @@ def export_whatsapp(reader: "BackupReader", out: Path, include_media: bool = Tru
         if not chats:
             raise PhoneKeepError("No chats selected for this app.")
     import exportfilter
+    chats = exportfilter.only_people(chats, people)
     flt = exportfilter.Filter(tuple(dates) if dates else None, search)
     if flt.on:
         chats = flt.chats(chats)

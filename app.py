@@ -1548,7 +1548,7 @@ class App(_dnd_root()):
         self.call(show)
         ev.wait()
         if box.get("v") is not None:
-            n = sum(len(v) for k, v in box["v"].items() if k != "_dates")
+            n = sum(len(v) for k, v in box["v"].items() if not k.startswith("_"))
             self.log(f"You selected {n} chat{'s' if n != 1 else ''}.")
             dates = box["v"].get("_dates")
             when = f" ({wv.describe_dates(dates)})" if dates else ""
