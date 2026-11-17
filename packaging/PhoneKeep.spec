@@ -7,6 +7,7 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metada
 datas, binaries, hiddenimports = [], [], []
 for pkg in ("pymobiledevice3", "pillow_heif", "iphone_backup_decrypt", "openpyxl", "certifi", "keyring", "tkinterdnd2", "send2trash",
             "reportlab", "arabic_reshaper", "bidi",                       # M3: chats to PDF
+            "mutagen",                                                     # P2: songs saved with tags and artwork
             *(("rumps",) if sys.platform == "darwin" else ("pystray", "pypdfium2")),   # Q1: PDF previews off the Mac
             *(("winrt",) if sys.platform == "win32" else ()),                 # S2: Windows Hello
             *(("LocalAuthentication",) if sys.platform == "darwin" else ())):  # S2: Touch ID (with its lazy _metadata)
@@ -31,7 +32,7 @@ for pkg in ("typer", "rich", "click", "construct", "asn1", "srptools", "pycrashr
         pass
 hiddenimports += ["exportfilter", "saveall_ui", "quicklook", "overview_ui", "deviceinfo", "sections", "phonekeep", "app", "ui", "photos", "tables", "phone", "device", "build_label",
                   "keychain", "phone_write", "netguard", "certifi", "errors", "firstrun", "helper_core", "helper_ui", "login_item",
-                  "scheduler", "snapshots", "location", "chat_pdf", "applock", "models", "library", "photoconv", "checkup", "checkup_ui", "storage_advice", "battery_history", "cleanup", "cleanup_ui", "crashes", "security", "search", "activity", "tamper",
+                  "scheduler", "snapshots", "location", "chat_pdf", "applock", "models", "library", "photoconv", "checkup", "checkup_ui", "storage_advice", "battery_history", "cleanup", "cleanup_ui", "crashes", "security", "search", "activity", "tamper", "music_tags",
                   *(["Foundation", "AppKit", "objc", "PyObjCTools", "Quartz", "LocalAuthentication"] if sys.platform == "darwin" else []),   # rumps; PDFKit; S2
                   *(["winrt.windows.security.credentials.ui", "winrt.windows.foundation"] if sys.platform == "win32" else []),       # S2: Windows Hello
                   "keyring", "keyring.backends.macOS", "keyring.backends.Windows",

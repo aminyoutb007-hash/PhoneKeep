@@ -62,6 +62,7 @@ listed here.
 | [markdown-it-py](https://github.com/executablebooks/markdown-it-py) | MIT |
 | [mdurl](https://github.com/executablebooks/mdurl) | MIT |
 | [more-itertools](https://github.com/more-itertools/more-itertools) | MIT |
+| [mutagen](https://github.com/quodlibet/mutagen) | GPL-2.0-or-later |
 | [opack2](https://github.com/doronz88/opack2) | GPL-3.0-or-later |
 | [openpyxl](https://openpyxl.readthedocs.io) | MIT |
 | [opentelemetry-api](https://github.com/open-telemetry/opentelemetry-python/tree/main/opentelemetry-api) | Apache-2.0 |

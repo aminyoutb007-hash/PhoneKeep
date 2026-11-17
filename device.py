@@ -41,6 +41,20 @@ class Track:
     path: str            # on the phone, e.g. iTunes_Control/Music/F12/ABCD.m4a
     size: int = 0
     kind: str = "Song"   # Song, Music video, Podcast, Audiobook...
+    album_artist: str = ""                   # P2: the rest of the library's details, written into a saved song
+    genre: str = ""
+    year: int = 0
+    track_no: int = 0
+    track_count: int = 0
+    disc_no: int = 0
+    disc_count: int = 0
+    artwork: str = ""    # the artwork's file on the phone (iTunes_Control/iTunes/Artwork/Originals/...), if any
+    protected: bool = False                  # FairPlay: saved as it is, only plays on the owner's devices
+
+
+class MusicList(list):
+    """The songs on the phone, and how many more the library lists that only stream (Apple Music, iCloud)."""
+    streaming = 0
 
 
 @dataclass
@@ -227,9 +241,11 @@ class LiveDevice:
                     tracks = _tracks_from_db(db_dir / "MediaLibrary.sqlitedb")
             except Exception:
                 tracks = []
+            streaming = getattr(tracks, "streaming", 0)
             # sizes, and any files the library doesn't describe
             known = {t.path for t in tracks}
             sizes = {}
+            walked = False
             try:
                 async for root, _dirs, files in afc.walk("iTunes_Control/Music"):
                     for f in files:
@@ -241,18 +257,70 @@ class LiveDevice:
                             sizes[rel] = 0
                         if rel not in known and not f.startswith("."):
                             tracks.append(Track(Path(f).stem, "", "", 0, rel))
+                walked = True
             except Exception:
                 pass
             for t in tracks:
                 t.size = sizes.get(t.path, 0)
-            return [t for t in tracks if t.path in sizes] if sizes else tracks
+            out = MusicList(t for t in tracks if t.path in sizes or not walked)
+            out.streaming = streaming + len(tracks) - len(out)    # listed by the library, but its file isn't here
+            return out
         finally:
             await self._close(afc)
 
     @retry_once
-    def music(self) -> list[Track]:
+    def music(self) -> "MusicList":
         with self._lock:
             return self.run(self._music(), 1800)
+
+    async def _copy_song(self, t: Track, dest: Path) -> bool:
+        import music_tags
+        part = dest.with_name(dest.name + ".part")
+        try:
+            afc = await self._afc()
+            try:
+                if not await self._pull(afc, t.path, part):
+                    part.unlink(missing_ok=True)
+                    return False
+                art = await self._artwork(afc, t)
+            finally:
+                await self._close(afc)
+            music_tags.finish(part, dest, t, art)
+            return True
+        except BaseException:          # unplugged, locked or timed out mid-copy: leave nothing half-copied behind
+            part.unlink(missing_ok=True)
+            raise
+
+    @retry_once
+    def copy_song(self, t: Track, dest: Path) -> bool:
+        """P2: copy a song and write the library's title, artist, album and artwork into it."""
+        with self._lock:
+            return self.run(self._copy_song(t, Path(dest)), 3600)
+
+    async def _artwork(self, afc, t: Track) -> Optional[bytes]:
+        if not t.artwork:
+            return None
+        tmp = Path(tempfile.mkdtemp(dir=self.cache))
+        try:
+            p = tmp / "art"
+            return p.read_bytes() if await self._pull(afc, t.artwork, p) else None
+        except Exception:
+            return None
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    async def _artwork_alone(self, t: Track) -> Optional[bytes]:
+        afc = await self._afc()
+        try:
+            return await self._artwork(afc, t)
+        finally:
+            await self._close(afc)
+
+    @retry_once
+    def artwork(self, t: Track) -> Optional[bytes]:
+        """P2: a song's artwork as the Music app stores it (JPEG or PNG), or None."""
+        with self._lock:
+            return self.run(self._artwork_alone(t), 60)
 
     # books --------------------------------------------------------------------
     async def _books(self) -> list[Book]:
@@ -432,49 +500,78 @@ class LiveDevice:
             return self.run(self._app_pull(bundle_id, path, Path(dest_dir)), 3600)
 
 
-def _tracks_from_db(db: Path) -> list[Track]:
-    """Read song titles etc. from the phone's MediaLibrary.sqlitedb (schema varies by iOS)."""
+ARTWORK_ROOT = "iTunes_Control/iTunes/Artwork/Originals"
+
+
+def _tracks_from_db(db: Path) -> MusicList:
+    """Read song titles etc. from the phone's MediaLibrary.sqlitedb (schema varies by iOS).
+    Songs with no file on the phone (they stream from Apple Music / iCloud) aren't returned; they're counted in
+    .streaming so the window can say why they're missing (P2)."""
     con = sqlite3.connect(str(db))
     con.row_factory = sqlite3.Row
+    out = MusicList()
     try:
         t = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not {"item", "item_extra"} <= t:
-            return []
+            return out
         icols = {r[1] for r in con.execute("PRAGMA table_info(item)")}
         ecols = {r[1] for r in con.execute("PRAGMA table_info(item_extra)")}
-        sel = ["i.item_pid", "e.title" if "title" in ecols else "'' AS title",
-               "e.location" if "location" in ecols else "'' AS location",
-               "e.total_time_ms" if "total_time_ms" in ecols else "0 AS total_time_ms"]
+
+        def ecol(c, default):
+            return f"e.{c}" if c in ecols else f"{default} AS {c}"
+
+        def icol(c):
+            return f"i.{c}" if c in icols else f"0 AS {c}"
+        sel = ["i.item_pid", ecol("title", "''"), ecol("location", "''"), ecol("total_time_ms", "0"),
+               ecol("year", "0"), ecol("track_count", "0"), ecol("disc_count", "0"),
+               icol("track_number"), icol("disc_number"), icol("album_pid")]
         joins = ""
-        if "base_location" in t and "base_location_id" in icols:
-            sel.append("b.path AS base")
-            joins += " LEFT JOIN base_location b ON b.base_location_id = i.base_location_id"
-        else:
-            sel.append("'' AS base")
-        if "item_artist" in t and "item_artist_pid" in icols:
-            sel.append("a.item_artist AS artist")
-            joins += " LEFT JOIN item_artist a ON a.item_artist_pid = i.item_artist_pid"
-        else:
-            sel.append("'' AS artist")
-        if "album" in t and "album_pid" in icols:
-            sel.append("al.album AS album")
-            joins += " LEFT JOIN album al ON al.album_pid = i.album_pid"
-        else:
-            sel.append("'' AS album")
+        for table, key, col, alias, name in (
+                ("base_location", "base_location_id", "path", "b", "base"),
+                ("item_artist", "item_artist_pid", "item_artist", "a", "artist"),
+                ("album", "album_pid", "album", "al", "album"),
+                ("album_artist", "album_artist_pid", "album_artist", "aa", "album_artist"),
+                ("genre", "genre_id", "genre", "g", "genre")):
+            if table in t and key in icols and col in {r[1] for r in con.execute(f"PRAGMA table_info({table})")}:
+                sel.append(f"{alias}.{col} AS {name}")
+                joins += f" LEFT JOIN {table} {alias} ON {alias}.{key} = i.{key}"
+            else:
+                sel.append(f"'' AS {name}")
         if "media_type" in icols:
             sel.append("i.media_type")
-        out = []
+        protected = set()
+        if "item_store" in t and "is_protected" in {r[1] for r in con.execute("PRAGMA table_info(item_store)")}:
+            protected = {r[0] for r in con.execute("SELECT item_pid FROM item_store WHERE is_protected")}
+        # artwork: a song's own (entity type 0), else its album's (type 4); the file is under Artwork/Originals
+        art: dict[tuple[int, int], str] = {}
+        if {"artwork_token", "artwork"} <= t:
+            try:
+                for r in con.execute("SELECT k.entity_pid, k.entity_type, w.relative_path FROM artwork_token k "
+                                     "JOIN artwork w ON w.artwork_token = k.artwork_token "
+                                     "WHERE k.entity_type IN (0, 4) AND w.relative_path != '' "
+                                     "ORDER BY k.entity_pid, k.entity_type, k.artwork_type, w.relative_path"):
+                    art.setdefault((r[1], r[0]), r[2])
+            except sqlite3.Error:
+                art = {}
         q = f"SELECT {', '.join(sel)} FROM item i JOIN item_extra e ON e.item_pid = i.item_pid{joins}"
         for r in con.execute(q):
             loc = r["location"] or ""
             if not loc:
-                continue  # not on the phone (streams from Apple Music / iCloud)
+                out.streaming += 1        # not on the phone (streams from Apple Music / iCloud)
+                continue
             base = (r["base"] or "iTunes_Control/Music").strip("/")
             ext = Path(loc).suffix.lower()
             kind = ("Audiobook" if ext in (".m4b", ".aa", ".aax") else
                     "Video" if ext in (".m4v", ".mp4", ".mov") else "Song")
+            cover = art.get((0, r["item_pid"])) or art.get((4, r["album_pid"])) or ""
             out.append(Track(r["title"] or Path(loc).stem, r["artist"] or "", r["album"] or "",
-                             (r["total_time_ms"] or 0) / 1000.0, f"{base}/{loc}", 0, kind))
+                             (r["total_time_ms"] or 0) / 1000.0, f"{base}/{loc}", 0, kind,
+                             album_artist=r["album_artist"] or "", genre=r["genre"] or "",
+                             year=int(r["year"] or 0), track_no=int(r["track_number"] or 0),
+                             track_count=int(r["track_count"] or 0), disc_no=int(r["disc_number"] or 0),
+                             disc_count=int(r["disc_count"] or 0),
+                             artwork=f"{ARTWORK_ROOT}/{cover}" if cover else "",
+                             protected=r["item_pid"] in protected or ext == ".m4p"))
         return out
     finally:
         con.close()

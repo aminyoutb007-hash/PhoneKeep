@@ -22,6 +22,8 @@ What it does, all read-only for the phone:
   * M5: a group chat saved for one person keeps only their messages, in Excel and PDF (counts only).
   * M6: a chat's Media tab shows every attachment sms.db has; one photo shown large; Save all saves the ones the
     backup has, each dated when it was sent (counts only).
+  * P2: songs that only stream aren't listed in Music, and the screen says why; a song on the phone is saved into
+    Artist / Album with its title, artist, album and artwork in the file (counts only).
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
 and PhoneKeep's own folder and settings aren't changed.
 """
@@ -744,6 +746,58 @@ try:
               f"{res['missing']} not in the backup, each dated when it was sent: {dated}; a photo shown large: "
               f"{big if photo is not None else 'no photo in the backup'}")
         shutil.rmtree(WORK / "m6", ignore_errors=True)
+
+    # -- P2: music: songs that only stream aren't listed and the Music screen says why; a song on the phone is saved
+    # into Artist / Album with its tags and artwork. The library's own count of songs with no file comes straight from
+    # its database (the copy the Music screen's read left in the live connection's private cache). Counts only.
+    import sqlite3
+    import device as devmod
+    import music_tags
+    if win.live is None:
+        check(False, "P2: no live connection to the iPhone, so its music couldn't be read")
+    else:
+        win.open_app("music")
+        pump(app, lambda: not loading(win), 600)
+        songs = win.live.music()
+        db = Path(win.live.cache) / "medialib" / "MediaLibrary.sqlitedb"
+        no_file = None
+        if db.exists():
+            c = sqlite3.connect(db)
+            try:
+                no_file = c.execute("SELECT COUNT(*) FROM item_extra WHERE IFNULL(location, '') = ''").fetchone()[0]
+            finally:
+                c.close()
+        streaming = getattr(songs, "streaming", 0)
+        said = " ".join(str(l.cget("text")) for l in labels(win.content))
+        n = streaming
+        why = (f"{n:,} more song{'s' if n != 1 else ''} in the Music library" in said if songs else
+               f"({n:,} song{'s' if n != 1 else ''} in the library stream" in said) if n else True
+        check(no_file is not None and streaming >= no_file and why,
+              f"P2 on the real phone: {len(songs)} song(s) stored on the iPhone are listed; {streaming} in the library "
+              f"aren't (the library itself has {no_file} with no file on the phone), and the Music screen says why: "
+              f"{bool(why)}")
+        mine = [t for t in songs if not t.protected and t.kind == "Song" and t.title]
+        if not mine:
+            note("P2: no unprotected song stored on the iPhone; saving with tags and artwork not tested on real data")
+        else:
+            import mutagen
+            t = min(mine, key=lambda x: x.size or 0)
+            dest = WORK / "p2" / music_tags.save_path(t)
+            ok = win.live.copy_song(t, dest)
+            f = mutagen.File(dest) if ok and dest.exists() else None
+            tags = getattr(f, "tags", None)
+
+            def has(*keys, value=None):
+                return tags is not None and any(k in tags and (value is None or value in str(tags[k])) for k in keys)
+            title_ok = has("\xa9nam", "TIT2", "title", value=t.title)
+            artist_ok = not t.artist or has("\xa9ART", "TPE1", "artist", value=t.artist)
+            album_ok = not t.album or has("\xa9alb", "TALB", "album", value=t.album)
+            art_ok = not t.artwork or has("covr") or bool(tags is not None and hasattr(tags, "getall")
+                                                           and tags.getall("APIC"))
+            check(ok and title_ok and artist_ok and album_ok and art_ok,
+                  f"P2: a song saved from the iPhone lands in its Artist / Album folder with its title {title_ok}, "
+                  f"artist {artist_ok}, album {album_ok} and artwork {art_ok if t.artwork else '(none in the library)'}")
+            shutil.rmtree(WORK / "p2", ignore_errors=True)
 finally:
     try:
         win.close()
