@@ -171,8 +171,9 @@ check(n == 3 and {p["name"] for p in people if p.get("photo")} == {"Alex Example
       f"three contacts have a photo ({n}); the one kept only on the internet isn't fetched")
 check(Image.open(io.BytesIO(alex["photo"])).size == (320, 320), "Alex: the phone's biggest thumbnail is used")
 rob = Image.open(io.BytesIO(by["Robin Sample"]["photo"])).convert("RGB")
-check(rob.size == (200, 200) and all(abs(c - t) < 30 for c, t in zip(rob.getpixel((100, 100)), (250, 250, 0))),
-      f"Robin: no thumbnail, so the full-size picture cropped where the phone crops it ({rob.size}, {rob.getpixel((100, 100))})")
+yellow = [all(abs(c - t) < 40 for c, t in zip(rob.getpixel(xy), (250, 250, 0))) for xy in ((100, 6), (100, 194))]
+check(rob.size == (200, 200) and all(yellow),
+      f"Robin: no thumbnail, so the full-size picture cropped where the phone crops it, top to bottom ({rob.size}, {yellow})")
 check(Image.open(io.BytesIO(kim["photo"])).convert("RGB").getpixel((5, 5))[1] > 120,
       "Kim: the photo of the card the phone prefers for the photo")
 check(not connects, f"nothing was fetched from the internet: {connects}")
