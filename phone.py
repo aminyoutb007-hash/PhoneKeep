@@ -2091,10 +2091,10 @@ class PhoneWindow(tk.Toplevel):
                 show_folders()
                 return
             foot_count.configure(text="Searching…")
-            reader = self.data.reader
-            doms = [meta[i][1] for i in tree.get_children("") if meta.get(i, ("",))[0] == "domain"]
+            data = self.data                      # its file_meta holds the backup's lock (closing the window can't
+            doms = [meta[i][1] for i in tree.get_children("") if meta.get(i, ("",))[0] == "domain"]   # pull it away)
             self.backup_runner.submit(
-                lambda: filesearch.in_backup(reader.file_meta, doms, pat, stop=lambda: gen != look["gen"]),
+                lambda: filesearch.in_backup(data.file_meta, doms, pat, stop=lambda: gen != look["gen"]),
                 lambda res: show_hits(gen, *res), lambda e: foot_count.configure(text=f"Couldn't search: {describe_error(e)}"))
 
         def show_hits(gen, found, total):
@@ -2662,6 +2662,8 @@ class PhoneWindow(tk.Toplevel):
                                         lambda err: self.banner(f"Couldn't open it: {describe_error(err)}", color=theme.ERROR_BG))
         alist.bind("<<TreeviewSelect>>", lambda e: alist.selection() and load(alist.selection()[0], "Documents"))
         files.bind("<Double-1>", dbl)
+        # F3: leaving App Files stops a search still walking the phone (it holds the phone for Music and Books)
+        files.bind("<Destroy>", lambda e: state.__setitem__("gen", state["gen"] + 1), add="+")
         self.files_open = dbl                     # for the tests (Tk can't make a double-click)
 
         def pull_to(app_id, entry, dest: Path) -> bool:

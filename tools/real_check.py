@@ -1007,7 +1007,7 @@ try:
             note("F3: no app on this phone shares files that have anything in them; walking not tested on real data")
         else:
             by_folder, todo = set(), ["Documents"]
-            while todo and len(by_folder) < 5000:
+            while todo and len(by_folder) < 20000:                 # app_walk's own limit
                 for e in win.live.app_list(one.id, todo.pop(0)):
                     by_folder.add((e.path, e.is_dir))
                     if e.is_dir:

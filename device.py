@@ -484,29 +484,7 @@ class LiveDevice:
         from pymobiledevice3.services.house_arrest import HouseArrestService
         ha = await HouseArrestService.create(self.lockdown, bundle_id, documents_only=True)
         try:
-            out: list[Entry] = []
-            todo = [("Documents", 0)]
-            while todo and len(out) < limit and not (stop and stop()):
-                base, depth = todo.pop(0)
-                try:
-                    names = await _aw(ha.listdir(base))
-                except Exception:
-                    continue                                 # a folder that can't be read: the rest still are
-                for n in names:
-                    if n in (".", ".."):
-                        continue
-                    rel = f"{base}/{n}"
-                    try:
-                        st = await _aw(ha.stat(rel))
-                    except Exception:
-                        st = {}
-                    when = st.get("st_mtime")
-                    e = Entry(n, rel, st.get("st_ifmt") == "S_IFDIR", int(st.get("st_size", 0) or 0),
-                              when.replace(tzinfo=None) if isinstance(when, dt.datetime) else None)
-                    out.append(e)
-                    if e.is_dir and depth < 30 and st.get("st_ifmt") != "S_IFLNK":
-                        todo.append((rel, depth + 1))
-            return out
+            return await walk_documents(ha, limit, stop)
         finally:
             await self._close(ha)
 
@@ -535,6 +513,43 @@ class LiveDevice:
         """Copy a file or folder from an app's Documents into dest_dir."""
         with self._lock:
             return self.run(self._app_pull(bundle_id, path, Path(dest_dir)), 3600)
+
+
+async def walk_documents(ha, limit: int = 20000, stop=None, max_depth: int = 30) -> list[Entry]:
+    """F3: everything under an app's Documents through one house_arrest connection `ha` (its listdir and stat
+    only: read-only), breadth first. At most `limit` entries and `max_depth` folders deep; stop() is asked before
+    each entry. The Documents folder itself must read (an app that can't be read raises, so it's named), and a
+    dropped connection raises (so the caller's retry sees it); any other folder that can't be read is skipped."""
+    from reconnect import is_dropped
+    out: list[Entry] = []
+    todo = [("Documents", 0)]
+    while todo:
+        base, depth = todo.pop(0)
+        try:
+            names = await _aw(ha.listdir(base))
+        except Exception as e:
+            if base == "Documents" or is_dropped(e):
+                raise
+            continue
+        for n in names:
+            if len(out) >= limit or (stop and stop()):
+                return out
+            if n in (".", ".."):
+                continue
+            rel = f"{base}/{n}"
+            try:
+                st = await _aw(ha.stat(rel))
+            except Exception as e:
+                if is_dropped(e):
+                    raise
+                st = {}
+            when = st.get("st_mtime")
+            e = Entry(n, rel, st.get("st_ifmt") == "S_IFDIR", int(st.get("st_size", 0) or 0),
+                      when.replace(tzinfo=None) if isinstance(when, dt.datetime) else None)
+            out.append(e)
+            if e.is_dir and depth + 1 < max_depth:
+                todo.append((rel, depth + 1))
+    return out
 
 
 ARTWORK_ROOT = "iTunes_Control/iTunes/Artwork/Originals"

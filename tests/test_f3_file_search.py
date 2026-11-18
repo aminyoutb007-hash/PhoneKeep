@@ -54,6 +54,63 @@ check(P("*/Scans/*.pdf").match("a.pdf", "Documents/Scans/a.pdf") and not P("*/Sc
       "a pattern with a / is matched against the path")
 check(not P("") and not P("*") and not P(" ** "), "an empty search, or * alone, isn't a search (it would list everything)")
 
+# -- the phone's walk (device.walk_documents, through a stand-in house_arrest connection) -------------------------
+import asyncio
+import reconnect
+
+TREE = {"Documents": ["a.pdf", "Sub", "Locked", "."], "Documents/Sub": ["b.pdf", "Deeper"],
+        "Documents/Sub/Deeper": ["c.txt"], "Documents/Locked": None}
+
+
+class FakeHA:
+    def __init__(self, tree, drop_at=None):
+        self.tree, self.drop_at, self.calls = tree, drop_at, []
+
+    async def listdir(self, path):
+        self.calls.append(("listdir", path))
+        if path == self.drop_at:
+            raise reconnect.Disconnected("the cable came out")
+        if self.tree.get(path) is None:
+            raise PermissionError(f"can't read {path}")
+        return list(self.tree[path])
+
+    def stat(self, path):
+        self.calls.append(("stat", path))
+        return {"st_ifmt": "S_IFDIR" if path in self.tree else "S_IFREG", "st_size": 10,
+                "st_mtime": dt.datetime(2026, 3, 4, tzinfo=dt.timezone.utc)}
+
+
+walk = lambda ha, **k: asyncio.run(devmod.walk_documents(ha, **k))
+ha = FakeHA(TREE)
+got = walk(ha)
+check(sorted(e.path for e in got) == ["Documents/Locked", "Documents/Sub", "Documents/Sub/Deeper",
+                                      "Documents/Sub/Deeper/c.txt", "Documents/Sub/b.pdf", "Documents/a.pdf"]
+      and {c[0] for c in ha.calls} == {"listdir", "stat"},
+      "the walk lists folders inside folders, skips one it can't read, and only lists and looks (read-only)")
+check([e.path for e in walk(FakeHA(TREE), limit=2)] == ["Documents/a.pdf", "Documents/Sub"],
+      "  it stops at its limit, inside a folder too")
+asked = {"n": 0}
+
+
+def stop_soon():
+    asked["n"] += 1
+    return asked["n"] > 1
+
+
+check(len(walk(FakeHA(TREE), stop=stop_soon)) == 1, "  and when it's told to stop, inside a folder too")
+check(sorted(e.path for e in walk(FakeHA(TREE), max_depth=2)) == ["Documents/Locked", "Documents/Sub",
+                                                                 "Documents/Sub/Deeper", "Documents/Sub/b.pdf",
+                                                                 "Documents/a.pdf"],
+      "  and goes no deeper than its depth limit")
+for what, ha in (("an app whose Documents can't be read", FakeHA({"Documents": None})),
+                 ("a dropped connection in a folder inside", FakeHA(TREE, drop_at="Documents/Sub"))):
+    try:
+        walk(ha)
+        raised = False
+    except Exception:
+        raised = True
+    check(raised, f"  {what} isn't taken for an empty one: it's an error (so it's named, or retried)")
+
 # -- the simulated iPhone ---------------------------------------------------------------------------------------
 E = devmod.Entry
 T = dt.datetime(2026, 3, 4, 10, 30)
@@ -89,6 +146,7 @@ class SimulatedDevice:
 
     def app_walk(self, bundle_id, limit=20000, stop=None):
         self.calls.append(("app_walk", bundle_id))
+        self.last_stop = stop
         if bundle_id == "com.example.locked":
             raise wv.PhoneKeepError("The app didn't answer.")
         if bundle_id not in FILES:
@@ -247,6 +305,27 @@ check(pump(lambda: (OUT / "VLC" / "Invoice.pdf").exists() and (OUT / "Pages" / "
       "Save selected saves each result into its own app's folder")
 check(not [c for c in win.live.calls if c[0] not in ("app_walk", "app_pull")],
       "the phone is only read (its apps' files listed and copied)")
+fq.set("*.txt")
+find()
+pump(lambda: getattr(win.live, "last_stop", None) is not None, 10)
+stop = win.live.last_stop
+pump(lambda: True, 1)
+was = stop()
+win.show_home()
+app.update()
+check(not was and stop(), "leaving App Files stops a search still walking the phone (Music and Books aren't kept waiting)")
+
+# All files searches the backup through the window's locked reader (closing the window can't pull it away)
+win.allfiles_q = None
+win.open_app("allfiles")
+pump(lambda: getattr(win, "allfiles_q", None) is not None, 30)
+used = []
+real_fm = win.data.file_meta
+win.data.file_meta = lambda d, prefix="": (used.append(d), real_fm(d, prefix))[1]
+win.allfiles_q.set("*.jpg")
+win.allfiles_search()
+check(pump(lambda: len(win.allfiles_hits.get_children()) > 0, 30) and used,
+      "All files' search reads the backup's file lists under the backup's lock")
 
 win.destroy()
 app.destroy()
