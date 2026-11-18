@@ -258,32 +258,43 @@ scale, at, old_first, let_go = win.snap_slider
 was = at.get()
 scale.focus_force()
 app.update()
-scale.event_generate("<Right>")
-app.update()
-right = at.get()
-scale.event_generate("<Left>")
-app.update()
-check(right == was + 1 and at.get() == was, f"the arrow keys move it one snapshot ({was} -> {right} -> {at.get()}; "
-      f"key focus {app.focus_get()!s})")
-opened.clear()
-scale.event_generate("<Button-1>", x=2, y=12)
-scale.event_generate("<ButtonRelease-1>", x=2, y=12)
-check(pump(lambda: messages_count() == latest - 2 and bool(opened), 10) and opened == [old_first[0].id],
-      "clicking its left end opens the oldest snapshot")
+if app.focus_get() is not scale:      # Tk sends a key to the widget with the key focus; a background app may get none
+    print(f"skip the arrow keys: this machine didn't give the slider the key focus (it's on {app.focus_get()!s})", flush=True)
+else:
+    scale.event_generate("<Right>")
+    app.update()
+    right = at.get()
+    scale.event_generate("<Left>")
+    app.update()
+    check(right == was + 1 and at.get() == was, f"the arrow keys move it one snapshot ({was} -> {right} -> {at.get()})")
+# the mouse: only where the slider is on the screen. On a smaller one (GitHub's Mac machines: 1024x768) the window is
+# cut to the screen and the slider, at the card's foot, is below it, where a click Tk plays never lands
+off = (scale.winfo_rooty() + scale.winfo_height() > win.winfo_screenheight()
+       or scale.winfo_rootx() + scale.winfo_width() > win.winfo_screenwidth())
+if off:
+    print(f"skip clicking and dragging the slider: it's off the screen here (slider at {scale.winfo_rootx()},"
+          f"{scale.winfo_rooty()} {scale.winfo_width()}x{scale.winfo_height()}, screen "
+          f"{win.winfo_screenwidth()}x{win.winfo_screenheight()})", flush=True)
+else:
+    opened.clear()
+    scale.event_generate("<Button-1>", x=2, y=12)
+    scale.event_generate("<ButtonRelease-1>", x=2, y=12)
+    check(pump(lambda: messages_count() == latest - 2 and bool(opened), 10) and opened == [old_first[0].id],
+          "clicking its left end opens the oldest snapshot")
 
-# a drag that pauses opens nothing until the mouse is let go
-scale, at, old_first, let_go = win.snap_slider
-pump(lambda: scale.winfo_ismapped() and scale.winfo_width() > 100, 10)
-opened.clear()
-w = scale.winfo_width()
-scale.event_generate("<Button-1>", x=2, y=12)
-scale.event_generate("<B1-Motion>", x=w // 2, y=12)
-app.update()
-pump(lambda: False, 0.6)
-check(at.get() == 1 and not opened, f"a drag that pauses on a snapshot opens nothing yet (at {at.get()}, {len(opened)} opened)")
-scale.event_generate("<ButtonRelease-1>", x=w // 2, y=12)
-check(pump(lambda: messages_count() == latest - 1, 10) and opened == [old_first[1].id],
-      "  letting go opens the one it's on")
+    # a drag that pauses opens nothing until the mouse is let go
+    scale, at, old_first, let_go = win.snap_slider
+    pump(lambda: scale.winfo_ismapped() and scale.winfo_width() > 100, 10)
+    opened.clear()
+    w = scale.winfo_width()
+    scale.event_generate("<Button-1>", x=2, y=12)
+    scale.event_generate("<B1-Motion>", x=w // 2, y=12)
+    app.update()
+    pump(lambda: False, 0.6)
+    check(at.get() == 1 and not opened, f"a drag that pauses on a snapshot opens nothing yet (at {at.get()}, {len(opened)} opened)")
+    scale.event_generate("<ButtonRelease-1>", x=w // 2, y=12)
+    check(pump(lambda: messages_count() == latest - 1, 10) and opened == [old_first[1].id],
+          "  letting go opens the one it's on")
 
 # deleting the snapshot being viewed: it's gone from the list and the slider, and the latest opens
 real_delete = sn.delete_snapshot
