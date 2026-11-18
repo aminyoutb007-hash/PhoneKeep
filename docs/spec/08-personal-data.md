@@ -53,7 +53,16 @@
 **What the user sees and does:** a **Call recordings** list (iOS 18 and later): who, when, length; Play; the transcript beside it when the phone made one; Save audio and transcript.
 
 **Done when**
-- [ ] A recorded call on a real phone appears with its audio and transcript.
+- [ ] A recorded call on a real phone appears with its audio and transcript. *(18 Nov: on the owner's real backup, `tools/real_check.py` finds every recorded call the Notes database has listed, with its audio in the backup and its length, and in the Call Recordings screen. The owner's recorded call has no transcript (the phone makes one only in some languages and regions), so a real transcript is still to see; transcripts are checked on invented data, `tests/test_d6_call_recordings.py`.)*
+
+**How it's built (18 Nov):**
+- **Where iOS keeps them:** from iOS 18.1 a recorded call (Phone or FaceTime audio) is a note in Notes. The note's row in NoteStore.sqlite has the app that made it (`ZHOSTAPPLICATIONIDENTIFIER`, e.g. com.apple.mobilephone). The folder's name follows the phone's language, so PhoneKeep goes by that app, not by the folder.
+- **One row per recording:** each top-level audio attachment of such a note (`com.apple.m4a-audio`). iOS keeps a short part under each (`ZPARENTATTACHMENT`), which isn't listed on its own. Several recordings in one call are several rows.
+- **Who, when, length:** the note's title (as the phone names it, e.g. the person or number), its creation date, and the recording's `ZDURATION`, else its part's, else measured from the .m4a's header in memory (mutagen; files up to 256 MB).
+- **Transcript:** the attachment's `ZADDITIONALINDEXABLETEXT` (and its parts'), when the phone made one.
+- **The audio** is found as Notes attachments are (D4): Media/<identifier>/… under the Notes folder of the backup. One that isn't in the backup is listed; Play says it isn't available.
+- **In the phone window:** Call Recordings lists Date, Call, Length and whether there's a transcript; the selected call's transcript shows under the list; Play opens it from PhoneKeep's private folder; Save selected saves the audio and, when there is one, the transcript (.txt) side by side. Save everything has a Call Recordings section (audio, .txt, a page with Play and the transcript, a CSV). Deleted calls are left out.
+- **Older phones:** a Notes database from before iOS 18.1 says "iPhones keep recorded calls from iOS 18.1 on." Read-only, nothing leaves the computer.
 
 ## D7. Voicemail
 

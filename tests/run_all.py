@@ -31,6 +31,7 @@ STEPS = [
     ("Music (P2): songs saved into Artist / Album folders with their tags and artwork; songs that only stream aren't listed, and a note says why", "test_p2_music.py", True),
     ("Video conversion (P8): Most compatible saves an iPhone (HEVC) video as an H.264 MP4 with its date taken and location on a Mac; elsewhere videos are saved as they are", "test_p8_video.py", True),
     ("Contacts (D1): photos, the phone's Lists with counts, linked cards as one, a contact card; vCard with photos, Excel, CSV; Keep both / Replace / Skip", "test_d1_contacts.py", True),
+    ("Call recordings (D6): notes the Phone app made, who/when/length, transcript, Play, Save audio and transcript", "test_d6_call_recordings.py", True),
     ("Notes (D4): folders, Pinned, Recently Deleted; a note as on the phone (styles, checklists, tables, images, scans, drawings); Save as PDF or text", "test_d4_notes.py", True),
     ("E1: first-run guide walked end to end with a stub iPhone", "test_e1_first_run.py", True),
     ("E2: menu bar / tray helper backs up and notifies with no window open", "test_e2_helper.py", True),

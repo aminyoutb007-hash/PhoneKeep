@@ -8,7 +8,7 @@ preview it, and save what you want.
 Where the data comes from:
   * Photos, Music, Books, App Files and the wallpaper are read live from the iPhone;
   * Messages, WhatsApp, WhatsApp Business, Calls, Contacts, Notes, Voicemail, Voice Memos,
-    Calendar and Safari can only be read from a backup (Apple doesn't let apps read them
+    Call Recordings, Calendar and Safari can only be read from a backup (Apple doesn't let apps read them
     any other way), so they come from the latest PhoneKeep backup. "Refresh from iPhone"
     makes a quick incremental backup to bring them up to date.
 """
