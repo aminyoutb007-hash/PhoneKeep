@@ -77,6 +77,7 @@ listed here.
 | [pycparser](https://github.com/eliben/pycparser) | BSD-3-Clause |
 | [pycrashreport](https://github.com/doronz88/pycrashreport) | GPL-3.0-or-later |
 | [pycryptodome](https://www.pycryptodome.org) | BSD-2-Clause AND Unlicense AND MIT |
+| [pycryptodomex](https://www.pycryptodome.org) | BSD-2-Clause AND Unlicense AND MIT |
 | [pydantic](https://github.com/pydantic/pydantic) | MIT |
 | [pydantic_core](https://github.com/pydantic/pydantic) | MIT |
 | [Pygments](https://pygments.org) | BSD-2-Clause |
@@ -92,11 +93,13 @@ listed here.
 | [pyobjc-framework-LocalAuthentication](https://github.com/ronaldoussoren/pyobjc) | MIT |
 | [pyobjc-framework-Quartz](https://github.com/ronaldoussoren/pyobjc) | MIT |
 | [pyobjc-framework-Security](https://github.com/ronaldoussoren/pyobjc) | MIT |
+| [pypdf](https://github.com/py-pdf/pypdf) | BSD-3-Clause |
 | [python-bidi](https://github.com/MeirKriheli/python-bidi) | LGPL-3.0 ⁵ |
 | [python-dateutil](https://github.com/dateutil/dateutil) | BSD-3-Clause |
 | [python-dotenv](https://github.com/theskumar/python-dotenv) | BSD-3-Clause |
 | [python-pcapng](https://github.com/rshk/python-pcapng) | Apache-2.0 |
 | [pytun-pmd3](https://github.com/doronz88/pytun-pmd3) | MIT ² |
+| [pyzipper](https://github.com/danifus/pyzipper) | MIT |
 | [qh3](https://github.com/jawah/qh3) | BSD-3-Clause |
 | [questionary](https://github.com/tmbo/questionary) | MIT |
 | [remotezip2](https://github.com/doronz88/python-remotezip2) | MIT ² |

@@ -79,7 +79,17 @@ Security must be **felt** by the user, not just present: a calm lock badge, clea
 **What the user sees and does:** in every Save menu, a switch "Protect with a password". Saved as an encrypted ZIP (AES-256) or a password-protected PDF.
 
 **Done when**
-- [ ] The saved file can't be opened without the password on a stock Mac and Windows PC.
+- [ ] The saved file can't be opened without the password on a stock Mac and Windows PC. *(18 Nov: on a Mac, `tests/test_s6_protect.py` checks that a protected PDF is locked for the Mac's own PDF reader (PDFKit, as in Preview), refuses a wrong password and opens with the right one, and that the `unzip` that comes with macOS can't open a protected ZIP; the ZIP's files are all AES-encrypted and its text can't be found in it. On Windows the automated tests check the same files with pypdf and pyzipper; opening them by hand on a stock Windows PC (Edge asks for the PDF's password; File Explorer can't open the ZIP) is the owner's check.)*
+
+**Decided (owner, 18 Nov):** documents are saved as password-protected PDFs (AES-256), which a stock Mac or PC opens once the password is typed; everything else goes into one encrypted ZIP (AES-256). Finder and File Explorer can't open an AES ZIP (they only know the weak old ZIP password scheme), so it needs Keka or The Unarchiver on a Mac and 7-Zip on Windows; PhoneKeep says so in the password dialog and when it saves one.
+
+**How it's built (18 Nov):**
+- **The switch:** the phone window's header has "Password: off / on", for every Save in that window (Save everything, each app's Save, Save ticked chats as PDF, Save all notes, a chat's Save all media, Save selected in a list). Off by default and for each new window.
+- **The password** is asked at each save, twice, at least 8 characters, no space at either end, with the same strength hint as the backup password (S1). It is used for that one save and never kept: not in the keychain, the settings, the activity log (S7 counts the files, never names them) or any file; a test looks for it everywhere.
+- **Where it's made:** a protected save is made in PhoneKeep's private temporary folder (gone when PhoneKeep closes), including the chat PDFs that are otherwise built in Saved files. Then `protect.py` writes only the protected result into the folder chosen: each PDF as a password PDF when the save made only PDFs, otherwise one ZIP with the same folders inside. Each is written next to its name and then renamed, a file already there is never replaced, and a save that stops (disk full) leaves no half-written file and no private copy.
+- **Not protected:** Photo clean-up's "save before deleting" (C1) keeps its photos as they are, so they can be checked against the phone's before anything is deleted; Print; and the small files about the iPhone itself (its details, the battery history, the activity log).
+- **Known limit:** an encrypted ZIP hides what's in its files, not their names (ZIP's design), so a chat's or a contact's name in a file name can be seen in the ZIP's list without the password. The dialog says so.
+- **Libraries:** pypdf (BSD-3-Clause) for the PDF's AES-256 (the PDF 2.0 way, which Preview, Edge and Acrobat read), pyzipper (MIT) with pycryptodomex (BSD) for the ZIP (WinZip AES-256). Nothing leaves the computer. The installer builds check both in the packaged app (`--pk-protect-check`).
 
 ## S7. Activity log
 
