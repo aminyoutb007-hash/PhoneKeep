@@ -138,6 +138,7 @@ check(asked_phone == ["overview", "crashes", "security"], "  (the after-backup r
 # -- saves in a phone window -----------------------------------------------------------------------------------
 import tkinter as tk
 import app as appmod
+from tkcompat import hide                                   # Tk 8.6 on a Mac: a withdrawn phone window hangs update()
 import device as devmod
 
 
@@ -177,7 +178,7 @@ shutil.copytree(fake, BK)
 activity.ACTIVITY_FILE.unlink()
 check(a.open_backup(BK), "the invented backup opens in a phone window")
 win = a.phone_windows[-1]
-win.withdraw()
+hide(win)
 check(pump(lambda: win.data is not None), "  its backup is read")
 lines_before = len(lines())
 
