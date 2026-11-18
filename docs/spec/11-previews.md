@@ -18,8 +18,26 @@ These make PhoneKeep pleasant. They never come before security or ease of use, a
 
 **What the user sees and does:** voice notes show a waveform with a play button and length; links show a small preview card (from data already in the backup, never fetched online); reactions sit on the bubble's corner; replies show the quoted message above.
 
+**How it's built:**
+- **Voice notes** (`voicenote.py`): the length and waveform come from the file alone, without decoding any sound.
+  - A voice note is compressed with a variable bit rate (Opus, AAC), so each packet takes more bytes when there's more sound. The packet sizes every container lists draw the recording's shape.
+  - Read from CAF (Messages' "Audio Message.caf": 'desc' and 'pakt'), Ogg Opus (WhatsApp: segment tables, the last granule position less the pre-skip) and MP4/M4A (AAC: 'mdhd' and 'stsz').
+  - 36 bars, from the quiet level (10th percentile) to the loud one (95th).
+  - Bounded: at most 64 MB and 2 million packets; a cut-off page or table, or a box past its end, gives nothing.
+  - Read from the backup in memory (Q1's way), once per note, on the chat's worker thread. A canvas in the bubble shows ▶, the bars and the length, and a click plays the note in M6's viewer. A note that can't be read keeps its "🎤 Voice note" label.
+- **Replies and reactions:** Messages' replies and reactions as M4 reads them.
+  - The quoted message is drawn above the reply in a small, muted line (cut at 140 characters).
+  - The reactions follow the message's time as the phone's marks (Loved ❤️, Liked 👍…, or the emoji itself), a mark given by several people counted ("❤️ 2").
+  - WhatsApp's replies and reactions aren't read (M4's decision: the backup doesn't say them reliably).
+- **Link previews:**
+  - Messages: the archived LPLinkMetadata (title, site name, summary, URL) in a link balloon's payload_data.
+  - WhatsApp: ZWAMESSAGEDATAITEM (title, summary, the matched link; the first link of the message).
+  - The card is drawn under the text: title in bold, then the summary and site, muted. It's never fetched and **opens nothing**: opening a link would go online, which PhoneKeep doesn't do without the owner's OK.
+
 **Done when**
 - [ ] A chat with each of these looks recognisably like the phone side by side.
+  - Each part is checked on the owner's real backup by `tools/real_check.py` (Q2 step, counts only): every link preview Messages and WhatsApp kept makes a card, and the voice notes give a waveform and the length WhatsApp shows.
+  - The side-by-side look with the phone is the owner's check.
 
 ## Q3. Contact cards
 

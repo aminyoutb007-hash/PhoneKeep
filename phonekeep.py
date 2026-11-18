@@ -1323,6 +1323,16 @@ def parse_whatsapp(db_path: Path, log: Log = _print,
                                                "ZLONGITUDE", "ZVCARDNAME", "ZFILESIZE"]):
             media[r["Z_PK"]] = r
 
+    links: dict[int, dict] = {}                      # Q2: link previews, from what WhatsApp keeps (never fetched)
+    if "ZWAMESSAGEDATAITEM" in tables:
+        for r in _select(con, "ZWAMESSAGEDATAITEM", ["ZMESSAGE", "ZTITLE", "ZSUMMARY", "ZMATCHEDTEXT", "ZCONTENT1"],
+                         "ORDER BY ZINDEX DESC" if "ZINDEX" in _cols(con, "ZWAMESSAGEDATAITEM") else ""):
+            got = {k: v.strip()[:500] for k, v in (("title", r["ZTITLE"]), ("summary", r["ZSUMMARY"]),
+                                                   ("url", r["ZMATCHEDTEXT"] or r["ZCONTENT1"]))
+                   if isinstance(v, str) and v.strip()}
+            if r["ZMESSAGE"] and (got.get("title") or got.get("url")):
+                links[r["ZMESSAGE"]] = got                  # the first one (ZINDEX 0) wins
+
     chats: dict[int, dict] = {}
     for s in sessions:
         jid = s["ZCONTACTJID"] or ""
@@ -1362,6 +1372,8 @@ def parse_whatsapp(db_path: Path, log: Log = _print,
             number = jid_number(member_jid.get(r["ZGROUPMEMBER"]) or r["ZFROMJID"])
             if number:
                 msg["detail"] = {"number": number}
+        if r["Z_PK"] in links:
+            msg["link"] = links[r["Z_PK"]]
         m = media.get(r["ZMEDIAITEM"]) if r["ZMEDIAITEM"] else None
         if m is not None:
             if m["ZMEDIALOCALPATH"]:
