@@ -53,6 +53,13 @@ Click **Open iPhone** (or the phone itself) in the main window. A window opens w
 
 Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. The phone window never writes to the phone. PhoneKeep changes the iPhone's settings only when you ask, and asks first: turning backup encryption on or off, changing the backup password, and turning on Wi-Fi backups in the first-run guide.
 
+## New in 5.2.3
+
+- Search for files with `*` and `?`, in All files and across every app's files on the phone.
+- A timeline slider to see the phone as it was at any earlier backup.
+- Chats as on the phone: voice-note waveforms, quoted replies, reactions and link cards.
+- Call recordings (with the transcript when the iPhone made one), and saves protected with a password (password PDFs, encrypted ZIP).
+
 ## New in 5.2.2
 
 - Notes shown as on the phone: folders, checklists, tables, pictures and drawings; save notes as PDF or text.
