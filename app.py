@@ -2140,6 +2140,19 @@ class App(_dnd_root()):
         self._run(lambda: (phone_write.change_password(self.udid, name, old, new, confirmed=True, log=self.log), True)[1], done)
 
 
+def _tie_to_main(win: tk.Toplevel, app: "App") -> None:
+    """Keep a dialog with the main window (above it, minimised with it), but only while the main window is on the
+    screen. A window tied to a hidden one is hidden too: with the main window closed while a backup carries on
+    (B9: withdrawn on a Mac, minimised on Windows), Settings or Open backup chosen from a phone window's menu
+    opened nothing at all. Then it's a window of its own. PhoneKeep's own flag says the window is away (without a
+    window manager a minimised window still reports "normal"); a maximised one ("zoomed") is on the screen."""
+    try:
+        if not app._window_away() and app.state() in ("normal", "zoomed"):
+            win.transient(app)
+    except tk.TclError:
+        pass
+
+
 class OpenBackupDialog(tk.Toplevel):
     """File → Open backup…: the backups PhoneKeep can see (its own, Finder's, iTunes's), or any folder."""
 
@@ -2148,7 +2161,7 @@ class OpenBackupDialog(tk.Toplevel):
         self.app = app
         self.title("Open a backup")
         self.geometry("640x460")
-        self.transient(app)
+        _tie_to_main(self, app)
         head = ui.header(self)
         head.pack(fill="x")
         tk.Label(head, text="Open a backup", bg=theme.HEADER_BG, fg=theme.HEADER_TITLE, font=font(17, "bold")).pack(side="left", padx=18, pady=12)
@@ -2236,7 +2249,7 @@ class SettingsWindow(tk.Toplevel):
         self.title("PhoneKeep settings")
         self.geometry("900x760")
         self.minsize(780, 560)
-        self.transient(app)
+        _tie_to_main(self, app)
         # L3 (5.2): a list on the left; each item scrolls to its cards on the right
         # (docs/spec/14-layouts.md#l3-settings-layout)
         side = tk.Frame(self, bg=theme.SUBTLE, width=210)

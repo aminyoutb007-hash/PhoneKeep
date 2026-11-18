@@ -275,6 +275,55 @@ a.busy = False
 a.prog.pack_forget()
 appmod.messagebox.askokcancel = real_ask
 
+# Settings and Open backup from a phone window's menu while the main window is closed (a backup carrying on):
+# each opens on its own. Tied (transient) to the hidden main window, it was hidden too and nothing opened.
+def main_away():
+    a._away = True
+    a.withdraw() if sys.platform == "darwin" else a.iconify()      # as close_window does during a backup
+    a.update()
+
+
+def opened(cls, make):
+    before = set(a.winfo_children())
+    make()
+    a.update()
+    win = [w for w in a.winfo_children() if isinstance(w, cls) and w not in before]
+    return win[0] if win else None
+
+
+main_away()
+for cls, label, make in ((appmod.SettingsWindow, "Settings", a.open_settings),
+                         (appmod.OpenBackupDialog, "Open backup", lambda: appmod.OpenBackupDialog(a))):
+    w = opened(cls, make)
+    shown = w is not None and w.state() == "normal" and w.winfo_viewable()
+    tied = w is not None and str(w.transient()) not in ("", "None")
+    check(shown and not tied, f"with the main window closed during a backup, {label} opens on its own "
+                              f"({w and w.state()}, viewable {bool(w and w.winfo_viewable())}, tied {tied})")
+    if w is not None:
+        w.destroy()
+a._come_back()
+a.update()
+w = opened(appmod.SettingsWindow, a.open_settings)
+check(w is not None and str(w.transient()) == str(a), f"  with the main window back, Settings stays with it, as before ({w and w.transient()})")
+if w is not None:
+    w.destroy()
+# maximised (Windows; a Mac's zoom under Tk 8.6): on the screen, so Settings stays with it too
+try:
+    a.state("zoomed")
+    a.update()
+    zoomed = a.state() == "zoomed"
+except appmod.tk.TclError:
+    zoomed = False
+if zoomed:
+    w = opened(appmod.SettingsWindow, a.open_settings)
+    check(w is not None and str(w.transient()) == str(a), f"  with the main window maximised, Settings stays with it ({w and w.transient()})")
+    if w is not None:
+        w.destroy()
+    a.state("normal")
+    a.update()
+else:
+    print("skip a maximised main window: this Tk has no \"zoomed\" state here", flush=True)
+
 a.destroy()
 print("\nB9 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)), flush=True)
 _exit(1 if failures else 0)
