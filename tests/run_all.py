@@ -73,7 +73,7 @@ STEPS = [
     ("Dark mode (E6): the mode chosen, contrast, every widget dark and readable, no white flash, Settings → Appearance", "test_e6_dark_mode.py", True),
     ("Tamper check (S8): each snapshot sealed and signed; one byte changed shows the amber banner on the full check", "test_s8_tamper.py", True),
     ("Closing a phone window while it reads its backup: the read finishes, then the files are let go (no crash)", "test_close_while_reading.py", True),
-    ("All phones in one list (E5): a card for each phone backed up here or connected; each opens its own window", "test_e5_all_phones.py", True),
+    ("All phones in one list (E5): a card for each phone backed up here or connected; each opens its own window", "test_e5_all_phones.py", True),    ("Backup timeline (Q5): the slider changes the open screen to the snapshot it stops on within 2 seconds, with the badge", "test_q5_timeline.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)

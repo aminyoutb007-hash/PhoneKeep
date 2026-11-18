@@ -442,7 +442,9 @@ class PhoneWindow(tk.Toplevel):
         # B3: the snapshots, in the Snapshot card (L1). Choose one to see the phone as it was then; ⋯ for more.
         self.timeline = tk.Frame(left, bg=CARD, highlightthickness=1, highlightbackground=LINE)
         self.timeline.pack(fill="x", pady=(10, 0))
-        self.viewing = tk.Label(left, text="", bg=theme.WARN_BG, fg=theme.WARN_TEXT, font=font(11, "bold"))
+        # "Viewing 3 Nov" (B3, Q5): a pill on the phone picture's screen, so it takes no room from the Snapshot card
+        self.viewing = tk.Label(left, text="", bg=theme.WARN_BG, fg=theme.WARN_TEXT, font=font(11, "bold"),
+                                padx=10, pady=2)
         self._build_timeline()
         self._update_src_line()
 
@@ -473,7 +475,7 @@ class PhoneWindow(tk.Toplevel):
                              for n, (snap, t) in enumerate(zip(snaps, titles))]
         self.snap_var = tk.StringVar(value=self.snap_choices[next(n for n, x in enumerate(snaps) if x.id == current)])
         self.snap_box = ttk.Combobox(row, textvariable=self.snap_var, values=self.snap_choices, state="readonly",
-                                     width=22, height=min(15, len(snaps)))
+                                     width=18, height=min(15, len(snaps)))
         self.snap_box.pack(side="left")
         self.snap_box.bind("<<ComboboxSelected>>",
                            lambda e: self.open_snapshot(snaps[self.snap_choices.index(self.snap_var.get())]))
@@ -481,13 +483,84 @@ class PhoneWindow(tk.Toplevel):
         more.pack(side="left", padx=(6, 0))
         sel = lambda: snaps[self.snap_choices.index(self.snap_var.get())]
         more.bind("<Button-1>", lambda e: self._snapshot_menu(e, sel()))
-        tk.Label(self.timeline, text=f"{len(snaps)} snapshot{'s' if len(snaps) != 1 else ''} · ⋯ for keep, rename, delete",
+        if len(snaps) >= 2:
+            self._build_slider(snaps, titles, current)
+        tk.Label(self.timeline, text=f"{len(snaps)} snapshot{'s' if len(snaps) != 1 else ''} · ⋯ keep, rename, delete",
                  bg=CARD, fg=MUTED, font=font(10), anchor="w").pack(fill="x", padx=14, pady=(4, 0))
         detail = self.snapshot or snaps[0]
         size = f"{detail.size / 1e9:.1f} GB" if detail.size >= 1e9 else f"{detail.size / 1e6:.1f} MB"
         tk.Label(self.timeline, text=f"{detail.when.strftime('%d %b %Y %H:%M').lstrip('0')} · {size} · iOS {detail.ios or '?'} · "
                                      + ("🔒 encrypted" if detail.encrypted else "not encrypted"),
                  bg=CARD, fg=MUTED, font=font(10), anchor="w", wraplength=230, justify="left").pack(fill="x", padx=14, pady=(2, 12))
+
+    def _build_slider(self, snaps: list, titles: list, current: str):
+        """Q5: the snapshots on a slider, oldest on the left, the latest on the right, a tick for each. Dragging
+        shows the date under the handle in the list above; the phone window changes to that snapshot once the
+        handle stops (a short pause, or letting go). The arrow keys move it one snapshot."""
+        old_first = list(reversed(snaps))
+        names = list(reversed(self.snap_choices))
+        last = len(old_first) - 1
+        at = tk.IntVar(value=next(n for n, x in enumerate(old_first) if x.id == current))
+        H, PAD, Y = 32, 10, 9                             # height; room for the handle at each end; the line's y
+        cv = tk.Canvas(self.timeline, height=H, bg=CARD, highlightthickness=0, takefocus=1, cursor="hand2")
+        cv.pack(fill="x", padx=14, pady=(6, 0))
+        wait = {"after": None}
+
+        def x_of(i, w):
+            return PAD + (w - 2 * PAD) * i / last
+
+        def draw(*_):
+            cv.delete("all")
+            w = max(cv.winfo_width(), 2 * PAD + 1)
+            cv.create_line(PAD, Y, w - PAD, Y, fill=theme.BORDER, width=4, capstyle="round")
+            cv.create_line(PAD, Y, x_of(at.get(), w), Y, fill=theme.ACCENT, width=4, capstyle="round")
+            for i in range(last + 1):
+                cv.create_oval(x_of(i, w) - 2, Y - 2, x_of(i, w) + 2, Y + 2, fill=MUTED, outline="")
+            x = x_of(at.get(), w)
+            cv.create_oval(x - 8, Y - 8, x + 8, Y + 8, fill=theme.ACCENT, outline=CARD, width=2)
+            cv.create_text(PAD - 4, H - 2, text=titles[-1], anchor="sw", fill=MUTED, font=font(10))
+            cv.create_text(w - PAD + 4, H - 2, text="Latest", anchor="se", fill=MUTED, font=font(10))
+
+        def go():
+            wait["after"] = None
+            snap = old_first[at.get()]
+            if snap.id != current:
+                self.open_snapshot(snap)
+
+        def moved(*_):
+            draw()
+            self.snap_var.set(names[at.get()])           # the date under the handle, in the list above
+            if wait["after"]:
+                self.after_cancel(wait["after"])
+            wait["after"] = self.after(400, go)          # the handle stopped: show that snapshot
+
+        def let_go(_e=None):
+            if wait["after"]:
+                self.after_cancel(wait["after"])
+            go()
+
+        def pointer(e):
+            cv.focus_set()
+            w = max(cv.winfo_width(), 2 * PAD + 1)
+            i = max(0, min(last, round((e.x - PAD) / (w - 2 * PAD) * last)))
+            if i != at.get():
+                at.set(i)
+
+        def gone(_e=None):
+            if wait["after"]:
+                self.after_cancel(wait["after"])
+                wait["after"] = None
+            at.trace_remove("write", trace)
+
+        trace = at.trace_add("write", moved)               # the mouse, the arrow keys or the tests: all move `at`
+        cv.bind("<Configure>", draw)
+        cv.bind("<Button-1>", pointer)
+        cv.bind("<B1-Motion>", pointer)
+        cv.bind("<ButtonRelease-1>", let_go)
+        cv.bind("<Left>", lambda e: at.get() > 0 and at.set(at.get() - 1))
+        cv.bind("<Right>", lambda e: at.get() < last and at.set(at.get() + 1))
+        cv.bind("<Destroy>", gone)
+        self.snap_slider = (cv, at, old_first, let_go)    # for the tests (Tk can't play a drag on a hidden window)
 
     def open_snapshot(self, snap: Optional[sn.Snapshot]):
         """Show the phone as it was at that snapshot (None = the latest)."""
@@ -497,9 +570,10 @@ class PhoneWindow(tk.Toplevel):
         self.backup_path = (self.snapshot.path if self.snapshot else sn.latest_backup_path(self.backup_dir, self.udid))
         if self.snapshot:
             self.viewing.configure(text=f"Viewing {self.snapshot.title}")
-            self.viewing.pack(fill="x", before=self.timeline, pady=(6, 0))
+            self.viewing.place(in_=self.mock, relx=0.5, y=58, anchor="n")
+            self.viewing.lift()
         else:
-            self.viewing.pack_forget()
+            self.viewing.place_forget()
         self._build_timeline()
         if self.data is not None:
             self.data.close()
@@ -2642,7 +2716,7 @@ class PhoneWindow(tk.Toplevel):
             self.banner("✓ Up to date. Reloading…")
             self.snapshot = None
             self.backup_path = Path(path)
-            self.viewing.pack_forget()
+            self.viewing.place_forget()
             self._build_timeline()
             if self.data is not None:
                 self.data.close()
