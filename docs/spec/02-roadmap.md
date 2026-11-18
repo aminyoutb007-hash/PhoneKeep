@@ -85,7 +85,7 @@ iPhone; F2 stays out because it writes to the phone. Any finding from the owner'
 
 | ID | Feature | Today | Status | Details |
 | --- | --- | --- | --- | --- |
-| S6 | Encrypted exports | Not available | To build | [04-security.md](04-security.md#s6-encrypted-exports) |
+| S6 | Encrypted exports | Not available | Partial (18 Nov: a password switch in the phone window for every Save; PDFs saved as password PDFs, anything else as one encrypted ZIP, made privately; checked locked on a Mac; opening them on a stock Windows PC by hand to do) | [04-security.md](04-security.md#s6-encrypted-exports) |
 | S7 | Activity log | Not available | Done | [04-security.md](04-security.md#s7-activity-log) |
 | S8 | Tamper check for backups | Not available | Done | [04-security.md](04-security.md#s8-tamper-check) |
 | E4 | One search across the whole phone | Per-screen search only | Partial (usability test task 3, 5.3) | [05-ease-of-use.md](05-ease-of-use.md#e4-one-search-across-the-phone) |

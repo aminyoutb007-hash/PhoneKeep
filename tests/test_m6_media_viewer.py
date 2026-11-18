@@ -484,6 +484,31 @@ wpanel.open_media_list("whatsapp", [photo_msg], 0)
 check(viewer_shown("image"), "a WhatsApp photo opens large")
 ql.Viewer.current.close()
 
+# ---- S6: with the phone window's password switch on, Save all is one encrypted ZIP, made privately ----
+import protect_ui
+import pyzipper
+win.toggle_protect()
+protect_ui.ask_save_password = lambda parent, what: "correct horse 42"
+zdir = Path(tempfile.mkdtemp(prefix="pk-m6-zip-"))
+ui.ask_folder = lambda parent, title: str(zdir)
+wpanel.saved_media = None
+wpanel.save_all_media()
+pump(lambda: list(zdir.glob("*.zip")) and "with a password" in wgrid.note.cget("text"), 60)
+zips = list(zdir.glob("*.zip"))
+inside = {}
+if zips:
+    with pyzipper.AESZipFile(zips[0]) as z:
+        z.setpassword(b"correct horse 42")
+        inside = {n.split("/")[-1]: z.read(n) for n in z.namelist()}
+check(len(zips) == 1 and list(zdir.iterdir()) == zips
+      and inside.get(f"{when(1):%Y-%m-%d %H.%M.%S} run-photo.jpg") == WA_PHOTO and len(inside) == 2
+      and "7-Zip" in wgrid.note.cget("text")
+      and not [q for q in Path(ql.private_dir()).glob("protect-*")],
+      f"with the password switch on, Save all is one encrypted ZIP with the same files, nothing else in the folder "
+      f"and no private copy left ({sorted(inside)})")
+win.toggle_protect()
+shutil.rmtree(zdir, ignore_errors=True)
+
 # ---- closed: nothing more is read ----
 data = win.data
 pv = data.preview

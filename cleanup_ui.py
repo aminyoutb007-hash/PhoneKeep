@@ -361,7 +361,7 @@ def save(win, st: State, folder=None):
         messagebox.showinfo("PhoneKeep", "Tick the photos to save first: open a card with Review.", parent=win)
         return
     if folder is None:
-        folder = win.out_dir("photos")
+        folder = win.out_dir("photos", protectable=False)     # S6: kept as they are, to be checked before deleting
         if folder is None:
             return
     win.current = "cleanup:saving"

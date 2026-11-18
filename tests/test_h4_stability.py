@@ -275,7 +275,7 @@ try:
         def show_home(self):
             pass
 
-        def out_dir(self, key):
+        def out_dir(self, key, protectable=True):
             return W / "chosen"
 
         def saved(self, paths, folder, what):
