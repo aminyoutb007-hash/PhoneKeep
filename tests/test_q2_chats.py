@@ -254,6 +254,16 @@ check(sections.rich_link(loop) == {"title": "t"} and sections.rich_link(uid_loop
       and sections.rich_link(plistlib.dumps({"$objects": {"title": "t", "URL": "u"}})) is None
       and sections.rich_link(plistlib.dumps(["not a dict"])) is None,
       "  a payload that loops back on itself, or isn't laid out as one, gives what it can or nothing (never an error)")
+c = sqlite3.connect(sms)                      # that payload in a real chat: every other message still there
+c.execute("INSERT INTO message VALUES (9,'https://example.invalid/loop',NULL,1,?,0,0,0,NULL,'iMessage','G9',NULL,NULL,"
+          "NULL,?,?)", (ns(8), URLB, loop))
+c.execute("INSERT INTO chat_message_join VALUES (1, 9)")
+c.commit()
+c.close()
+again = {m.get("text"): m for m in sections.load_messages(Ctx())[0]["messages"]}
+check(len(again) == len(by_text) + 1 and again["https://example.invalid/loop"].get("link") == {"title": "t"}
+      and again["https://example.invalid/recipes/soup"].get("link") == link,
+      "  a chat holding such a payload still loads every other message (and their cards)")
 
 # the chat as drawn
 import tkinter as tk
