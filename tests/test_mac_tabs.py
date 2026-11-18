@@ -60,11 +60,11 @@ class FakeWin:
         self.tk, self._w = FakeTk(error), ".fake"
 
 
-real = sys.platform
+real, real_appkit = sys.platform, ui._appkit_no_tabs
 try:
     sys.platform = "darwin"
     appkit_calls = []
-    real_appkit, ui._appkit_no_tabs = ui._appkit_no_tabs, lambda: appkit_calls.append(1) or True
+    ui._appkit_no_tabs = lambda: appkit_calls.append(1) or True
     old = FakeWin(error=True)
     check(ui.no_tabs(old) is True and len(old.tk.calls) == 1 and appkit_calls == [1],
           "Tk 8.6 without -tabbingmode: no crash, AppKit's switch is used instead")
@@ -72,7 +72,7 @@ try:
     appkit_calls.clear()
     ui.no_tabs(new)
     check(not appkit_calls, "with -tabbingmode, AppKit isn't needed")
-    ui._appkit_no_tabs = real_appkit
+    ui._appkit_no_tabs = real_appkit                # the live check below uses the real one
     new = FakeWin()
     check(ui.no_tabs(new) is True and new.tk.calls == [("wm", "attributes", ".fake", "-tabbingmode", "disallowed")],
           "on a Mac: wm attributes <win> -tabbingmode disallowed")
@@ -80,7 +80,7 @@ try:
     off = FakeWin()
     check(ui.no_tabs(off) is False and not off.tk.calls, "off a Mac: nothing is called")
 finally:
-    sys.platform = real
+    sys.platform, ui._appkit_no_tabs = real, real_appkit
 
 try:
     root = tk.Tk()
