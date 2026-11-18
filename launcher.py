@@ -581,6 +581,39 @@ def main() -> None:
         pages = quicklook.pdf_pages(b.getvalue(), 300)
         print(f"PKPDF ok {len(pages)}" if pages else "PKPDF none", flush=True)
         return
+    if args == ["--pk-protect-check"]:
+        # Internal, used by the installer builds: S6's protected saves work in the packaged app (pypdf, pyzipper
+        # and their AES). A password PDF and an encrypted ZIP are made in a temporary folder and read back: locked
+        # without the password, open with it. Prints "PKPROTECT ok", or "PKPROTECT failed: <why>".
+        import tempfile
+        from pathlib import Path
+        try:
+            import protect
+            import pyzipper
+            from pypdf import PdfReader
+            from reportlab.pdfgen import canvas
+            with tempfile.TemporaryDirectory() as t:
+                t = Path(t)
+                (t / "in").mkdir()
+                c = canvas.Canvas(str(t / "in" / "check.pdf"))
+                c.drawString(100, 700, "PhoneKeep")
+                c.save()
+                pdf = protect.protect_folder(t / "in", t / "out", "check-password", "check")[0]
+                r = PdfReader(str(pdf))
+                pdf_ok = r.is_encrypted and r.decrypt("wrong") == 0 and PdfReader(str(pdf)).decrypt("check-password") != 0
+                (t / "in").mkdir()
+                (t / "in" / "a.txt").write_text("PhoneKeep", encoding="utf-8")
+                zp = protect.protect_folder(t / "in", t / "out", "check-password", "check")[0]
+                import zipfile
+                with pyzipper.AESZipFile(zp) as z:
+                    z.setpassword(b"check-password")
+                    zip_ok = z.read("a.txt") == b"PhoneKeep"
+                with zipfile.ZipFile(zp) as z:                     # the raw header: 99 = AES (WinZip AE-2)
+                    zip_ok = zip_ok and z.infolist()[0].compress_type == 99
+            print("PKPROTECT ok" if pdf_ok and zip_ok else f"PKPROTECT failed: pdf {pdf_ok}, zip {zip_ok}", flush=True)
+        except Exception as e:
+            print(f"PKPROTECT failed: {type(e).__name__}: {e}", flush=True)
+        return
     if args == ["--pk-lock-check"]:
         # Internal, used by the installer build: the app lock's system check loads in the packaged app.
         # Prints "PKLOCK <kind or none> <problem>"; a missing module is a build failure (13 Nov: Touch ID

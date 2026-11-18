@@ -24,6 +24,7 @@ import argparse
 import csv
 import datetime as dt
 import getpass
+import hashlib
 import html
 import json
 import os
@@ -922,7 +923,28 @@ def backup_incomplete(path: Path) -> bool:
         return False
 
 
+_INFO_SEEN: dict = {}     # path -> (the files' sizes and change times, the info): Info.plist can be megabytes (Q5)
+
+
 def backup_info(path: Path) -> dict:
+    """The backup's name, date, iOS and whether it's encrypted. Kept while its files stay the same: a real
+    Info.plist takes a quarter of a second to read, and opening a snapshot asked three times (Q5)."""
+    path = Path(path)
+    try:
+        sig = tuple((st.st_size, st.st_mtime_ns) for st in
+                    ((path / n).stat() for n in ("Info.plist", "Manifest.plist", "Manifest.db")))
+    except OSError:
+        sig = None
+    seen = _INFO_SEEN.get(str(path))
+    if sig and seen and seen[0] == sig:
+        return dict(seen[1])
+    info = _read_backup_info(path)
+    if sig:
+        _INFO_SEEN[str(path)] = (sig, dict(info))
+    return info
+
+
+def _read_backup_info(path: Path) -> dict:
     info = {"path": str(path), "name": path.name, "date": None, "ios": None, "encrypted": False, "product": None}
     try:
         with open(path / "Info.plist", "rb") as f:
@@ -1007,6 +1029,27 @@ def _share_manifest(enc, manifest: Path) -> None:
         pass                                      # a newer decryptor: keep its own copy
 
 
+# Q5: the key made from the backup password, kept in memory only (never written anywhere) so that opening another
+# snapshot doesn't make it again (half a second of PBKDF2 each time). Holds nothing the password, which PhoneKeep
+# keeps in memory until it's closed anyway, doesn't already give. Keyed by a hash of the password and the keybag's
+# salts and counts: a changed password or new salts make a new key.
+_KEYS: dict = {}
+
+
+def _key_id(path: Path, password: str) -> Optional[str]:
+    try:
+        from iphone_backup_decrypt import utils as _bu
+        with open(Path(path) / "Manifest.plist", "rb") as f:
+            attrs = _bu.BackupKeyBag(plistlib.load(f)["BackupKeyBag"]).attrs
+    except Exception:
+        return None
+    h = hashlib.sha256()
+    for k in (b"DPSL", b"DPIC", b"SALT", b"ITER"):
+        h.update(k + b"=" + repr(attrs.get(k)).encode() + b";")
+    h.update(password.encode("utf-8"))
+    return h.hexdigest()
+
+
 class BackupReader:
     def __init__(self, path: Path | str, password: Optional[str] = None, log: Log = _print):
         self.path = Path(path)
@@ -1033,9 +1076,23 @@ class BackupReader:
                     "This backup is encrypted. Install the decryptor: pip install iphone_backup_decrypt")
             log("Unlocking encrypted backup (this takes up to a minute)...")
             manifest = Path(self._tmp.name) / "Manifest.db"
+
+            def unlock(**how):
+                enc = EncryptedBackup(backup_directory=str(self.path), **how)
+                enc.save_manifest_file(str(manifest))
+                return enc
+            kid = _key_id(self.path, password)
             try:
-                self._enc = EncryptedBackup(backup_directory=str(self.path), passphrase=password)
-                self._enc.save_manifest_file(str(manifest))
+                if kid in _KEYS:                      # another snapshot with the same password and salts (Q5)
+                    try:
+                        self._enc = unlock(passphrase_key=_KEYS[kid])
+                    except Exception:
+                        self._enc = None
+                if self._enc is None:
+                    self._enc = unlock(passphrase=password)
+                key = getattr(getattr(self._enc, "keybag", None), "passphrase_key", None)
+                if kid and key:
+                    _KEYS[kid] = key
             except Exception as e:
                 raise PhoneKeepError.from_problem(f"Could not unlock the backup: {type(e).__name__}: {e}")
             _share_manifest(self._enc, manifest)

@@ -85,7 +85,7 @@ iPhone; F2 stays out because it writes to the phone. Any finding from the owner'
 
 | ID | Feature | Today | Status | Details |
 | --- | --- | --- | --- | --- |
-| S6 | Encrypted exports | Not available | To build | [04-security.md](04-security.md#s6-encrypted-exports) |
+| S6 | Encrypted exports | Not available | Partial (18 Nov: a password switch in the phone window for every Save; PDFs saved as password PDFs, anything else as one encrypted ZIP, made privately; checked locked on a Mac; opening them on a stock Windows PC by hand to do) | [04-security.md](04-security.md#s6-encrypted-exports) |
 | S7 | Activity log | Not available | Done | [04-security.md](04-security.md#s7-activity-log) |
 | S8 | Tamper check for backups | Not available | Done | [04-security.md](04-security.md#s8-tamper-check) |
 | E4 | One search across the whole phone | Per-screen search only | Partial (usability test task 3, 5.3) | [05-ease-of-use.md](05-ease-of-use.md#e4-one-search-across-the-phone) |
@@ -100,15 +100,15 @@ iPhone; F2 stays out because it writes to the phone. Any finding from the owner'
 | P3 | Books: filter books and PDFs | Open and save | Done | [07-photos-media.md](07-photos-media.md#p3-books-and-pdfs) |
 | D1 | Contacts: groups, photos, links | Table and exports | Partial (17 Nov: photos, the phone's Lists, linked cards as one, a contact card, vCard with photos; importing a saved .vcf into Contacts / Outlook is the owner's to try) | [08-personal-data.md](08-personal-data.md#d1-contacts) |
 | D4 | Notes: folders, attachments, PDF | Text only | Partial (17 Nov: folders, Pinned, Recently Deleted, the note as on the phone with checklists, tables, images, drawings and scans, Save as PDF or text; a real table and a side-by-side look with the phone to do) | [08-personal-data.md](08-personal-data.md#d4-notes) |
-| D6 | Call recordings | Not available | To build | [08-personal-data.md](08-personal-data.md#d6-call-recordings) |
+| D6 | Call recordings | Not available | Partial (18 Nov: Call Recordings in the phone window and in Save everything: who, when, length, Play, the transcript beside it, Save audio and transcript; on the real phone the recorded calls are listed with their audio and length, but none has a transcript, so a real transcript is still to see) | [08-personal-data.md](08-personal-data.md#d6-call-recordings) |
 | F1 | App documents: browse and save | Works | Done | [09-files-apps.md](09-files-apps.md#f1-app-documents) |
 | F2 | Drag files into iPhone apps | Not available | To build | [09-files-apps.md](09-files-apps.md#f2-drag-files-into-iphone-apps) |
-| F3 | File search with wildcards | Not available | To build | [09-files-apps.md](09-files-apps.md#f3-file-search) |
+| F3 | File search with wildcards | Not available | Done (18 Nov: All files and App Files; * and ?, case and accents don't matter; results with where, size, date; open and save) | [09-files-apps.md](09-files-apps.md#f3-file-search) |
 | F4 | App list with names, icons and data export | App IDs only | Partial | [09-files-apps.md](09-files-apps.md#f4-apps-and-their-data) |
 | Q2 | Chats with voice-note waveforms | Not available | Partial | [11-previews.md](11-previews.md#q2-chats-as-on-the-phone) |
 | Q3 | Contact cards with everything about a person | Not available | To build | [11-previews.md](11-previews.md#q3-contact-cards) |
 | Q4 | Storage map | Not available | To build | [11-previews.md](11-previews.md#q4-storage-map) |
-| Q5 | Backup timeline slider | Not available | To build | [11-previews.md](11-previews.md#q5-backup-timeline) |
+| Q5 | Backup timeline slider | Not available | Done | [11-previews.md](11-previews.md#q5-backup-timeline) |
 
 ## P3: later, only when asked
 

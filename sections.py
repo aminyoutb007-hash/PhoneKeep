@@ -1611,6 +1611,119 @@ def sec_voicememos(ctx: Ctx) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Call recordings (D6): iOS 18.1 and later keep a recorded call as a note that the Phone app made
+# ---------------------------------------------------------------------------
+
+CALL_APPS = ("phone", "facetime", "incall", "telephony")      # ZHOSTAPPLICATIONIDENTIFIER: com.apple.mobilephone, ...
+MAX_MEASURE = 256 * 1024 * 1024                                # a length is measured only from a file up to this size
+
+
+def _audio_length(data: Optional[bytes]) -> float:
+    """Seconds of an .m4a read in memory, or 0 if it can't be told."""
+    if not data or len(data) > MAX_MEASURE:
+        return 0
+    try:
+        import io
+        from mutagen.mp4 import MP4
+        return float(MP4(io.BytesIO(data)).info.length or 0)
+    except Exception:
+        return 0
+
+
+def load_call_recordings(ctx: Ctx, measure: bool = True) -> list[dict]:
+    """[{id, title, when, length, transcript, file: (domain, rel) or None, name, parts}] newest first. A recorded call
+    is a note the Phone app made (ZHOSTAPPLICATIONIDENTIFIER), whatever its folder is called in the phone's language;
+    each of its top-level audio attachments is one recording (iOS keeps a short part under each, which isn't listed
+    on its own). The transcript is the attachment's indexable text when the phone made one. A length the database
+    doesn't have is measured from the file, in memory (`measure`)."""
+    con, dom = None, None
+    for dom in ctx.reader.domains("%group.com.apple.notes%"):
+        con = ctx.db(dom, "NoteStore.sqlite")
+        if con:
+            break
+    if con is None:
+        raise PhoneKeepError("No Notes database in this backup, so no call recordings.")
+    try:
+        if "ZHOSTAPPLICATIONIDENTIFIER" not in cols(con, "ZICCLOUDSYNCINGOBJECT"):
+            raise PhoneKeepError("No call recordings in this backup. iPhones keep recorded calls from iOS 18.1 on.")
+        notes = [r for r in select(con, "ZICCLOUDSYNCINGOBJECT",
+                                   ["Z_PK", "ZTITLE1", "ZCREATIONDATE3", "ZCREATIONDATE1", "ZMARKEDFORDELETION",
+                                    "ZNOTEDATA", "ZHOSTAPPLICATIONIDENTIFIER"],
+                                   "WHERE ZHOSTAPPLICATIONIDENTIFIER IS NOT NULL AND ZNOTEDATA IS NOT NULL")
+                 if any(k in str(r["ZHOSTAPPLICATIONIDENTIFIER"]).lower() for k in CALL_APPS)
+                 and not r["ZMARKEDFORDELETION"]]
+        if not notes:
+            raise PhoneKeepError("No call recordings in this backup.")
+        try:                                     # tables and galleries elsewhere in Notes unpack within a budget (D4);
+            attachments = _note_attachments(con, dom, ctx.files(dom), notes_doc.Budget())   # a damaged one: no files
+        except Exception:
+            attachments = {}
+        out = []
+        for n in notes:
+            rows = select(con, "ZICCLOUDSYNCINGOBJECT",
+                          ["Z_PK", "ZIDENTIFIER", "ZTYPEUTI", "ZDURATION", "ZADDITIONALINDEXABLETEXT", "ZTITLE",
+                           "ZPARENTATTACHMENT", "ZMARKEDFORDELETION"], f"WHERE ZNOTE = {int(n['Z_PK'])}")
+            for r in rows:
+                if r["ZPARENTATTACHMENT"] or r["ZMARKEDFORDELETION"] or _note_kind(r["ZTYPEUTI"]) != "audio":
+                    continue
+                parts = [k for k in rows if k["ZPARENTATTACHMENT"] == r["Z_PK"] and not k["ZMARKEDFORDELETION"]]
+                a = attachments.get(str(r["ZIDENTIFIER"]).upper(), {})
+                length = float(r["ZDURATION"] or 0) or max((float(k["ZDURATION"] or 0) for k in parts), default=0)
+                if not length and measure and a.get("file"):
+                    length = _audio_length(ctx.read(*a["file"]))
+                said = [t for t in [r["ZADDITIONALINDEXABLETEXT"]] + [k["ZADDITIONALINDEXABLETEXT"] for k in parts]
+                        if t and str(t).strip()]
+                out.append({"id": str(r["ZIDENTIFIER"]), "title": n["ZTITLE1"] or "Call",
+                            "when": t2001(n["ZCREATIONDATE3"] or n["ZCREATIONDATE1"]), "length": length,
+                            "transcript": "\n\n".join(str(t).strip() for t in said), "file": a.get("file"),
+                            "name": a.get("name") or r["ZTITLE"] or "Recording.m4a", "parts": len(parts)})
+    finally:
+        con.close()
+    if not out:
+        raise PhoneKeepError("No call recordings in this backup.")
+    out.sort(key=lambda x: x["when"] or dt.datetime.min, reverse=True)
+    seen: dict[str, int] = {}
+    for c in reversed(out):                      # several recordings in one call (or one minute) each get their own
+        base = safe_name(f"{c['when']:%Y-%m-%d %H%M} {c['title']}" if c["when"] else c["title"], 100)   # name: the
+        n = seen[base.lower()] = seen.get(base.lower(), 0) + 1                    # oldest plain, then " 2", " 3"
+        c["base"] = base if n == 1 else f"{base} {n}"
+    return out
+
+
+def sec_callrecordings(ctx: Ctx) -> dict:
+    """Call Recordings/: each recording's audio and, when the phone made one, its transcript as a .txt beside it; a
+    page with Play and the transcript; a CSV of who, when and how long."""
+    d = ctx.out / "Call Recordings"
+    f = ctx.item_filter()
+    from urllib.parse import quote
+    rows, csv_rows = [], []
+    for c in load_call_recordings(ctx):
+        if f.on and not f.keep(c["when"], c["title"], c["transcript"]):
+            continue
+        base = c["base"]
+        audio, text = "", ""
+        if c["file"]:
+            dest = wv.safe_join(d, base + (Path(c["file"][1]).suffix or ".m4a"))
+            if dest is not None and not dest.exists() and ctx.copy(*c["file"], dest):
+                audio = (f'<audio controls preload="none" src="{quote(dest.name)}"></audio> '
+                         f'<a href="{quote(dest.name)}" download>&#11015;</a>')
+        if c["transcript"]:
+            tdest = wv.safe_join(d, base + ".txt")
+            if tdest is not None:
+                tdest.parent.mkdir(parents=True, exist_ok=True)
+                tdest.write_text(c["transcript"] + "\n", encoding="utf-8")
+                text = _e(c["transcript"]).replace("\n", "<br>")
+        rows.append([fmt(c["when"]), c["title"], dur(c["length"]), audio, text])
+        csv_rows.append([fmt(c["when"]), c["title"], dur(c["length"]), "yes" if c["transcript"] else ""])
+    d.mkdir(parents=True, exist_ok=True)
+    write_csv(d / "call recordings.csv", ["Date", "Call", "Length", "Transcript"], csv_rows)
+    (d / "index.html").write_text(page("Call Recordings", f'<p class="meta">{len(rows):,} recordings</p>'
+                                       + table(["Date", "Call", "Length", "Play", "Transcript"], rows, {3, 4}),
+                                       "../", True), encoding="utf-8")
+    return {"count": len(rows), "detail": f"{len(rows):,} recordings", "link": "Call Recordings/index.html"}
+
+
+# ---------------------------------------------------------------------------
 # Safari
 # ---------------------------------------------------------------------------
 
@@ -1747,6 +1860,7 @@ SECTIONS = [
     ("calendar", "Calendar", "&#128197;", sec_calendar),
     ("voicemail", "Voicemail", "&#128252;", sec_voicemail),
     ("voicememos", "Voice Memos", "&#127897;", sec_voicememos),
+    ("callrecordings", "Call Recordings", "&#128222;", sec_callrecordings),
     ("safari", "Safari", "&#127760;", sec_safari),
     ("apps", "Apps", "&#128241;", sec_apps),
     ("files", "All files (raw)", "&#128193;", sec_rawfiles),

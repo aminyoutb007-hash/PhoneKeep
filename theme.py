@@ -142,7 +142,7 @@ if DARK:                       # the drawn phones stay phones; their outlines an
 # -- PhoneKeep's own app tiles in the phone window (its drawings, not Apple's) and the storage bar ----------------------
 APP_TILE = {"photos": "#FFF4E0", "messages": "#34C759", "whatsapp": "#25D366", "whatsappbusiness": "#0F7C6C",
             "calls": "#30D158", "contacts": "#9A9AA0", "voicemail": "#0A84FF", "notes": "#FFD60A",
-            "calendar": "#FFFFFF", "voicememos": "#3A3A3C", "safari": "#0A84FF", "music": "#FA2D48",
+            "calendar": "#FFFFFF", "voicememos": "#3A3A3C", "callrecordings": "#E0452B", "safari": "#0A84FF", "music": "#FA2D48",
             "books": "#FF9500", "files": "#1E90FF", "apps": "#5E5CE6", "allfiles": "#8E8E93", "checkup": "#34C759"}
 STORAGE = {"Apps": "#4F7CFF", "Photos": "#F2A93B", "Messages": "#34C759", "System": "#8E8E93", "System and other": "#8E8E93", "Other": "#C7C7CC",
            "Free": "#ECECF0"}

@@ -339,9 +339,9 @@ gone = child.stdout.strip()
 check(child.returncode == 0 and gone and not Path(gone).exists(),
       "a command-line export's folder is deleted when it ends normally")
 psrc = (HERE.parent / "phone.py").read_text(encoding="utf-8")
-check(psrc.count("preview=self._preview_from(getter)") == 4 and "on_preview=preview" in psrc and "quicklook.bind_space(files" in psrc
+check(psrc.count("preview=self._preview_from(getter)") == 5 and "on_preview=preview" in psrc and "quicklook.bind_space(files" in psrc
       and "phonekeep-view-" not in psrc and "phonekeep-play-" not in psrc,
-      "Space previews in Photos, All files, Files from apps, voicemail, voice memos, music and books; no other temp folders")
+      "Space previews in Photos, All files, Files from apps, voicemail, voice memos, call recordings, music and books; no other temp folders")
 
 
 # -- nothing copied or decrypted off the phone outlives PhoneKeep (14 Nov: 23 decrypted backups were left behind) --
