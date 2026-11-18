@@ -56,7 +56,7 @@ Photos, Music, Books, App Files and the wallpaper are read **live from the iPhon
 ## New in 5.2.2
 
 - Notes shown as on the phone: folders, checklists, tables, pictures and drawings; save notes as PDF or text.
-- Fixes: PhoneKeep opens on macOS 11-13, no more window tabs on the Mac, and the Tamper check on Windows.
+- Fixes: drag-and-drop no longer stops PhoneKeep opening on macOS 11-13, no more window tabs on the Mac, and the Tamper check on Windows.
 
 ## New in 5.2.1
 
