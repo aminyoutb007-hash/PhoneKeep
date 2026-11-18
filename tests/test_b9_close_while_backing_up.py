@@ -307,6 +307,22 @@ w = opened(appmod.SettingsWindow, a.open_settings)
 check(w is not None and str(w.transient()) == str(a), f"  with the main window back, Settings stays with it, as before ({w and w.transient()})")
 if w is not None:
     w.destroy()
+# maximised (Windows; a Mac's zoom under Tk 8.6): on the screen, so Settings stays with it too
+try:
+    a.state("zoomed")
+    a.update()
+    zoomed = a.state() == "zoomed"
+except appmod.tk.TclError:
+    zoomed = False
+if zoomed:
+    w = opened(appmod.SettingsWindow, a.open_settings)
+    check(w is not None and str(w.transient()) == str(a), f"  with the main window maximised, Settings stays with it ({w and w.transient()})")
+    if w is not None:
+        w.destroy()
+    a.state("normal")
+    a.update()
+else:
+    print("skip a maximised main window: this Tk has no \"zoomed\" state here", flush=True)
 
 a.destroy()
 print("\nB9 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)), flush=True)

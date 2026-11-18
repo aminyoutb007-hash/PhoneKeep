@@ -2144,9 +2144,10 @@ def _tie_to_main(win: tk.Toplevel, app: "App") -> None:
     """Keep a dialog with the main window (above it, minimised with it), but only while the main window is on the
     screen. A window tied to a hidden one is hidden too: with the main window closed while a backup carries on
     (B9: withdrawn on a Mac, minimised on Windows), Settings or Open backup chosen from a phone window's menu
-    opened nothing at all. Then it's a window of its own."""
+    opened nothing at all. Then it's a window of its own. PhoneKeep's own flag says the window is away (without a
+    window manager a minimised window still reports "normal"); a maximised one ("zoomed") is on the screen."""
     try:
-        if app.state() == "normal":
+        if not app._window_away() and app.state() in ("normal", "zoomed"):
             win.transient(app)
     except tk.TclError:
         pass
