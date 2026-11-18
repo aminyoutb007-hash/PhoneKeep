@@ -1040,7 +1040,9 @@ class ChatPanel(tk.Frame):
                 t.insert("end", TYPE_LABEL[m["type"]], (tag, "link", otag))
                 t.insert("end", "\n", tag)
             body = m.get("text") or ""
-            if m.get("caption") and m.get("type") not in ("image",):
+            # Q2: a voice note's own file name ("Audio Message.caf") isn't something the phone shows
+            if m.get("caption") and m.get("type") not in ("image",) and not (
+                    m.get("type") == "audio" and re.search(r"\.(caf|opus|ogg|m4a|aac|amr|mp3|wav)$", m["caption"], re.I)):
                 body = (body + "\n" + m["caption"]).strip()
             if not body and m.get("type") not in ("image", "sticker", "gif") and not otag:
                 body = TYPE_LABEL.get(m.get("type"), m.get("type", ""))

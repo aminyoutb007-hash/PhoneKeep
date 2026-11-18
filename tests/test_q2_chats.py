@@ -261,6 +261,7 @@ labels = [cv.itemcget(i, "text") for i in cv.find_all() if cv.type(i) == "text"]
 bars = [i for i in cv.find_all() if cv.type(i) == "line"] if cv else []
 check(cv is not None and labels == ["0:06"] and len(bars) == voicenote.BARS and "🎤 Voice note" not in t.get("1.0", "end"),
       f"a voice note shows ▶, its waveform ({len(bars)} bars) and its length {labels}, in place of the label")
+check("Audio Message.caf" not in t.get("1.0", "end"), "  without its file name (the phone doesn't show it)")
 check(ctx.reads == [(sections.MEDIA, VOICE_REL)] and not any((W / "tmp").rglob("*.caf")),
       "  read from the backup in memory, once (nothing written to disk)")
 opened = []
