@@ -62,6 +62,7 @@ APPS = [
     ("notes", "Notes", "📝", theme.APP_TILE["notes"], "backup"),
     ("calendar", "Calendar", "📅", theme.APP_TILE["calendar"], "backup"),
     ("voicememos", "Voice Memos", "🎙", theme.APP_TILE["voicememos"], "backup"),
+    ("callrecordings", "Call Recordings", "📞", theme.APP_TILE["callrecordings"], "backup"),   # D6
     ("safari", "Safari", "🧭", theme.APP_TILE["safari"], "backup"),
     ("music", "Music", "🎵", theme.APP_TILE["music"], "live"),
     ("books", "Books", "📚", theme.APP_TILE["books"], "live"),
@@ -238,6 +239,8 @@ class BackupData:
                 v = sx.load_voicemail(c)
             elif key == "voicememos":
                 v = sx.load_voicememos(c)
+            elif key == "callrecordings":
+                v = sx.load_call_recordings(c)
             elif key == "safari":
                 v = sx.load_safari(c)
             elif key == "apps":
@@ -1053,7 +1056,7 @@ class PhoneWindow(tk.Toplevel):
             if self.current is None:
                 self.show_home()
             elif self.current in CHAT_APPS + ("calls", "contacts", "notes", "calendar", "voicemail", "allfiles",
-                                               "voicememos", "safari", "apps"):
+                                               "voicememos", "callrecordings", "safari", "apps"):
                 self.open_app(self.current)
 
         def err(e):
@@ -1450,6 +1453,7 @@ class PhoneWindow(tk.Toplevel):
         {"messages": self.v_chats, "whatsapp": self.v_chats, "whatsappbusiness": self.v_chats,
          "calls": self.v_calls, "contacts": self.v_contacts, "notes": self.v_notes,
          "calendar": self.v_calendar, "voicemail": self.v_voicemail, "voicememos": self.v_voicememos,
+         "callrecordings": self.v_callrecordings,
          "safari": self.v_safari, "apps": self.v_apps, "allfiles": self.v_allfiles, "music": self.v_music, "books": self.v_books,
          "files": self.v_files, "photos": self.v_photos}[key](key, value)
         if self.pending_find:
@@ -2358,6 +2362,52 @@ class PhoneWindow(tk.Toplevel):
         self.table_view(key, ["Date", "Title", "Length"], rows, [160, 360, 90], on_double=play,
                         preview=self._preview_from(getter),
                         actions=[("▶  Play", play), ("Save selected", save)])
+
+    def v_callrecordings(self, key, items):
+        """D6: who, when, how long; Play; the selected call's transcript under the list; Save puts the audio and,
+        when the phone made one, the transcript (.txt) side by side."""
+        self.view_sub.configure(text=f"{len(items):,} recording{'s' if len(items) != 1 else ''}")
+        rows = [[sx.fmt(c["when"]), c["title"], sx.dur(c["length"]) if c["length"] else "",
+                 "yes" if c["transcript"] else "", c] for c in items]
+
+        def getter(r):
+            c = r[4]
+            when = c["when"].strftime("%Y-%m-%d %H%M ") if c["when"] else ""
+            name = sx.safe_name(when + c["title"], 100) + (Path(c["file"][1]).suffix if c["file"] else ".m4a")
+
+            def audio(dest):
+                return bool(c["file"]) and self.data.copy(*c["file"], dest)
+
+            def with_text(dest):
+                if not audio(dest):
+                    return False
+                if c["transcript"]:
+                    unique_path(dest.with_suffix(".txt")).write_text(c["transcript"] + "\n", encoding="utf-8")
+                return True
+            return audio, name, name, with_text
+        play, save = self._audio_actions(key, getter)
+        tree, selected = self.table_view(key, ["Date", "Call", "Length", "Transcript"], rows, [160, 340, 80, 90],
+                                         on_double=play, preview=self._preview_from(getter),
+                                         actions=[("▶  Play", play), ("Save selected", save)])
+        box = card(self.content)
+        box.pack(fill="x", pady=(10, 0))
+        tk.Label(box, text="Transcript", bg=CARD, fg=INK, font=font(13, "bold"), anchor="w").pack(fill="x", padx=12,
+                                                                                               pady=(10, 2))
+        said = tk.Text(box, height=6, wrap="word", bg=CARD, fg=INK, relief="flat", font=font(12),
+                       highlightthickness=0, padx=12, pady=4)
+        said.pack(fill="x", padx=0, pady=(0, 10))
+        self.call_transcript = said                        # for the tests
+
+        def show(_e=None):
+            sel = selected()
+            text = ("Select a recording to see its transcript." if not sel else
+                    sel[0][4]["transcript"] or "The iPhone made no transcript of this call.")
+            said.configure(state="normal")
+            said.delete("1.0", "end")
+            said.insert("1.0", text)
+            said.configure(state="disabled")
+        tree.bind("<<TreeviewSelect>>", show, add="+")
+        show()
 
     def v_music(self, key, tracks):
         import device as devmod
