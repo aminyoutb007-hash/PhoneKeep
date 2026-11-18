@@ -26,6 +26,8 @@ What it does, all read-only for the phone:
     counts and every photo the backup has; a vCard of everything has every contact and photo (counts only).
   * D4: every note's body read with its styles, every attachment found with its file, every picture drawn in the
     Notes screen, and a PDF of every note with the same pictures (counts only).
+  * D6: every recorded call (a note the Phone app made) is listed with its audio and its length, and the Call
+    Recordings screen shows them all (counts only).
   * P8: one HEVC video from the phone saved "Most compatible" is an H.264 MP4 with its date and location (yes/no).
   * P2: songs that only stream aren't listed in Music, and the screen says why; a song on the phone is saved into
     Artist / Album with its title, artist, album and artwork in the file (counts only).
@@ -980,6 +982,54 @@ try:
                   f"D4: a PDF of every note ({n_pages} pages for {len(readable)} notes) has the same pictures "
                   f"({n_imgs} of {drawn})")
             shutil.rmtree(ddir, ignore_errors=True)
+
+    # -- D6: call recordings: the calls the Notes database has (notes the Phone app made, their top-level audio,
+    # counted straight from NoteStore.sqlite) are the ones listed, each with its audio in the backup and a length, and
+    # the Call Recordings screen lists them all. Counts only: no names, numbers or transcripts.
+    try:
+        crec = sx.load_call_recordings(ctx)
+    except wv.PhoneKeepError:
+        crec = []
+    ccon = None
+    for cdom in win.data.reader.domains("%group.com.apple.notes%"):
+        ccon = ctx.db(cdom, "NoteStore.sqlite")
+        if ccon:
+            break
+    in_db = 0
+    if ccon is not None and "ZHOSTAPPLICATIONIDENTIFIER" in sx.cols(ccon, "ZICCLOUDSYNCINGOBJECT"):
+        call_notes = [pk for pk, host, gone in ccon.execute(
+            "SELECT Z_PK, ZHOSTAPPLICATIONIDENTIFIER, ZMARKEDFORDELETION FROM ZICCLOUDSYNCINGOBJECT "
+            "WHERE ZHOSTAPPLICATIONIDENTIFIER IS NOT NULL AND ZNOTEDATA IS NOT NULL")
+            if not gone and any(k in str(host).lower() for k in sx.CALL_APPS)]
+        for pk in call_notes:
+            in_db += sum(1 for uti, parent, gone in ccon.execute(
+                "SELECT ZTYPEUTI, ZPARENTATTACHMENT, ZMARKEDFORDELETION FROM ZICCLOUDSYNCINGOBJECT WHERE ZNOTE = ?",
+                (pk,)) if not parent and not gone and sx._note_kind(uti) == "audio")
+    if ccon is not None:
+        ccon.close()
+    if not in_db:
+        note("D6: no recorded calls in the backup; not tested on real data")
+    else:
+        reads = sum(1 for c in crec if c["file"] and win.data.read(*c["file"]))
+        timed = sum(1 for c in crec if c["length"] > 0)
+        said = sum(1 for c in crec if c["transcript"])
+        check(len(crec) == in_db and reads == in_db and timed == in_db,
+              f"D6 on real data: every recorded call is listed ({len(crec)} of {in_db}), its audio is in the backup and "
+              f"reads ({reads} of {in_db}) and its length is known ({timed} of {in_db}); {said} with a transcript")
+        if not said:
+            note("D6: no transcript in this phone's call recordings; transcripts are checked on invented data "
+                 "(tests/test_d6_call_recordings.py)")
+        win.open_app("callrecordings")
+        pump(app, lambda: getattr(win, "call_transcript", None) is not None and not loading(win), 120)
+        ctree = None
+        stack = [win.content]
+        while stack and ctree is None:
+            w = stack.pop()
+            if isinstance(w, phone.ttk.Treeview):
+                ctree = w
+            stack.extend(w.winfo_children())
+        shown = len(ctree.get_children()) if ctree is not None else 0
+        check(shown == in_db, f"D6: the Call Recordings screen lists every recorded call ({shown} of {in_db})")
 
     # -- P2: music: songs that only stream aren't listed and the Music screen says why; a song on the phone is saved
     # into Artist / Album with its tags and artwork. The library's own count of songs with no file comes straight from
