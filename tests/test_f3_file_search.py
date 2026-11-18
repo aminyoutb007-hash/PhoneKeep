@@ -305,6 +305,40 @@ check(pump(lambda: (OUT / "VLC" / "Invoice.pdf").exists() and (OUT / "Pages" / "
       "Save selected saves each result into its own app's folder")
 check(not [c for c in win.live.calls if c[0] not in ("app_walk", "app_pull")],
       "the phone is only read (its apps' files listed and copied)")
+
+# with the password switch on (S6), the same two-app save is one encrypted ZIP holding each app's folder, and nothing
+# readable is left behind: not in the folder chosen, not in the private folder it was made in
+# (the stand-in app files are named .pdf but aren't PDFs, so they go into the ZIP, not one password PDF each)
+import protect_ui
+import pyzipper
+PW = "correct horse 42"
+LOCKED = W / "f3-protected"
+shutil.rmtree(LOCKED, ignore_errors=True)
+LOCKED.mkdir()
+phone.ask_save_folder = lambda parent, title, start: (asked.append(title), str(LOCKED))[1]
+asked = []
+protect_ui.ask_save_password = lambda parent, what: (asked.append(what), PW)[1]
+win.protect_saves = True
+ft.selection_set(*ft.get_children())
+for w in all_widgets(win.content):
+    if getattr(w, "text", None) == "Save selected":
+        w.command()
+check(pump(lambda: list(LOCKED.glob("*.zip")) and not getattr(win, "_protected", None), 30),
+      "Save selected with the password switch on ...")
+zips = list(LOCKED.glob("*.zip"))
+inside = {}
+if zips:
+    with pyzipper.AESZipFile(zips[0]) as z:
+        z.setpassword(PW.encode())
+        inside = {n: z.read(n) for n in z.namelist()}
+left = [q for q in Path(ql.private_dir()).glob("protect-*")] + [q for q in Path(ql.private_dir()).glob("build-*")]
+check(len(asked) == 2 and asked[1].endswith("(with a password)") and list(LOCKED.iterdir()) == zips and len(zips) == 1
+      and set(inside) == {"Pages/Invoice March.pdf", "Pages/scan 1.PDF", "VLC/Invoice.pdf"}
+      and inside["VLC/Invoice.pdf"] == b"org.videolan.vlc-ios:Documents/Invoice.pdf"
+      and not left and b"org.videolan" not in zips[0].read_bytes(),
+      f"  is one encrypted ZIP with both apps' folders inside, and nothing readable is left ({sorted(inside)}, "
+      f"{len(left)} left)")
+win.protect_saves = False
 fq.set("*.txt")
 find()
 pump(lambda: getattr(win.live, "last_stop", None) is not None, 10)
