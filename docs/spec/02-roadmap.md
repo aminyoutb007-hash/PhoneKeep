@@ -100,7 +100,7 @@ iPhone; F2 stays out because it writes to the phone. Any finding from the owner'
 | P3 | Books: filter books and PDFs | Open and save | Done | [07-photos-media.md](07-photos-media.md#p3-books-and-pdfs) |
 | D1 | Contacts: groups, photos, links | Table and exports | Partial (17 Nov: photos, the phone's Lists, linked cards as one, a contact card, vCard with photos; importing a saved .vcf into Contacts / Outlook is the owner's to try) | [08-personal-data.md](08-personal-data.md#d1-contacts) |
 | D4 | Notes: folders, attachments, PDF | Text only | Partial (17 Nov: folders, Pinned, Recently Deleted, the note as on the phone with checklists, tables, images, drawings and scans, Save as PDF or text; a real table and a side-by-side look with the phone to do) | [08-personal-data.md](08-personal-data.md#d4-notes) |
-| D6 | Call recordings | Not available | To build | [08-personal-data.md](08-personal-data.md#d6-call-recordings) |
+| D6 | Call recordings | Not available | Partial (18 Nov: Call Recordings in the phone window and in Save everything: who, when, length, Play, the transcript beside it, Save audio and transcript; on the real phone the recorded calls are listed with their audio and length, but none has a transcript, so a real transcript is still to see) | [08-personal-data.md](08-personal-data.md#d6-call-recordings) |
 | F1 | App documents: browse and save | Works | Done | [09-files-apps.md](09-files-apps.md#f1-app-documents) |
 | F2 | Drag files into iPhone apps | Not available | To build | [09-files-apps.md](09-files-apps.md#f2-drag-files-into-iphone-apps) |
 | F3 | File search with wildcards | Not available | To build | [09-files-apps.md](09-files-apps.md#f3-file-search) |
