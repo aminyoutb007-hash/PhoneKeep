@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import queue
+import re
 import sys
 from pathlib import Path
 import threading
@@ -638,6 +639,15 @@ def count_in_range(days: list, lo: Optional[dt.date], hi: Optional[dt.date]) -> 
     return max(0, b - a)
 
 
+def reaction_marks(marks: list) -> str:
+    """Q2: reactions as the phone shows them on a bubble: each one once, in the order first given, with how many
+    when more than one person gave it ("❤️ 2  👍")."""
+    seen: dict = {}
+    for x in marks:
+        seen[x] = seen.get(x, 0) + 1
+    return "  ".join(f"{x} {n}" if n > 1 else x for x, n in seen.items())
+
+
 class ChatPanel(tk.Frame):
     """Chats from WhatsApp, WhatsApp Business and/or Messages: search, dates, tick boxes and a
     conversation preview. Used by the export picker and by the phone window."""
@@ -777,6 +787,12 @@ class ChatPanel(tk.Frame):
                                 spacing1=12, spacing3=4)
         self.text.tag_configure("sys", justify="center", foreground=AMBER, font=font(11), spacing1=6)
         self.text.tag_configure("hit", background=theme.HIT, foreground=INK)
+        # Q2: the message a reply quotes, above it; the reactions on it, after its time
+        self.text.tag_configure("quote", foreground=MUTED, font=font(11), spacing1=4)
+        self.text.tag_configure("react", font=font(12))
+        # Q2: a link's preview card under its text, from what the backup keeps (never fetched; not clickable)
+        self.text.tag_configure("ltitle", font=font(12, "bold"), spacing1=4)
+        self.text.tag_configure("lmore", foreground=MUTED, font=font(11))
         # ink, bold and underlined: green on the "me" bubbles was too faint in dark mode (E6's 4.5:1)
         self.text.tag_configure("link", foreground=INK, font=font(13, "bold"), underline=True)
         self.text.tag_raise("hit")
@@ -970,6 +986,9 @@ class ChatPanel(tk.Frame):
         t = self.text
         t.configure(state="normal")
         t.delete("1.0", "end")
+        for cv in getattr(self, "voice_canvases", []):    # Q2: the voice notes drawn for the chat shown before
+            cv.destroy()
+        self.voice_canvases = []
         old = [n for n in t.tag_names() if n.startswith("open")]
         if old:
             t.tag_delete(*old)                  # the chat shown before's attachments (and their clicks)
@@ -995,6 +1014,10 @@ class ChatPanel(tk.Frame):
                 t.tag_bind(otag, "<Enter>", lambda e: t.configure(cursor="hand2"))
                 t.tag_bind(otag, "<Leave>", lambda e: t.configure(cursor="arrow"))
             open_tags = (otag,) if otag else ()
+            detail = m.get("detail") or {}
+            if detail.get("reply_to"):
+                quoted = " ".join(detail["reply_to"].split())
+                t.insert("end", "▎" + (quoted[:140] + "…" if len(quoted) > 140 else quoted) + "\n", (tag, "quote"))
             if m.get("type") in ("image", "sticker", "gif"):
                 mark = f"img{i}"
                 t.mark_set(mark, "end-1c")
@@ -1003,6 +1026,16 @@ class ChatPanel(tk.Frame):
                 t.insert("end", "\n", tag)
                 self.worker.submit(lambda m=m: self.preview.thumbnail(key, m),
                                    lambda path, mark=mark, cur=self.current, ot=otag: self._put_image(path, mark, cur, ot))
+            elif m.get("type") == "audio" and otag and hasattr(self.preview, "voice_note"):
+                # Q2: a voice note as on the phone: play button, waveform and length (the label until it's read)
+                mark = f"vn{i}"
+                t.mark_set(mark, "end-1c")
+                t.mark_gravity(mark, "left")
+                t.insert("end", TYPE_LABEL["audio"], (tag, "link", otag, mark + "ph"))
+                t.insert("end", "\n", tag)
+                self.worker.submit(lambda m=m: self.preview.voice_note(key, m),
+                                   lambda got, mark=mark, cur=self.current, m=m, k=key, cid=c["id"], tg=tag:
+                                   self._put_voice(got, mark, cur, tg, lambda: self.open_media(k, cid, m)))
             elif otag:
                 t.insert("end", TYPE_LABEL[m["type"]], (tag, "link", otag))
                 t.insert("end", "\n", tag)
@@ -1021,7 +1054,19 @@ class ChatPanel(tk.Frame):
                     t.insert("end", body[a:b], (tag, "hit"))
                     done = b
                 t.insert("end", body[done:] + "\n", tag)
-            t.insert("end", (when.strftime("%H:%M") if when else "") + "\n", (tag, "meta"))
+            link = m.get("link")
+            if link:
+                site = link.get("site") or re.sub(r"^(https?://)?(www\.)?([^/?#]+).*$", r"\3", link.get("url", ""))
+                t.insert("end", "▎" + (link.get("title") or site) + "\n", (tag, "ltitle"))
+                summary = " ".join((link.get("summary") or "").split())
+                if summary:
+                    t.insert("end", "▎" + (summary[:160] + "…" if len(summary) > 160 else summary) + "\n", (tag, "lmore"))
+                if site and link.get("title"):
+                    t.insert("end", "▎" + site + "\n", (tag, "lmore"))
+            t.insert("end", (when.strftime("%H:%M") if when else ""), (tag, "meta"))
+            if detail.get("reacted"):
+                t.insert("end", "   " + reaction_marks(detail["reacted"]), (tag, "react"))
+            t.insert("end", "\n", (tag, "meta"))
         if not msgs:
             t.insert("end", "No messages to show.\n", "day")
         t.configure(state="disabled")
@@ -1047,6 +1092,37 @@ class ChatPanel(tk.Frame):
             pass
         t.configure(state="disabled")
         t.see("end")
+
+    def _put_voice(self, got, mark, cur, tag, open_it):
+        """Q2: the voice note drawn in its bubble once its file has been read: ▶, the waveform, the length."""
+        if cur != self.current or not got:
+            return
+        seconds, bars = got
+        import voicenote
+        t = self.text
+        bg = ME if tag == "me" else theme.CARD
+        w, h = 236, 34
+        cv = tk.Canvas(t, width=w, height=h, bg=bg, highlightthickness=0, cursor="hand2")
+        cv.create_oval(2, 5, 26, 29, fill=theme.ACCENT, outline="")
+        cv.create_polygon(11, 11, 11, 23, 21, 17, fill=theme.ON_ACCENT, outline="")
+        left, right = 34, w - 42
+        step = (right - left) / len(bars)
+        for n, b in enumerate(bars):
+            x = left + n * step + step / 2
+            half = max(1.5, b * (h - 10) / 2)
+            cv.create_line(x, h / 2 - half, x, h / 2 + half, fill=MUTED, width=max(2, step * 0.55), capstyle="round")
+        cv.create_text(w - 4, h / 2, text=voicenote.fmt(seconds), anchor="e", fill=MUTED, font=font(11))
+        cv.bind("<ButtonRelease-1>", lambda e: open_it())
+        t.configure(state="normal")
+        try:
+            rng = t.tag_ranges(mark + "ph")
+            if rng:
+                t.delete(rng[0], rng[1])
+            t.window_create(mark, window=cv, padx=2, pady=2)
+            self.voice_canvases.append(cv)
+        except tk.TclError:
+            cv.destroy()
+        t.configure(state="disabled")
 
     # media (M6) ---------------------------------------------------------
     def show_tab(self, name: str) -> None:

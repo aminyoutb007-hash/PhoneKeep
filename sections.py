@@ -11,6 +11,7 @@ browsable page (plus CSV / vCard / iCal / plain files where useful):
 from __future__ import annotations
 
 import csv
+import plistlib
 import datetime as dt
 import hashlib
 import io
@@ -691,6 +692,36 @@ def decode_attributed_body(b: Optional[bytes]) -> str:
 
 
 TAPBACKS = {2000: "Love", 2001: "Like", 2002: "Dislike", 2003: "Laugh", 2004: "Emphasis", 2005: "Question"}
+def rich_link(payload: bytes) -> Optional[dict]:
+    """Q2: {"title", "site", "summary", "url"} from a Messages link's payload (an archived LPLinkMetadata), or None.
+    Only strings are taken; a payload that isn't one, or is too big, gives None."""
+    if not payload or len(payload) > 2_000_000:
+        return None
+    try:
+        objs = plistlib.loads(payload).get("$objects") or []
+    except Exception:
+        return None
+
+    def get(v, depth=0):
+        while isinstance(v, plistlib.UID) and depth < 8:
+            v = objs[v.data] if v.data < len(objs) else None
+            depth += 1
+        if isinstance(v, dict) and "NS.relative" in v:        # an NSURL
+            return get(v["NS.relative"], depth + 1)
+        if isinstance(v, dict) and "NS.string" in v:
+            return v["NS.string"] if isinstance(v["NS.string"], str) else None
+        return v if isinstance(v, str) else None
+    meta = next((o for o in objs if isinstance(o, dict) and ("title" in o or "siteName" in o)
+                 and ("URL" in o or "originalURL" in o)), None)
+    if meta is None:
+        return None
+    out = {"title": get(meta.get("title")), "site": get(meta.get("siteName")), "summary": get(meta.get("summary")),
+           "url": get(meta.get("URL")) or get(meta.get("originalURL"))}
+    out = {k: v.strip()[:500] for k, v in out.items() if isinstance(v, str) and v.strip()}
+    return out if out.get("title") or out.get("url") else None
+
+
+TAPBACK_MARKS = {"Love": "❤️", "Like": "👍", "Dislike": "👎", "Laugh": "😂", "Emphasis": "‼️", "Question": "❓"}  # Q2
 _TAPBACK_TO = re.compile(r"^(p:\d+/|bp:)")      # "p:0/<guid>": a reaction on part 0 of that message
 
 
@@ -741,6 +772,14 @@ def load_messages(ctx: Ctx) -> list[dict]:
                                         "associated_message_emoji"],
                        "WHERE associated_message_type BETWEEN 2000 AND 2006 OR associated_message_type BETWEEN "
                        "3000 AND 3006 ORDER BY date, ROWID") if "associated_message_guid" in have else []
+    # Q2: link previews as Messages shows them, from the rich link it keeps (never fetched online)
+    link_of = {}
+    if "balloon_bundle_id" in have and "payload_data" in have:
+        for rid, payload in con.execute("SELECT ROWID, payload_data FROM message WHERE payload_data IS NOT NULL "
+                                        "AND balloon_bundle_id LIKE '%URLBalloonProvider%'"):
+            got = rich_link(payload)
+            if got:
+                link_of[rid] = got
     targets = set(reply_of.values()) | {_TAPBACK_TO.sub("", r["associated_message_guid"] or "") for r in reactions}
     target_row: dict[int, str] = {}                   # ROWID -> guid, for the messages quoted or reacted to
     if targets and "guid" in have:
@@ -799,6 +838,8 @@ def load_messages(ctx: Ctx) -> list[dict]:
         if text or not parts:
             parts.insert(0, {**base, "id": r["ROWID"], "type": "deleted" if retracted and not text else "text",
                              "text": text})
+        if rid in link_of:
+            parts[0]["link"] = link_of[rid]
         if detail is not None:
             parts[0]["detail"] = detail
             for m in parts[1:]:
@@ -829,6 +870,7 @@ def load_messages(ctx: Ctx) -> list[dict]:
         got = m["detail"].pop("_reactions", None)
         if got:
             m["detail"]["reactions"] = ", ".join(f"{what} ({who})" for who, what in got.items() if what)
+            m["detail"]["reacted"] = [TAPBACK_MARKS.get(w, w) for w in got.values() if w]   # Q2: marks on the bubble
 
     # merge iMessage/SMS threads with the same person into one conversation
     merged: dict[str, dict] = {}
@@ -1719,6 +1761,7 @@ class ChatPreview:
         self.ctx = ctx
         self.lock = lock or threading.Lock()
         self.closed = closed or (lambda: False)
+        self._voice: dict = {}        # Q2: (domain, path) -> a voice note's shape, or () when it has none
 
     def _chats(self, key):
         loaded = self.ctx.cache.get(key)
@@ -1805,6 +1848,26 @@ class ChatPreview:
         loaded = self.ctx.cache.get(key) or {}
         rel = wv.whatsapp_media_rel(loaded, m) if loaded else None
         return (loaded.get("domain"), rel) if rel else None
+
+    def voice_note(self, key: str, m: dict) -> Optional[tuple[float, list[float]]]:
+        """Q2: a voice note's (seconds, waveform heights), read from the backup in memory (never to disk), or None
+        when the backup hasn't got it or it isn't a recording PhoneKeep can read."""
+        if m.get("type") != "audio":
+            return None
+        where = self.media_source(key, m)
+        if where is None:
+            return None
+        got = self._voice.get(where)
+        if got is not None:
+            return got or None
+        import voicenote
+        with self.lock:
+            if self.closed():
+                return None
+            data = self.ctx.read(*where)
+        got = voicenote.shape(data) if data else None
+        self._voice[where] = got or ()
+        return got
 
     def media(self, key: str, chat_id, people: Optional[set] = None) -> list[dict]:
         """Every message of a chat with an attachment (photo, video, voice note, document), oldest first; with

@@ -74,6 +74,7 @@ STEPS = [
     ("Tamper check (S8): each snapshot sealed and signed; one byte changed shows the amber banner on the full check", "test_s8_tamper.py", True),
     ("Closing a phone window while it reads its backup: the read finishes, then the files are let go (no crash)", "test_close_while_reading.py", True),
     ("All phones in one list (E5): a card for each phone backed up here or connected; each opens its own window", "test_e5_all_phones.py", True),
+    ("Chats as on the phone (Q2): replies quoted, reactions on the bubble, link cards from the backup, voice notes with a waveform", "test_q2_chats.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)

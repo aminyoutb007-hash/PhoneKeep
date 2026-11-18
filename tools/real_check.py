@@ -29,6 +29,8 @@ What it does, all read-only for the phone:
   * P8: one HEVC video from the phone saved "Most compatible" is an H.264 MP4 with its date and location (yes/no).
   * P2: songs that only stream aren't listed in Music, and the screen says why; a song on the phone is saved into
     Artist / Album with its title, artist, album and artwork in the file (counts only).
+  * Q2: Messages' and WhatsApp's link previews each make a card; voice notes give a waveform, and WhatsApp's the
+    length WhatsApp shows (counts only).
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
 and PhoneKeep's own folder and settings aren't changed.
 """
@@ -1032,6 +1034,52 @@ try:
                   f"P2: a song saved from the iPhone lands in its Artist / Album folder with its title {title_ok}, "
                   f"artist {artist_ok}, album {album_ok} and artwork {art_ok if t.artwork else '(none in the library)'}")
             shutil.rmtree(WORK / "p2", ignore_errors=True)
+
+    # -- Q2: chats as on the phone: link cards and voice notes (counts only) ------------------------------------
+    import voicenote
+    con = ctx.db(sx.HOME, "Library/SMS/sms.db")
+    kept = 0
+    if con is not None:
+        if {"payload_data", "balloon_bundle_id"} <= {r[1] for r in con.execute("PRAGMA table_info(message)")}:
+            kept = con.execute("SELECT COUNT(*) FROM message WHERE payload_data IS NOT NULL "
+                               "AND balloon_bundle_id LIKE '%URLBalloonProvider%'").fetchone()[0]
+        con.close()
+    sms_msgs = [m for c in sx.load_messages(ctx) for m in c["messages"]]
+    cards = [m["link"] for m in sms_msgs if m.get("link")]
+    check(len(cards) <= kept and (len(cards) >= kept * 0.9 if kept else True)
+          and all(x.get("title") or x.get("url") for x in cards),
+          f"Q2 Messages: {len(cards)} of the {kept} link previews Messages kept make a card (title or link each)")
+    ctx.cache["messages"] = [{"id": 0, "messages": sms_msgs}]
+    pv = sx.ChatPreview(ctx)
+    voice = [m for m in sms_msgs if m.get("type") == "audio" and pv.media_source("messages", m)]
+    shaped = [pv.voice_note("messages", m) for m in voice[:40]]
+    check(all(shaped), f"Q2 Messages: each voice note in the backup gives a length and a waveform "
+                       f"({sum(1 for s in shaped if s)} of {len(shaped)} read)")
+    for key, label, business in (("whatsapp", "WhatsApp", False), ("whatsappbusiness", "WhatsApp Business", True)):
+        try:
+            loaded = wv.load_whatsapp(win.data.reader, business, True, ctx.name_for, lambda m: None)
+        except wv.PhoneKeepError:
+            note(f"Q2: no {label} in the backup")
+            continue
+        con = ctx.db(loaded["domain"], "ChatStorage.sqlite")
+        msgs = {m["id"]: m for c in loaded["chats"] for m in c["messages"]}
+        want = {pk_ for (pk_,) in con.execute(
+            "SELECT DISTINCT ZMESSAGE FROM ZWAMESSAGEDATAITEM WHERE (ZTITLE IS NOT NULL AND ZTITLE != '') "
+            "OR (ZMATCHEDTEXT IS NOT NULL AND ZMATCHEDTEXT != '') OR (ZCONTENT1 IS NOT NULL AND ZCONTENT1 != '')")
+            if pk_ in msgs}
+        got = {i for i, m in msgs.items() if m.get("link")}
+        length = dict(con.execute("SELECT m.Z_PK, i.ZMOVIEDURATION FROM ZWAMESSAGE m JOIN ZWAMEDIAITEM i "
+                                  "ON i.Z_PK = m.ZMEDIAITEM WHERE m.ZMESSAGETYPE = 3 AND i.ZMOVIEDURATION > 0"))
+        con.close()
+        ctx.cache[key] = loaded
+        audio = [m for i, m in msgs.items() if i in length and pv.media_source(key, m)][:40]
+        close = 0
+        for m in audio:
+            s = pv.voice_note(key, m)
+            close += bool(s and abs(s[0] - length[m["id"]]) <= 1.0)
+        check(got == want and close == len(audio),
+              f"Q2 {label}: every message WhatsApp kept a link preview for has its card ({len(got)} of {len(want)}); "
+              f"{close} of {len(audio)} voice notes give a waveform and the length WhatsApp shows (within 1 s)")
 finally:
     try:
         win.close()

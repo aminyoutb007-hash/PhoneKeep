@@ -105,7 +105,7 @@ iPhone; F2 stays out because it writes to the phone. Any finding from the owner'
 | F2 | Drag files into iPhone apps | Not available | To build | [09-files-apps.md](09-files-apps.md#f2-drag-files-into-iphone-apps) |
 | F3 | File search with wildcards | Not available | To build | [09-files-apps.md](09-files-apps.md#f3-file-search) |
 | F4 | App list with names, icons and data export | App IDs only | Partial | [09-files-apps.md](09-files-apps.md#f4-apps-and-their-data) |
-| Q2 | Chats with voice-note waveforms | Not available | To build | [11-previews.md](11-previews.md#q2-chats-as-on-the-phone) |
+| Q2 | Chats with voice-note waveforms | Not available | Partial | [11-previews.md](11-previews.md#q2-chats-as-on-the-phone) |
 | Q3 | Contact cards with everything about a person | Not available | To build | [11-previews.md](11-previews.md#q3-contact-cards) |
 | Q4 | Storage map | Not available | To build | [11-previews.md](11-previews.md#q4-storage-map) |
 | Q5 | Backup timeline slider | Not available | To build | [11-previews.md](11-previews.md#q5-backup-timeline) |
