@@ -108,7 +108,7 @@ iPhone; F2 stays out because it writes to the phone. Any finding from the owner'
 | Q2 | Chats with voice-note waveforms | Not available | To build | [11-previews.md](11-previews.md#q2-chats-as-on-the-phone) |
 | Q3 | Contact cards with everything about a person | Not available | To build | [11-previews.md](11-previews.md#q3-contact-cards) |
 | Q4 | Storage map | Not available | To build | [11-previews.md](11-previews.md#q4-storage-map) |
-| Q5 | Backup timeline slider | Not available | To build | [11-previews.md](11-previews.md#q5-backup-timeline) |
+| Q5 | Backup timeline slider | Not available | Done | [11-previews.md](11-previews.md#q5-backup-timeline) |
 
 ## P3: later, only when asked
 

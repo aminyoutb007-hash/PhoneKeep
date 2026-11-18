@@ -33,6 +33,8 @@ What it does, all read-only for the phone:
     files listed in one go match going folder by folder (counts only).
   * P2: songs that only stream aren't listed in Music, and the screen says why; a song on the phone is saved into
     Artist / Album with its title, artist, album and artwork in the file (counts only).
+  * Q5: the timeline slider one snapshot back with the mouse shows Messages as it was then within 2 seconds, with
+    the 'Viewing' badge; back to the latest with the arrow key within 2 seconds too (seconds only).
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
 and PhoneKeep's own folder and settings aren't changed.
 """
@@ -1122,6 +1124,33 @@ try:
                   f"P2: a song saved from the iPhone lands in its Artist / Album folder with its title {title_ok}, "
                   f"artist {artist_ok}, album {album_ok} and artwork {art_ok if t.artwork else '(none in the library)'}")
             shutil.rmtree(WORK / "p2", ignore_errors=True)
+
+    # -- Q5: the timeline slider on the real snapshots (read-only: seals are off here) --------------------------
+    if not getattr(win, "snap_slider", None):
+        note("Q5: fewer than two snapshots of this iPhone; the slider not tested on real data")
+    else:
+        win.open_app("messages")
+        pump(app, lambda: find(win.content, ui.ChatPanel) is not None and not loading(win), 600)
+        def move_to(i, mouse):
+            was = win.data
+            scale, at, old_first, let_go = win.snap_slider
+            t = time.time()
+            at.set(i)
+            if mouse:
+                let_go()                               # a drag ends: the mouse is let go
+            pump(app, lambda: win.data is not None and win.data is not was and win.current == "messages"
+                 and find(win.content, ui.ChatPanel) is not None and not loading(win), 120)
+            return time.time() - t, old_first
+
+        old_first = win.snap_slider[2]
+        took_mouse, _ = move_to(len(old_first) - 2, True)
+        back = win.snapshot is not None and win.snapshot.id == old_first[-2].id
+        badge = bool(win.viewing.winfo_manager()) and win.viewing.cget("text").startswith("Viewing ")
+        took_keys, _ = move_to(len(old_first) - 1, False)        # the arrow key: opens after its short pause
+        latest = win.snapshot is None and not win.viewing.winfo_manager()
+        check(back and badge and latest and took_mouse <= 2.0 and took_keys <= 2.0,
+              f"Q5: one snapshot back with the mouse shows Messages as it was then in {took_mouse:.1f} s, with the "
+              f"'Viewing' badge; back to the latest with the arrow key in {took_keys:.1f} s, with no badge")
 finally:
     try:
         win.close()
