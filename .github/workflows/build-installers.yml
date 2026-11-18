@@ -148,6 +148,9 @@ jobs:
           # S2: the app lock's system check loads (the runner may have no Touch ID; a missing module is the failure)
           lock=$(dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-lock-check 2>&1 | tail -1); echo "$lock"
           echo "$lock" | grep -q "^PKLOCK" && ! echo "$lock" | grep -qi "not available: \(ModuleNotFound\|Import\)" || { echo "the app lock can't load in the packaged app"; exit 1; }
+          # S6: password PDFs and encrypted ZIPs are made and read back in the packaged app
+          prot=$(dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-protect-check 2>&1 | tail -1); echo "$prot"
+          echo "$prot" | grep -q "^PKPROTECT ok" || { echo "protected saves don't work in the packaged app"; exit 1; }
           out=$(dist/PhoneKeep.app/Contents/MacOS/PhoneKeep --pk-launch-check 2>&1 | tail -5)
           echo "$out"
           echo "$out" | grep -q "PKLAUNCH ok"
@@ -248,6 +251,9 @@ jobs:
           $pdf = & dist\PhoneKeep\phonekeep-cli.exe --pk-pdf-check 2>&1 | Out-String
           Write-Host $pdf
           if ($pdf -notmatch "PKPDF ok") { throw "The packaged app can't draw PDF previews (PDFium missing)" }
+          $prot = & dist\PhoneKeep\phonekeep-cli.exe --pk-protect-check 2>&1 | Out-String
+          Write-Host $prot
+          if ($prot -notmatch "PKPROTECT ok") { throw "Protected saves (S6) don't work in the packaged app" }
       - name: Licence check (LICENSE and THIRD_PARTY_NOTICES.md are inside the app)
         run: python tests\test_licence.py --built dist\PhoneKeep
       - name: Make PhoneKeep-Setup.exe

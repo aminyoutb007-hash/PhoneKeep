@@ -220,6 +220,56 @@ finally:
 check(tries == {"open": 2, "replace": 30} and tamper._seal_id(busy) in tamper._record()
       and not list(W.glob("seals*.tmp")) and not (W / "seals.lock").exists(),
       "a busy lock or record (Windows: Access is denied for a moment) waits, and the seal is still recorded")
+# ... and a record that can't be read for a moment is never written back empty (that wiped every earlier entry)
+before = dict(tamper._record())
+real_read, reads = Path.read_text, {"n": 0}
+
+
+def flaky_read(self, *a, **k):
+    if self.name == "seals.json" and reads["n"] < 1:
+        reads["n"] += 1
+        raise PermissionError(13, "Access is denied", str(self))
+    return real_read(self, *a, **k)
+
+
+Path.read_text = flaky_read
+try:
+    once = W / "Backups" / "00008030-S8REC" / "snapshots" / "20261121-000000"
+    tamper._note(once, {"version": 1, "n": "once"})
+finally:
+    Path.read_text = real_read
+rec = tamper._record()
+check(reads["n"] == 1 and before and all(rec.get(k) == v for k, v in before.items()) and tamper._seal_id(once) in rec,
+      f"a record read that fails once is tried again: the {len(before)} earlier entries stay and the new one is added")
+
+
+def never_read(self, *a, **k):
+    if self.name == "seals.json":
+        raise OSError(5, "Input/output error", str(self))
+    return real_read(self, *a, **k)
+
+
+clock = iter([0.0] + [100.0] * 1000)                     # past the 10 s deadline at once: no 10 s wait in the test
+real_time = tamper.time
+tamper.time = type("T", (), {"time": staticmethod(lambda: next(clock)), "sleep": staticmethod(lambda s: None)})
+Path.read_text = never_read
+try:
+    stuck = W / "Backups" / "00008030-S8REC" / "snapshots" / "20261122-000000"
+    tamper._note(stuck, {"version": 1, "n": "stuck"})
+finally:
+    Path.read_text, tamper.time = real_read, real_time
+rec2 = tamper._record()
+check(rec2 == rec and tamper._seal_id(stuck) not in rec2 and not (W / "seals.lock").exists()
+      and not list(W.glob("seals*.tmp")),
+      "a record that can't be read at all is left as it is (nothing lost; that one seal isn't recorded)")
+(W / "seals.json").write_text("{not json", encoding="utf-8")
+fresh_one = W / "Backups" / "00008030-S8REC" / "snapshots" / "20261123-000000"
+tamper._note(fresh_one, {"version": 1, "n": "fresh"})
+check((W / "seals.damaged.json").read_text(encoding="utf-8") == "{not json"
+      and list(tamper._record()) == [tamper._seal_id(fresh_one)],
+      "a record that isn't JSON any more is kept as seals.damaged.json, and a new one is started")
+(W / "seals.json").write_text(json.dumps(rec, sort_keys=True), encoding="utf-8")       # as before, for what follows
+(W / "seals.damaged.json").unlink()
 made = []
 _kb = keychain._backend
 store = {}

@@ -48,6 +48,8 @@ git checkout -- build_label.py                         # the committed file, unc
 PHONEKEEP_NO_HELPER=1 dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-launch-check | grep -q "PKLAUNCH ok"
 lock=$(dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-lock-check 2>&1 | tail -1); echo "$lock"   # S2
 echo "$lock" | grep -qi "ModuleNotFound\|ImportError" && { echo "the app lock can't load in the packaged app" >&2; exit 1; }
+prot=$(dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli --pk-protect-check 2>&1 | tail -1); echo "$prot"   # S6
+echo "$prot" | grep -q "^PKPROTECT ok" || { echo "protected saves don't work in the packaged app" >&2; exit 1; }
 for c in backup2 afc usbmux; do      # every phone command loads in the packaged app (5.0.0: backup2 didn't)
   dist/PhoneKeep.app/Contents/MacOS/phonekeep-cli -m pymobiledevice3 $c --help 2>&1 | grep -q "Usage" \
     || { echo "pymobiledevice3 $c does not load in the packaged app" >&2; exit 1; }

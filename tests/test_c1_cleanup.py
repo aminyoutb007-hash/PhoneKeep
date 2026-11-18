@@ -396,7 +396,7 @@ try:
         def failed(self, holder, e, retry=None):
             self.error = e
 
-        def out_dir(self, key):
+        def out_dir(self, key, protectable=True):
             return W / "chosen"
 
     def texts(w, out=None):
