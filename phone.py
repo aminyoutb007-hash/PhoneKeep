@@ -452,10 +452,12 @@ class PhoneWindow(tk.Toplevel):
         self.content.pack(side="left", fill="both", expand=True, padx=(14, 0))
 
     # snapshots (B3) ------------------------------------------------------------------------
-    def _build_timeline(self):
+    def _build_timeline(self, fresh: bool = True):
+        """fresh=False: the snapshots listed a moment ago (Q5: opening one from the slider, a quarter second less)."""
         for w in self.timeline.winfo_children():
             w.destroy()
-        snaps = sn.list_snapshots(self.backup_dir, self.udid) if self.udid else []
+        snaps = (self.snaps if not fresh and getattr(self, "snaps", None) is not None
+                 else sn.list_snapshots(self.backup_dir, self.udid) if self.udid else [])
         self.snaps = snaps
         tk.Label(self.timeline, text="SNAPSHOT", bg=CARD, fg=MUTED, font=font(11, "bold"), anchor="w").pack(
             fill="x", padx=14, pady=(12, 4))
@@ -574,7 +576,7 @@ class PhoneWindow(tk.Toplevel):
             self.viewing.lift()
         else:
             self.viewing.place_forget()
-        self._build_timeline()
+        self._build_timeline(fresh=False)
         if self.data is not None:
             self.data.close()
             self.data = None

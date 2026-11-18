@@ -64,6 +64,91 @@ for n, day in enumerate(days):
 shutil.copytree(fake, sn.current_dir(BD, UD1))
 sn.make_snapshot(BD, UD1, when=days[0])
 
+# -- opening another snapshot of an encrypted backup reuses the key made from the password (memory only) ---------
+import hashlib, plistlib, struct
+from Crypto.Cipher import AES
+import iphone_backup_decrypt.utils as bu
+
+PW = "invented test password"
+
+
+def tlv(tag: bytes, data) -> bytes:
+    data = struct.pack(">L", data) if isinstance(data, int) else data
+    return tag + struct.pack(">L", len(data)) + data
+
+
+def make_encrypted(folder: Path, dpsl: bytes, rows: int):
+    """An encrypted backup made the way iOS makes one (few iterations, so it's quick): a keybag whose class key is
+    wrapped with the key made from PW, and Manifest.db encrypted with a key wrapped by that class key."""
+    folder.mkdir(parents=True)
+    salt = hashlib.sha1(dpsl).digest()
+    made = hashlib.pbkdf2_hmac("sha1", hashlib.pbkdf2_hmac("sha256", PW.encode(), dpsl, 1000, 32), salt, 10, 32)
+    class_key, manifest_key = os.urandom(32), os.urandom(32)
+    bag = (tlv(b"VERS", 4) + tlv(b"TYPE", 1) + tlv(b"UUID", os.urandom(16)) + tlv(b"WRAP", 0) + tlv(b"SALT", salt)
+           + tlv(b"ITER", 10) + tlv(b"DPWT", 1) + tlv(b"DPIC", 1000) + tlv(b"DPSL", dpsl)
+           + tlv(b"UUID", os.urandom(16)) + tlv(b"CLAS", 3) + tlv(b"WRAP", 2) + tlv(b"KTYP", 0)
+           + tlv(b"WPKY", AES.new(made, AES.MODE_KW).seal(class_key)))
+    with open(folder / "Manifest.plist", "wb") as f:
+        plistlib.dump({"IsEncrypted": True, "BackupKeyBag": bag,
+                       "ManifestKey": struct.pack("<l", 3) + AES.new(class_key, AES.MODE_KW).seal(manifest_key)}, f)
+    with open(folder / "Info.plist", "wb") as f:
+        plistlib.dump({"Device Name": "Test iPhone"}, f)
+    plain = folder / "plain.db"
+    c = sqlite3.connect(plain)
+    c.execute("CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT, flags INTEGER, file BLOB)")
+    c.executemany("INSERT INTO Files VALUES (?, 'HomeDomain', ?, 1, ?)",
+                  [(f"{n:040x}", f"f{n}", plistlib.dumps({"n": n}, fmt=plistlib.FMT_BINARY)) for n in range(rows)])
+    c.commit()
+    c.close()
+    data = plain.read_bytes()
+    plain.unlink()
+    pad = 16 - len(data) % 16
+    (folder / "Manifest.db").write_bytes(AES.new(manifest_key, AES.MODE_CBC, iv=b"\0" * 16).encrypt(data + bytes([pad]) * pad))
+
+
+enc_a, enc_b, enc_c = W / "enc-a", W / "enc-b", W / "enc-c"
+make_encrypted(enc_a, b"S" * 20, 3)
+make_encrypted(enc_b, b"S" * 20, 5)            # the next snapshot: the same password and salts, new keys
+make_encrypted(enc_c, b"T" * 20, 7)            # the password set again: new salts
+made = []
+real_kdf = bu.pbkdf2_hmac
+bu.pbkdf2_hmac = lambda *a, **k: (made.append(1), real_kdf(*a, **k))[1]
+wv._KEYS.clear()
+
+
+def files_in(path: Path, password: str):
+    r = wv.BackupReader(path, password, log=lambda *a: None)
+    try:
+        return r.db.execute("SELECT COUNT(*) FROM Files").fetchone()[0]
+    finally:
+        r.close()
+
+
+check(files_in(enc_a, PW) == 3 and len(made) == 2, "an encrypted backup opens with its password (the key made once)")
+check(files_in(enc_b, PW) == 5 and len(made) == 2, "  another snapshot with the same password and salts opens without making it again")
+try:
+    files_in(enc_b, "not the password")
+    wrong = False
+except wv.PhoneKeepError:
+    wrong = True
+check(wrong, "  a wrong password still doesn't open it (the kept key is only for the same password)")
+for kid in wv._KEYS:
+    wv._KEYS[kid] = os.urandom(32)             # a kept key that no longer fits
+n = len(made)
+check(files_in(enc_b, PW) == 5 and len(made) == n + 2, "  a kept key that doesn't fit: the password opens it, and the key is made again")
+n = len(made)
+check(files_in(enc_c, PW) == 7 and len(made) == n + 2, "  new salts (the password set again): the key is made again")
+check(not any(PW.encode() in p.read_bytes() for d in (enc_a, enc_b, enc_c) for p in d.iterdir()),
+      "  nothing about the password is written next to the backups")
+bu.pbkdf2_hmac = real_kdf
+
+# backup_info is kept while the backup's files stay the same, and read again when one changes
+first = wv.backup_info(enc_a)
+with open(enc_a / "Info.plist", "wb") as f:
+    plistlib.dump({"Device Name": "Renamed Test iPhone"}, f)
+check(first["name"] == "Test iPhone" and wv.backup_info(enc_a)["name"] == "Renamed Test iPhone",
+      "a backup's details are read again when its Info.plist changes")
+
 import tkinter as tk
 import device as devmod
 import phone
