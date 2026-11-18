@@ -124,6 +124,33 @@ def _record() -> dict:
         return {}
 
 
+def _record_to_update(end: float) -> Optional[dict]:
+    """The record as it is, for adding to it under the lock: {} only when there's none yet. A read that fails for a
+    moment (Windows: a virus checker or a reader holding it) is tried again until `end`; if it still fails, None, so
+    nothing is written and no earlier entry is lost. A record that isn't JSON any more is kept as seals.damaged.json
+    and a new one is started (otherwise no seal could be recorded again)."""
+    f = _record_file()
+    while True:
+        try:
+            d = json.loads(f.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}
+        except OSError:
+            if time.time() > end:
+                return None
+            time.sleep(0.05)
+            continue
+        except ValueError:
+            d = None
+        if isinstance(d, dict):
+            return d
+        try:
+            f.replace(f.with_name("seals.damaged.json"))
+        except OSError:
+            return None
+        return {}
+
+
 def _note(sdir: Path, seal: dict) -> None:
     """Add a seal to the record. One writer at a time: a thread lock here, a lock file across processes (the
     window and the menu bar helper), and each write through its own temporary file."""
@@ -152,7 +179,9 @@ def _note(sdir: Path, seal: dict) -> None:
             except OSError:
                 return
         try:
-            rec = _record()
+            rec = _record_to_update(end)
+            if rec is None:
+                return                               # the record couldn't be read: leave it as it is
             rec[_seal_id(sdir)] = _body_hash(seal)
             tmp = f.with_name(f"seals.{os.getpid()}.{threading.get_ident()}.tmp")
             tmp.write_text(json.dumps(rec, sort_keys=True), encoding="utf-8")
