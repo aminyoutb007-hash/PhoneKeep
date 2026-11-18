@@ -107,14 +107,21 @@ def protect_folder(staging: Path, dest_folder: Path, password: str, zip_name: st
     out = []
     try:
         if all(p.suffix.lower() == ".pdf" for p in files):
-            for i, p in enumerate(files):
-                out.append(protect_pdf(p, dest_folder / p.name, password))
-                if progress:
-                    progress(100.0 * (i + 1) / len(files))
-        else:
-            safe = "".join(ch for ch in zip_name if ch not in '/\\:*?"<>|').strip() or "PhoneKeep"
-            out.append(zip_files([(p, p.relative_to(staging).as_posix()) for p in files],
-                                 dest_folder / f"{safe}.zip", password, progress))
+            try:
+                for i, p in enumerate(files):
+                    out.append(protect_pdf(p, dest_folder / p.name, password))
+                    if progress:
+                        progress(100.0 * (i + 1) / len(files))
+                return out
+            except Exception:
+                # a file named .pdf that isn't one a PDF reader can open (an app's own file, a damaged one): the
+                # whole save goes into the ZIP instead, still protected, never lost to an error
+                for q in out:
+                    Path(q).unlink(missing_ok=True)
+                out = []
+        safe = "".join(ch for ch in zip_name if ch not in '/\\:*?"<>|').strip() or "PhoneKeep"
+        out.append(zip_files([(p, p.relative_to(staging).as_posix()) for p in files],
+                             dest_folder / f"{safe}.zip", password, progress))
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return out

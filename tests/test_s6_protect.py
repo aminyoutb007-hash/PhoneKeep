@@ -133,6 +133,24 @@ finally:
 check(raised and not list((W / "dest").glob("Broken*")) and not st.exists(),
       "a save that stops (disk full) leaves no half-written file and no private copy")
 
+# a file named .pdf that no PDF reader opens (an app's own file, a damaged one) beside a real PDF: the save becomes one
+# ZIP holding both, still protected, instead of an error that saves nothing (F3: Save selected of a search's PDFs)
+st = W / "staging-mixed"
+(st / "Pages").mkdir(parents=True)
+(st / "VLC").mkdir()
+c = canvas.Canvas(str(st / "Pages" / "Invoice.pdf"))
+c.drawString(72, 720, "Invented invoice")
+c.save()
+(st / "VLC" / "Invoice.pdf").write_bytes(b"not a PDF at all")
+before = set((W / "dest").iterdir())
+out = protect.protect_folder(st, W / "dest", PW, "App Files")
+got = zip_reads(out[0]) if out else {}
+check([p.name for p in out] == ["App Files.zip"] and set(got) == {"Pages/Invoice.pdf", "VLC/Invoice.pdf"}
+      and got["VLC/Invoice.pdf"] == b"not a PDF at all" and set((W / "dest").iterdir()) - before == set(out)
+      and not st.exists(),
+      "a .pdf that isn't one: everything goes into one protected ZIP (each app's folder kept), no stray PDF, nothing "
+      f"lost ({[p.name for p in out]})")
+
 # -- the phone window ----------------------------------------------------------------------------------------
 import tkinter as tk
 from tkinter import messagebox as mb

@@ -29,6 +29,8 @@ What it does, all read-only for the phone:
   * D6: every recorded call (a note the Phone app made) is listed with its audio and its length, and the Call
     Recordings screen shows them all (counts only).
   * P8: one HEVC video from the phone saved "Most compatible" is an H.264 MP4 with its date and location (yes/no).
+  * F3: "*.pdf" finds every PDF in the backup's file list and in the apps that share files on the phone; an app's
+    files listed in one go match going folder by folder (counts only).
   * P2: songs that only stream aren't listed in Music, and the screen says why; a song on the phone is saved into
     Artist / Album with its title, artist, album and artwork in the file (counts only).
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
@@ -982,6 +984,44 @@ try:
                   f"D4: a PDF of every note ({n_pages} pages for {len(readable)} notes) has the same pictures "
                   f"({n_imgs} of {drawn})")
             shutil.rmtree(ddir, ignore_errors=True)
+
+    # -- F3: file search. In the backup: "*.pdf" finds as many files as the backup's own file list has PDFs. On the
+    # phone: one app's walk (one connection) lists the same files as going folder by folder, and "*.pdf" across the
+    # apps that share files finds as many as their walks have. Counts only: no names or paths.
+    import filesearch
+    pat = filesearch.Pattern("*.pdf")
+    doms = list(win.data.reader.domains("%"))
+    want_b = sum(1 for d in doms for rel in win.data.reader.file_meta(d) if rel.lower().endswith(".pdf"))
+    _h, got_b = filesearch.in_backup(win.data.reader.file_meta, doms, pat)
+    check(got_b == want_b, f"F3 in the backup: *.pdf finds every PDF in its file list ({got_b} of {want_b})")
+    if win.live is None:
+        check(False, "F3: no live connection to the iPhone, so its apps' files couldn't be searched")
+    else:
+        sharing = [a for a in win.live.apps() if a.shares_files]
+        walks = {}
+        for a in sharing:
+            try:
+                walks[a.id] = win.live.app_walk(a.id)
+            except Exception:
+                walks[a.id] = None
+        one = next((a for a in sharing if walks.get(a.id)), None)
+        if one is None:
+            note("F3: no app on this phone shares files that have anything in them; walking not tested on real data")
+        else:
+            by_folder, todo = set(), ["Documents"]
+            while todo and len(by_folder) < 20000:                 # app_walk's own limit
+                for e in win.live.app_list(one.id, todo.pop(0)):
+                    by_folder.add((e.path, e.is_dir))
+                    if e.is_dir:
+                        todo.append(e.path)
+            walked = {(e.path, e.is_dir) for e in walks[one.id]}
+            check(walked == by_folder, f"F3 on the phone: one app's walk lists the same files and folders as going "
+                                       f"folder by folder ({len(walked)} and {len(by_folder)})")
+        want_l = sum(1 for es in walks.values() if es for e in es if not e.is_dir and e.name.lower().endswith(".pdf"))
+        _h, got_l, failed = filesearch.in_apps(win.live.app_walk, sharing, pat)
+        check(got_l == want_l and not failed,
+              f"F3 on the phone: *.pdf across the {len(sharing)} apps that share files finds every PDF in them "
+              f"({got_l} of {want_l}; {len(failed)} app(s) couldn't be read)")
 
     # -- D6: call recordings: the calls the Notes database has (notes the Phone app made, their top-level audio,
     # counted straight from NoteStore.sqlite) are the ones listed, each with its audio in the backup and a length, and

@@ -2098,7 +2098,8 @@ class PhoneWindow(tk.Toplevel):
         tk.Label(top, text="🔍", bg=BG, font=font(13)).pack(side="left")
         q = tk.StringVar()
         ttk.Entry(top, textvariable=q, width=32).pack(side="left", padx=4)
-        tk.Label(top, text="Double-click or Space to preview · tick with a click, then Save", bg=BG, fg=MUTED, font=font(11)).pack(side="left", padx=10)
+        tk.Label(top, text="F3: a name, or * for anything (*.pdf, invoice*) · Double-click or Space to preview · "
+                           "click, then Save", bg=BG, fg=MUTED, font=font(11)).pack(side="left", padx=10)
         box = card(self.content)
         box.pack(fill="both", expand=True)
         tree = ttk.Treeview(box, columns=("size", "date"), selectmode="extended")
@@ -2112,6 +2113,13 @@ class PhoneWindow(tk.Toplevel):
         tree.configure(yscrollcommand=sb.set)
         tree.pack(side="left", fill="both", expand=True, padx=(4, 0), pady=4)
         sb.pack(side="left", fill="y", pady=4)
+        # F3: while there's a search, its results replace the folders: where, path, size, date
+        hits = ttk.Treeview(box, columns=("area", "path", "size", "date"), show="headings", selectmode="extended")
+        for c, h, w in (("area", "Area", 200), ("path", "Path", 440), ("size", "Size", 90), ("date", "Modified", 140)):
+            hits.heading(c, text=h)
+            hits.column(c, width=w, stretch=(c == "path"), anchor="e" if c == "size" else "w")
+        hmeta: dict = {}      # iid -> ("file", domain, rel, size, mtime), as `meta` has for the folders' files
+        self.allfiles_hits = hits                 # for the tests
         meta: dict = {}       # iid -> (domain, rel, size, mtime) for files
         loaded: set = set()
         import device as devmod
@@ -2155,6 +2163,8 @@ class PhoneWindow(tk.Toplevel):
         tree.bind("<<TreeviewOpen>>", on_open)
 
         def selected_files() -> list:
+            if searching():
+                return [hmeta[i] for i in hits.selection() if i in hmeta]
             out = []
 
             def walk(iid):
@@ -2172,42 +2182,96 @@ class PhoneWindow(tk.Toplevel):
             return out
 
         def preview(_e=None):
-            """Q1: Space, Return or double-click previews the file; the arrows go through its folder."""
-            sel = [i for i in tree.selection() if meta.get(i, ("",))[0] == "file"]
+            """Q1: Space, Return or double-click previews the file; the arrows go through its folder (or, F3,
+            through the search's results)."""
+            if searching():
+                sel = [i for i in hits.selection() if i in hmeta]
+                siblings, where, view = list(hits.get_children("")), hmeta, hits
+            else:
+                sel = [i for i in tree.selection() if meta.get(i, ("",))[0] == "file"]
+                siblings = [i for i in tree.get_children(tree.parent(sel[0])) if meta.get(i, ("",))[0] == "file"] \
+                    if sel else []
+                where, view = meta, tree
             if not sel:
                 return "break"
-            siblings = [i for i in tree.get_children(tree.parent(sel[0])) if meta.get(i, ("",))[0] == "file"]
+            siblings = [i for i in siblings if i in where][:2000]
+            if sel[0] not in siblings:
+                siblings = [sel[0]] + siblings
             items = []
             for i in siblings:
-                _k, domain, rel, size, _mtime = meta[i]
+                _k, domain, rel, size, _mtime = where[i]
                 items.append(quicklook.Item(Path(rel).name, read=lambda d=domain, r=rel: self.data.read(d, r),
                                             why=lambda: getattr(self.data.reader, "last_error", None),
                                             to_file=lambda dest, d=domain, r=rel: self.data.copy(d, r, dest), size=size))
             self.allfiles_viewer = quicklook.Viewer(self, items, siblings.index(sel[0]),
-                                                    on_close=lambda: tree.focus_set())
+                                                    on_close=lambda: view.focus_set())
             return "break"
-        tree.bind("<Double-Button-1>", preview)
-        tree.bind("<space>", preview)
-        tree.bind("<Return>", preview)
+        for w in (tree, hits):
+            w.bind("<Double-Button-1>", preview)
+            w.bind("<space>", preview)
+            w.bind("<Return>", preview)
         self.allfiles_preview = preview           # also reachable for the tests
 
+        import filesearch
+        look = {"gen": 0, "after": None}
+
+        def searching() -> bool:
+            return bool(hits.winfo_manager())
+
+        def show_folders():
+            if searching():
+                hits.pack_forget()
+                tree.pack(side="left", fill="both", expand=True, padx=(4, 0), pady=4, before=sb)
+                sb.configure(command=tree.yview)
+            foot_count.configure(text="")
+
         def search(*_):
-            text = q.get().strip().lower()
-            if not text:
+            """F3: the backup's file names (or paths) that match, found on the backup reader's thread a moment
+            after the typing stops; a newer search makes an older one's results go unshown."""
+            if look["after"]:
+                self.after_cancel(look["after"])
+            look["after"] = self.after(300, run_search)
+
+        def run_search():
+            look["after"] = None
+            if not hits.winfo_exists():           # the view was left while the typing pause ran
                 return
-            # search every domain's file names (loads them as needed)
-            for iid in list(tree.get_children("")):
-                if iid not in loaded:
-                    loaded.add(iid)
-                    for ch in tree.get_children(iid):
-                        tree.delete(ch)
-                    add_folder_tree(iid, meta[iid][1], self.data.reader.file_meta(meta[iid][1]))
-            hits = [i for i, m in meta.items() if m[0] == "file" and text in m[2].lower()]
-            tree.selection_set(hits[:500])
-            if hits:
-                tree.see(hits[0])
-            foot_count.configure(text=f"{len(hits):,} match{'es' if len(hits) != 1 else ''}")
+            look["gen"] += 1
+            gen = look["gen"]
+            pat = filesearch.Pattern(q.get())
+            if not pat:
+                show_folders()
+                return
+            foot_count.configure(text="Searching…")
+            data = self.data                      # its file_meta holds the backup's lock (closing the window can't
+            doms = [meta[i][1] for i in tree.get_children("") if meta.get(i, ("",))[0] == "domain"]   # pull it away)
+            self.backup_runner.submit(
+                lambda: filesearch.in_backup(data.file_meta, doms, pat, stop=lambda: gen != look["gen"]),
+                lambda res: show_hits(gen, *res), lambda e: foot_count.configure(text=f"Couldn't search: {describe_error(e)}"))
+
+        def show_hits(gen, found, total):
+            if gen != look["gen"]:
+                return
+            if not searching():
+                tree.pack_forget()
+                hits.pack(side="left", fill="both", expand=True, padx=(4, 0), pady=4, before=sb)
+                sb.configure(command=hits.yview)
+                hits.configure(yscrollcommand=sb.set)
+            hits.delete(*hits.get_children())
+            hmeta.clear()
+            for n, (domain, rel, size, mtime) in enumerate(found):
+                iid = f"h{n}"
+                hmeta[iid] = ("file", domain, rel, size, mtime)
+                hits.insert("", "end", iid=iid, values=(
+                    self.domain_title(domain), rel, devmod.human_size(size or 0),
+                    dt.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M") if mtime else ""))
+            more = f" (the first {len(found):,} shown)" if total > len(found) else ""
+            foot_count.configure(text=(f"{total:,} file{'s' if total != 1 else ''} match{'' if total != 1 else 'es'}"
+                                       f"{more}" if total else "No file matches. * matches anything: *.pdf, invoice*"))
         q.trace_add("write", search)
+        hits.bind("<Destroy>", lambda e: look["after"] and self.after_cancel(look["after"]))
+        self.allfiles_search = run_search         # the tests run it at once instead of waiting for the typing pause
+        self.allfiles_q = q
 
         foot = tk.Frame(self.content, bg=BG)
         foot.pack(fill="x", pady=(6, 0))
@@ -2215,12 +2279,16 @@ class PhoneWindow(tk.Toplevel):
         foot_count.pack(side="left")
 
         def update_count(_e=None):
-            files = [m for m in (meta.get(i) for i in tree.selection()) if m and m[0] == "file"]
-            folders = [i for i in tree.selection() if meta.get(i, ("",))[0] in ("domain", "folder")]
+            if searching():
+                files, folders = [hmeta[i] for i in hits.selection() if i in hmeta], []
+            else:
+                files = [m for m in (meta.get(i) for i in tree.selection()) if m and m[0] == "file"]
+                folders = [i for i in tree.selection() if meta.get(i, ("",))[0] in ("domain", "folder")]
             size = sum(m[3] for m in files)
             foot_count.configure(text=(f"{len(files):,} file{'s' if len(files) != 1 else ''} · {devmod.human_size(size)}" if files else "")
                                  + (f" · {len(folders)} folder{'s' if len(folders) != 1 else ''}" if folders else ""))
         tree.bind("<<TreeviewSelect>>", update_count)
+        hits.bind("<<TreeviewSelect>>", update_count)
 
         def save():
             items = selected_files()
@@ -2660,6 +2728,15 @@ class PhoneWindow(tk.Toplevel):
     def v_files(self, key, apps):
         sharing = [a for a in apps if a.shares_files]
         self.view_sub.configure(text=f"{len(sharing):,} apps share files · {len(apps):,} apps installed")
+        # F3: one search across every app that shares files (their Documents on the phone, read-only)
+        top = tk.Frame(self.content, bg=BG)
+        top.pack(fill="x", pady=(0, 6))
+        tk.Label(top, text="🔍", bg=BG, font=font(13)).pack(side="left")
+        fq = tk.StringVar()
+        fent = ttk.Entry(top, textvariable=fq, width=32)
+        fent.pack(side="left", padx=4)
+        tk.Label(top, text="Search all apps' files: a name, or * for anything (*.pdf, invoice*), then Return",
+                 bg=BG, fg=MUTED, font=font(11)).pack(side="left", padx=10)
         pane = tk.PanedWindow(self.content, orient="horizontal", sashwidth=6, bg=BG, bd=0)
         pane.pack(fill="both", expand=True)
         lf = card(pane)
@@ -2680,12 +2757,14 @@ class PhoneWindow(tk.Toplevel):
             files.column(c, width=w, stretch=(c == "n"))
         files.pack(fill="both", expand=True, padx=4, pady=4)
         pane.add(rf, minsize=420)
-        state = {"app": None, "path": "Documents", "entries": {}}
+        state = {"app": None, "path": "Documents", "entries": {}, "hit_app": {}, "gen": 0}
         by_id = {a.id: a for a in apps}
         import device as devmod
 
         def load(app_id, path):
             a = by_id[app_id]
+            state["gen"] += 1                       # a search still running is no longer shown
+            state["hit_app"] = {}
             state["app"], state["path"] = app_id, path
             crumbs.configure(text=f"{a.name}  ›  " + "  ›  ".join(path.split("/")))
             files.delete(*files.get_children())
@@ -2716,6 +2795,51 @@ class PhoneWindow(tk.Toplevel):
             files.delete(*files.get_children())
             files.insert("", "end", values=(describe_error(e)[:120], "", ""))
 
+        def app_of(iid):
+            return state["hit_app"].get(iid, state["app"])
+
+        def find(_e=None):
+            """F3: every sharing app's files whose name (or path) matches, walked on the phone's own thread."""
+            import filesearch
+            pat = filesearch.Pattern(fq.get())
+            if not pat:
+                return
+            state["gen"] += 1
+            gen = state["gen"]
+            alist.selection_remove(*alist.selection())
+            state["app"], state["entries"], state["hit_app"] = None, {}, {}
+            crumbs.configure(text=f"Searching the apps' files for “{pat.query}”…")
+            files.delete(*files.get_children())
+            files.insert("", "end", iid="__loading", values=("Searching…", "", ""))
+
+            def progress(i, n, name):
+                self.live_runner.on_ui(lambda: gen == state["gen"] and crumbs.configure(
+                    text=f"Searching the apps' files for “{pat.query}”… {name} ({i + 1} of {n})"))
+            stop = lambda: gen != state["gen"]
+            self.live_runner.submit(
+                lambda: filesearch.in_apps(lambda b: self.live.app_walk(b, stop=stop), apps, pat, stop=stop,
+                                           progress=progress),
+                lambda res: show_hits(gen, pat, *res), lambda e: gen == state["gen"] and show_err(e))
+
+        def show_hits(gen, pat, found, total, failed):
+            if gen != state["gen"]:
+                return
+            files.delete(*files.get_children())
+            state["entries"], state["hit_app"] = {}, {}
+            for a, e in found:
+                iid = f"e{len(state['entries'])}"
+                state["entries"][iid] = e
+                state["hit_app"][iid] = a.id
+                where = e.path[len("Documents/"):] if e.path.startswith("Documents/") else e.path
+                files.insert("", "end", iid=iid, values=(f"📄 {a.name}  ›  {where}", devmod.human_size(e.size),
+                                                         e.when.strftime("%Y-%m-%d %H:%M") if e.when else ""))
+            more = f", the first {len(found):,} shown" if total > len(found) else ""
+            left = f" · couldn't read {', '.join(failed[:3])}" if failed else ""
+            crumbs.configure(text=(f"{total:,} file{'s' if total != 1 else ''} match “{pat.query}”{more}{left}"
+                                   if total else f"No file matches “{pat.query}”. * matches anything: *.pdf{left}"))
+        fent.bind("<Return>", find)
+        self.files_search = (fq, find)            # for the tests
+
         def dbl(_e=None):
             s = files.selection()
             if not s:
@@ -2725,15 +2849,19 @@ class PhoneWindow(tk.Toplevel):
                 return
             e = state["entries"].get(s[0])
             if e is not None and e.is_dir:
-                load(state["app"], e.path)
+                load(app_of(s[0]), e.path)
             elif e is not None:
                 tmp = quicklook.private_tmp("phonekeep-file-")
                 self.banner(f"Opening {e.name}…")
-                self.live_runner.submit(lambda: self.live.app_pull(state["app"], e.path, tmp) and tmp / e.name,
+                owner = app_of(s[0])
+                self.live_runner.submit(lambda: self.live.app_pull(owner, e.path, tmp) and tmp / e.name,
                                         lambda p: (self.banner(""), open_file(p)) if p else None,
                                         lambda err: self.banner(f"Couldn't open it: {describe_error(err)}", color=theme.ERROR_BG))
         alist.bind("<<TreeviewSelect>>", lambda e: alist.selection() and load(alist.selection()[0], "Documents"))
         files.bind("<Double-1>", dbl)
+        # F3: leaving App Files stops a search still walking the phone (it holds the phone for Music and Books)
+        files.bind("<Destroy>", lambda e: state.__setitem__("gen", state["gen"] + 1), add="+")
+        self.files_open = dbl                     # for the tests (Tk can't make a double-click)
 
         def pull_to(app_id, entry, dest: Path) -> bool:
             """An app's file from the phone into the preview's private folder (Q1)."""
@@ -2758,29 +2886,34 @@ class PhoneWindow(tk.Toplevel):
             if not ents:
                 return None
             idx = next((n for n, (i, _e) in enumerate(ents) if sel and i == sel[0]), 0)
-            app_id = state["app"]
-            return [quicklook.Item(e.name, read=lambda e=e: read(app_id, e), to_file=lambda d, e=e: pull_to(app_id, e, d),
-                                   size=getattr(e, "size", None)) for _i, e in ents], idx
+            return [quicklook.Item(e.name, read=lambda e=e, b=app_of(i): read(b, e),
+                                   to_file=lambda d, e=e, b=app_of(i): pull_to(b, e, d),
+                                   size=getattr(e, "size", None)) for i, e in ents], idx
         quicklook.bind_space(files, make)
 
         foot = tk.Frame(self.content, bg=BG)
         foot.pack(fill="x", pady=(10, 0))
 
         def save():
-            sel = [state["entries"][i] for i in files.selection() if i in state["entries"]]
+            sel = [(app_of(i), state["entries"][i]) for i in files.selection() if i in state["entries"]]
             if not sel:
                 messagebox.showinfo(wv.APP_NAME, "Select files or folders to save first.", parent=self)
                 return
-            a = by_id[state["app"]]
             base = self.out_dir("files")
             if base is None:
                 return
-            folder = base / sx.safe_name(a.name, 60)
-            app_id = state["app"]
+            owners = {b for b, _e in sel}
+            # each into its app's folder (F3: a search's results can come from several apps)
+            folder = base / sx.safe_name(by_id[next(iter(owners))].name, 60) if len(owners) == 1 else base
 
             def go():
-                return [folder / e.name for e in sel if self.live.app_pull(app_id, e.path, folder)]
-            # S6: a protected save is finished from its private folder (base), the app's folder inside it zipped
+                out = []
+                for b, e in sel:
+                    into = base / sx.safe_name(by_id[b].name, 60)
+                    if self.live.app_pull(b, e.path, into):
+                        out.append(into / e.name)
+                return out
+            # S6: a protected save is finished from its private folder (base), each app's folder inside it zipped
             self.run_save(f"{len(sel):,} item(s)", go, base if self.is_protected(base) else folder, "item",
                           self.live_runner)
         RoundButton(foot, "Save selected", save, "primary", 160, 38, 12).pack(side="right")
