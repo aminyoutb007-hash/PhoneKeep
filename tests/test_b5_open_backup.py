@@ -18,6 +18,7 @@ os.environ["PHONEKEEP_NO_HELPER"] = "1"
 
 import keychain
 import phonekeep as wv
+from tkcompat import hide                                   # Tk 8.6 on a Mac: a withdrawn window hangs update()
 import snapshots as sn
 
 keychain.use_memory()
@@ -98,7 +99,7 @@ def labels(widget):
 # -- open a Finder backup with no phone -------------------------------------------------------------------------
 check(a.open_backup(finder), "a Finder-made backup folder opens")
 win = a.phone_windows[-1]
-win.withdraw()
+hide(win)
 check(win.live_wanted is False and win.udid == finder.name, "opened for browsing: no live phone, UDID from the folder name")
 check("Test iPhone" in win.title() and "no iPhone connected" in win.sub.cget("text"), f"title and header name the backup: {win.sub.cget('text')!r}")
 backup_apps = [k for k, *_r, where in phone.APPS if where == "backup"]
@@ -172,17 +173,17 @@ win.close()
 # -- a PhoneKeep snapshot opens the same way; a non-backup folder is refused -----------------------------------------
 check(a.open_backup(snap.path), "a PhoneKeep snapshot opens from its folder")
 w2 = a.phone_windows[-1]
-w2.withdraw()
+hide(w2)
 check(w2.udid == UD and sn.is_snapshot(w2.backup_path), "snapshot: UDID recovered from the phone folder")
 w2.close()
 check(a.open_backup(sn.phone_dir(BD, UD)), "a phone folder opens its latest snapshot")
-a.phone_windows[-1].withdraw(); a.phone_windows[-1].close()
+hide(a.phone_windows[-1]); a.phone_windows[-1].close()
 check(not a.open_backup(W) and "isn't an iPhone backup" in a.bar_text.cget("text"), f"a folder that isn't a backup: {a.bar_text.cget('text')!r}")
 
 # -- the Open backup dialog lists what PhoneKeep finds -----------------------------------------------------------------
 wv.backup_search_roots = lambda: [BD, finder_root]
 d = appmod.OpenBackupDialog(a)
-d.withdraw()
+hide(d)
 pump(lambda: d.backups, 30, "dialog scan")
 items = [d.lb.get(i) for i in range(d.lb.size())]
 check(len(items) == 2 and all("Test iPhone" in t for t in items), f"dialog lists the PhoneKeep snapshot and the Finder backup: {items}")

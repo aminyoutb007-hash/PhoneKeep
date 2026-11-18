@@ -164,6 +164,9 @@ wv.list_devices = lambda: []
 wv.device_overview = lambda udid=None, apps=True, **k: None
 
 
+from tkcompat import hide                                   # Tk 8.6 on a Mac: a withdrawn phone window hangs update()
+
+
 class FakeApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -199,7 +202,7 @@ def messages_count():
 
 app = FakeApp()
 win = phone.PhoneWindow(app, {"DeviceName": "Test iPhone"}, UD)
-win.withdraw()
+hide(win)
 check(pump(lambda: win.data is not None, 60), "the window opens on the latest of three invented snapshots")
 win.open_app("messages")
 check(pump(lambda: messages_count() is not None, 30), "Messages is open")
@@ -299,7 +302,7 @@ win.destroy()
 
 # one snapshot alone: no slider
 win = phone.PhoneWindow(app, {"DeviceName": "Test iPhone"}, UD1)
-win.withdraw()
+hide(win)
 pump(lambda: win.data is not None, 60)
 check(len(win.snaps) == 1 and not any(isinstance(w, tk.Canvas) for w in win.timeline.winfo_children()
                                       for w in [w, *w.winfo_children()]),

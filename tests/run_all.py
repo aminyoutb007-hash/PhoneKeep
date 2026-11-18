@@ -84,13 +84,10 @@ STEPS = [
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
 # A script that hangs fails after this long (and faulthandler prints where it was stuck).
 TIMEOUT = int(os.environ.get("PHONEKEEP_TEST_TIMEOUT", "420"))
-# On GitHub's macOS runner these hang inside Tk's own update() (no Python frame; 13 Nov, v5.0.0 tag run; the last five
-# in the 14 Nov run for #48, each at the 420 s timeout), while they pass on a real Mac (owner's MacBook, 13 and 14 Nov).
-# There a hang is reported as a runner problem, not a failure; any real failure still fails the run.
-RUNNER_TK_HANG = {"test_s3_no_network.py", "test_b4_location.py", "test_b5_open_backup.py",
-                  "test_s2_app_lock.py", "test_b1_cancel.py", "test_p1_photos.py", "test_v123_device.py",
-                  "test_d9_save_everything.py"}
-ON_GITHUB_MAC = sys.platform == "darwin" and os.environ.get("GITHUB_ACTIONS") == "true"
+# The window tests that used to hang on GitHub's Mac machines (18 Nov) hung under Tk 8.6, the Tk the installers
+# bundle, not because of GitHub: a phone or Settings window that is withdrawn (or tied to a withdrawn window) is
+# redrawn without end there. The tests now keep such windows see-through instead (tests/tkcompat.py), so every
+# test counts everywhere and a hang fails the run.
 # every test writes PhoneKeep's own files (activity log, settings, locks) to a test folder, never ~/PhoneKeep
 os.environ["PHONEKEEP_HOME"] = str(HERE / "work" / "home")
 REAL_HOME = Path.home() / "PhoneKeep"
@@ -105,7 +102,6 @@ def _real_home_state():
 
 real_before = _real_home_state()
 failed = []
-runner_hangs = []
 for name, script, needs_display in STEPS:
     print(f"\n=== {name} ({script})", flush=True)
     cmd = [sys.executable, "-X", "faulthandler", str(HERE / script)]
@@ -117,11 +113,10 @@ for name, script, needs_display in STEPS:
     t0 = time.time()
     posix = sys.platform != "win32"
     p = subprocess.Popen(cmd, cwd=HERE.parent, start_new_session=posix)   # own group: xvfb-run and the test
-    known_hang = ON_GITHUB_MAC and script in RUNNER_TK_HANG
     try:
-        code = p.wait(timeout=180 if known_hang else TIMEOUT)
+        code = p.wait(timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
-        print(f"TIMED OUT after {180 if known_hang else TIMEOUT} s; where it was stuck:", flush=True)
+        print(f"TIMED OUT after {TIMEOUT} s; where it was stuck:", flush=True)
         if posix:
             os.killpg(p.pid, signal.SIGABRT)       # faulthandler prints every thread's stack
             try:
@@ -135,18 +130,12 @@ for name, script, needs_display in STEPS:
         else:
             p.kill()
         p.wait()
-        code = "hang" if known_hang else 1
-    if code == "hang":
-        runner_hangs.append(script)
-        print(f"--- {script}: skipped: hangs inside Tk on GitHub's Mac runner only (passes on a real Mac)", flush=True)
-        continue
+        code = 1
     print(f"--- {script}: {'ok' if not code else 'FAILED'} in {time.time() - t0:.0f} s", flush=True)
     if code:
         failed.append(script)
 if _real_home_state() != real_before:
     print(f"\nFAIL: the tests changed files in the real {REAL_HOME} (they must use PHONEKEEP_HOME)")
     failed.append("real ~/PhoneKeep untouched")
-if runner_hangs:
-    print(f"\nNot counted (GitHub Mac runner hang, run them on a real Mac): {', '.join(runner_hangs)}")
 print("\nALL TESTS PASSED" if not failed else f"\nFAILED: {', '.join(failed)}")
 sys.exit(1 if failed else 0)

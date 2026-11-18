@@ -19,6 +19,7 @@ os.environ["PHONEKEEP_NO_HELPER"] = "1"
 import keychain
 import location as loc
 import phonekeep as wv
+from tkcompat import hide                                   # Tk 8.6 on a Mac: a withdrawn window hangs update()
 import snapshots as sn
 
 keychain.use_memory()
@@ -169,12 +170,12 @@ try:
     appmod.SETTINGS_FILE = W / "settings-app.json"
     wv.list_devices = lambda: []
     a = appmod.App()
-    a.withdraw()
+    hide(a)  # Settings is tied (transient) to it: see-through, not withdrawn
     a.s["backup_dir"] = str(new_root)
     a.open_settings()
     a.update()
     win = [w for w in a.winfo_children() if isinstance(w, appmod.SettingsWindow)][0]
-    win.withdraw()
+    hide(win)
     import time
     t0 = time.time()
     while time.time() - t0 < 10 and "free on" not in win.loc_space.cget("text"):

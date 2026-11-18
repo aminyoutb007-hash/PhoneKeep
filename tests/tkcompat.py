@@ -4,10 +4,11 @@ import tkinter as tk
 
 
 def hide(w) -> None:
-    """Keep a test's phone window out of sight. Tk 8.6 on a Mac (the Tk the installers bundle, and GitHub's Mac
-    machines' Python) redraws a withdrawn phone window without end, so update() never returns and the test hangs
-    until its time limit; there it is made see-through instead. PhoneKeep itself never withdraws a phone window
-    (only the main window, in B9, which doesn't do this)."""
+    """Keep a test's window out of sight. Tk 8.6 on a Mac (the Tk the installers bundle, and GitHub's Mac
+    machines' Python) redraws a withdrawn phone or Settings window without end, and also one tied (transient) to a
+    withdrawn window or a Toplevel of one, so update() never returns and the test hangs until its time limit.
+    There the window is made see-through instead. In PhoneKeep itself only the main window is ever withdrawn
+    (B9, while a backup carries on), and its event loop doesn't spin then (measured 18 Nov)."""
     if sys.platform == "darwin" and tk.TkVersion < 8.7:
         w.attributes("-alpha", 0.0)
     else:

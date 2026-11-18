@@ -155,6 +155,7 @@ check([p.name for p in out] == ["App Files.zip"] and set(got) == {"Pages/Invoice
 import tkinter as tk
 from tkinter import messagebox as mb
 import app as appmod
+from tkcompat import hide                                   # Tk 8.6 on a Mac: a withdrawn phone window hangs update()
 import phone
 import protect_ui
 import quicklook as ql
@@ -178,7 +179,7 @@ BK = W / "open" / "00008030-S6OPEN0000000000"
 shutil.copytree(fake, BK)
 check(a.open_backup(BK), "the invented backup opens in a phone window")
 win = a.phone_windows[-1]
-win.withdraw()
+hide(win)
 check(pump(lambda: win.data is not None), "  its backup is read")
 win.out_root = W / "Saved files" / "From iPhone"                       # PhoneKeep's own Saved files folder
 check(not win.protect_saves and "off" in win.protect_btn.text, "the password switch is there, off by default")
