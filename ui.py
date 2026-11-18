@@ -10,6 +10,7 @@ import datetime as dt
 import queue
 import sys
 from pathlib import Path
+import shutil
 import threading
 import tkinter as tk
 import tkinter.font as tkfont
@@ -1117,14 +1118,26 @@ class ChatPanel(tk.Frame):
         media = self.preview.media(key, cid, names)
         if c is None or not media:
             return
+        win = self.winfo_toplevel()
+        staging = None
+        if getattr(win, "protect_saves", False):          # S6: the phone window's password switch is on
+            staging = win._protect_begin("chat media", Path.home())
+            if staging is None:
+                return
         where = ask_folder(self, f"Where should the media from {c['name']} go?")
         if not where:
+            if staging is not None:
+                win._protected.pop(str(staging), None)
+                shutil.rmtree(staging, ignore_errors=True)
             return
         import re
         base = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", f"{c['name']} media").strip(" .")[:80] or "Chat media"
         folder, k = Path(where) / base, 2
         while folder.exists():
             folder, k = Path(where) / f"{base} ({k})", k + 1
+        if staging is not None:                           # made privately, then one encrypted ZIP in `where`
+            win._protected[str(staging)]["folder"] = Path(where)
+            folder = staging / base
         stop = threading.Event()
         self.saving = stop
         self.save_media_btn.set_enabled(False)
@@ -1149,6 +1162,19 @@ class ChatPanel(tk.Frame):
                         self.save_media_btn.set_enabled(True)
                         self.saved_media = value
                         import phone
+                        if staging is not None:
+                            if what == "done" and value["saved"]:
+                                self._media_note("Protecting them with the password…")
+                                win.protect_finish(staging, base, lambda out, real: (
+                                    self._media_note(f"Saved {value['saved']:,} file{'s' if value['saved'] != 1 else ''}"
+                                                     f" with a password in “{out[0].name}”. " + phone.protect.ZIP_NOTE)
+                                    if out else None, win._protected_banner(out, real, "chat media")))
+                            else:
+                                win._protected.pop(str(staging), None)
+                                shutil.rmtree(staging, ignore_errors=True)
+                                self._media_note(self._saved_text(value) if what == "done" else
+                                                 f"Couldn't save them: {phone.describe_error(value)}")
+                            return
                         self._media_note(self._saved_text(value) if what == "done" else
                                          f"Couldn't save them: {phone.describe_error(value)}")
                         if what == "done" and value["saved"] and self.media_grid is not None:

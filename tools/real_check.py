@@ -26,7 +26,11 @@ What it does, all read-only for the phone:
     counts and every photo the backup has; a vCard of everything has every contact and photo (counts only).
   * D4: every note's body read with its styles, every attachment found with its file, every picture drawn in the
     Notes screen, and a PDF of every note with the same pictures (counts only).
+  * D6: every recorded call (a note the Phone app made) is listed with its audio and its length, and the Call
+    Recordings screen shows them all (counts only).
   * P8: one HEVC video from the phone saved "Most compatible" is an H.264 MP4 with its date and location (yes/no).
+  * F3: "*.pdf" finds every PDF in the backup's file list and in the apps that share files on the phone; an app's
+    files listed in one go match going folder by folder (counts only).
   * P2: songs that only stream aren't listed in Music, and the screen says why; a song on the phone is saved into
     Artist / Album with its title, artist, album and artwork in the file (counts only).
   * Q5: the timeline slider one snapshot back with the mouse shows Messages as it was then within 2 seconds, with
@@ -982,6 +986,92 @@ try:
                   f"D4: a PDF of every note ({n_pages} pages for {len(readable)} notes) has the same pictures "
                   f"({n_imgs} of {drawn})")
             shutil.rmtree(ddir, ignore_errors=True)
+
+    # -- F3: file search. In the backup: "*.pdf" finds as many files as the backup's own file list has PDFs. On the
+    # phone: one app's walk (one connection) lists the same files as going folder by folder, and "*.pdf" across the
+    # apps that share files finds as many as their walks have. Counts only: no names or paths.
+    import filesearch
+    pat = filesearch.Pattern("*.pdf")
+    doms = list(win.data.reader.domains("%"))
+    want_b = sum(1 for d in doms for rel in win.data.reader.file_meta(d) if rel.lower().endswith(".pdf"))
+    _h, got_b = filesearch.in_backup(win.data.reader.file_meta, doms, pat)
+    check(got_b == want_b, f"F3 in the backup: *.pdf finds every PDF in its file list ({got_b} of {want_b})")
+    if win.live is None:
+        check(False, "F3: no live connection to the iPhone, so its apps' files couldn't be searched")
+    else:
+        sharing = [a for a in win.live.apps() if a.shares_files]
+        walks = {}
+        for a in sharing:
+            try:
+                walks[a.id] = win.live.app_walk(a.id)
+            except Exception:
+                walks[a.id] = None
+        one = next((a for a in sharing if walks.get(a.id)), None)
+        if one is None:
+            note("F3: no app on this phone shares files that have anything in them; walking not tested on real data")
+        else:
+            by_folder, todo = set(), ["Documents"]
+            while todo and len(by_folder) < 20000:                 # app_walk's own limit
+                for e in win.live.app_list(one.id, todo.pop(0)):
+                    by_folder.add((e.path, e.is_dir))
+                    if e.is_dir:
+                        todo.append(e.path)
+            walked = {(e.path, e.is_dir) for e in walks[one.id]}
+            check(walked == by_folder, f"F3 on the phone: one app's walk lists the same files and folders as going "
+                                       f"folder by folder ({len(walked)} and {len(by_folder)})")
+        want_l = sum(1 for es in walks.values() if es for e in es if not e.is_dir and e.name.lower().endswith(".pdf"))
+        _h, got_l, failed = filesearch.in_apps(win.live.app_walk, sharing, pat)
+        check(got_l == want_l and not failed,
+              f"F3 on the phone: *.pdf across the {len(sharing)} apps that share files finds every PDF in them "
+              f"({got_l} of {want_l}; {len(failed)} app(s) couldn't be read)")
+
+    # -- D6: call recordings: the calls the Notes database has (notes the Phone app made, their top-level audio,
+    # counted straight from NoteStore.sqlite) are the ones listed, each with its audio in the backup and a length, and
+    # the Call Recordings screen lists them all. Counts only: no names, numbers or transcripts.
+    try:
+        crec = sx.load_call_recordings(ctx)
+    except wv.PhoneKeepError:
+        crec = []
+    ccon = None
+    for cdom in win.data.reader.domains("%group.com.apple.notes%"):
+        ccon = ctx.db(cdom, "NoteStore.sqlite")
+        if ccon:
+            break
+    in_db = 0
+    if ccon is not None and "ZHOSTAPPLICATIONIDENTIFIER" in sx.cols(ccon, "ZICCLOUDSYNCINGOBJECT"):
+        call_notes = [pk for pk, host, gone in ccon.execute(
+            "SELECT Z_PK, ZHOSTAPPLICATIONIDENTIFIER, ZMARKEDFORDELETION FROM ZICCLOUDSYNCINGOBJECT "
+            "WHERE ZHOSTAPPLICATIONIDENTIFIER IS NOT NULL AND ZNOTEDATA IS NOT NULL")
+            if not gone and any(k in str(host).lower() for k in sx.CALL_APPS)]
+        for pk in call_notes:
+            in_db += sum(1 for uti, parent, gone in ccon.execute(
+                "SELECT ZTYPEUTI, ZPARENTATTACHMENT, ZMARKEDFORDELETION FROM ZICCLOUDSYNCINGOBJECT WHERE ZNOTE = ?",
+                (pk,)) if not parent and not gone and sx._note_kind(uti) == "audio")
+    if ccon is not None:
+        ccon.close()
+    if not in_db:
+        note("D6: no recorded calls in the backup; not tested on real data")
+    else:
+        reads = sum(1 for c in crec if c["file"] and win.data.read(*c["file"]))
+        timed = sum(1 for c in crec if c["length"] > 0)
+        said = sum(1 for c in crec if c["transcript"])
+        check(len(crec) == in_db and reads == in_db and timed == in_db,
+              f"D6 on real data: every recorded call is listed ({len(crec)} of {in_db}), its audio is in the backup and "
+              f"reads ({reads} of {in_db}) and its length is known ({timed} of {in_db}); {said} with a transcript")
+        if not said:
+            note("D6: no transcript in this phone's call recordings; transcripts are checked on invented data "
+                 "(tests/test_d6_call_recordings.py)")
+        win.open_app("callrecordings")
+        pump(app, lambda: getattr(win, "call_transcript", None) is not None and not loading(win), 120)
+        ctree = None
+        stack = [win.content]
+        while stack and ctree is None:
+            w = stack.pop()
+            if isinstance(w, phone.ttk.Treeview):
+                ctree = w
+            stack.extend(w.winfo_children())
+        shown = len(ctree.get_children()) if ctree is not None else 0
+        check(shown == in_db, f"D6: the Call Recordings screen lists every recorded call ({shown} of {in_db})")
 
     # -- P2: music: songs that only stream aren't listed and the Music screen says why; a song on the phone is saved
     # into Artist / Album with its tags and artwork. The library's own count of songs with no file comes straight from

@@ -29,6 +29,7 @@ COLOURS = {
     "notes": ("#ffd84d", "#f5a623"),
     "calendar": ("#ff7a6b", "#e5383b"),
     "voicememos": ("#ff6f91", "#c2185b"),
+    "callrecordings": ("#ff8a5c", "#e0452b"),
     "safari": ("#4fc3ff", "#1d6fe8"),
     "music": ("#c86dd7", "#7b2ff7"),
     "books": ("#ffa94d", "#e8590c"),
@@ -168,6 +169,13 @@ def draw(key: str) -> Image.Image:
         for i, h in enumerate(hs):
             x = 84 + i * 25
             d.rounded_rectangle((x, c - h // 2, x + 14, c + h // 2), radius=7, fill=W)
+    elif key == "callrecordings":            # D6: a short sound wave and a "recording" dot in a white circle
+        hs = [50, 110, 170, 120, 70]
+        for i, h in enumerate(hs):
+            x = 70 + i * 28
+            d.rounded_rectangle((x, c - h // 2, x + 16, c + h // 2), radius=8, fill=W)
+        d.ellipse((222, 122, 318, 218), fill=W)
+        d.ellipse((246, 146, 294, 194), fill=_hex(COLOURS[key][1]))
     elif key == "safari":                    # a globe (the browser)
         d.ellipse((74, 74, 294, 294), outline=W, width=LINE)
         d.ellipse((136, 74, 232, 294), outline=W, width=LINE - 6)

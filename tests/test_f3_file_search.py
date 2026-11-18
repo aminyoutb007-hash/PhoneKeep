@@ -1,0 +1,367 @@
+"""F3: file search in App Files (on the phone) and All files (in the backup).
+
+The pattern: a name or part of one, * for anything, ? for one character, a / to match the path; case and
+accents don't matter. All files on the invented FULLTEST backup: "*.jpg" lists every JPEG the backup has (the
+count worked out from the backup on its own) with its area, path, size and date; a newer search replaces an older
+one; a file found opens in the preview and is saved; clearing the box shows the folders again. App Files on a
+simulated iPhone: "*.pdf" finds the PDFs in every app that shares files (in folders inside folders too), says
+which app couldn't be read, and a result opens and is saved into its own app's folder. Read-only on the phone.
+"""
+import datetime as dt, os, shutil, subprocess, sys, time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+os.environ.setdefault("PHONEKEEP_HOME", str(HERE / "work" / "home"))   # never the real ~/PhoneKeep
+os.environ["PHONEKEEP_NO_HELPER"] = "1"
+
+W = HERE / "work"
+UDID = "00008030-FULLTEST"
+BACKUPS = W / "Backups"
+if not (BACKUPS / UDID / "Manifest.db").exists():
+    subprocess.run([sys.executable, str(HERE / "test_full_backup.py")], cwd=HERE.parent, check=True)
+
+import tkinter as tk
+import device as devmod
+import filesearch
+import keychain
+import phone
+import photos as ph
+import phonekeep as wv
+import quicklook as ql
+
+keychain.use_memory()
+failures = []
+
+
+def check(cond, what):
+    print(("ok   " if cond else "FAIL ") + what, flush=True)
+    if not cond:
+        failures.append(what)
+
+
+# -- the pattern ----------------------------------------------------------------------------------------------
+P = filesearch.Pattern
+check(P("*.pdf").match("Invoice March.PDF") and not P("*.pdf").match("invoice.pdf.txt"),
+      "*.pdf: every name ending in .pdf, upper or lower case")
+check(P("invoice*").match("Invoice 2026.pdf") and not P("invoice*").match("My invoice.pdf"),
+      "invoice*: names that start with it")
+check(P("invoice").match("My Invoice.pdf") and P("cafe").match("Café menu.pdf"),
+      "a word alone: anywhere in the name, accents don't matter")
+check(P("IMG_00??.JPG").match("img_0012.jpg") and not P("IMG_00??.JPG").match("IMG_001.JPG"),
+      "? is one character")
+check(P("*/Scans/*.pdf").match("a.pdf", "Documents/Scans/a.pdf") and not P("*/Scans/*.pdf").match("a.pdf", "Documents/a.pdf"),
+      "a pattern with a / is matched against the path")
+check(not P("") and not P("*") and not P(" ** "), "an empty search, or * alone, isn't a search (it would list everything)")
+
+# -- the phone's walk (device.walk_documents, through a stand-in house_arrest connection) -------------------------
+import asyncio
+import reconnect
+
+TREE = {"Documents": ["a.pdf", "Sub", "Locked", "."], "Documents/Sub": ["b.pdf", "Deeper"],
+        "Documents/Sub/Deeper": ["c.txt"], "Documents/Locked": None}
+
+
+class FakeHA:
+    def __init__(self, tree, drop_at=None):
+        self.tree, self.drop_at, self.calls = tree, drop_at, []
+
+    async def listdir(self, path):
+        self.calls.append(("listdir", path))
+        if path == self.drop_at:
+            raise reconnect.Disconnected("the cable came out")
+        if self.tree.get(path) is None:
+            raise PermissionError(f"can't read {path}")
+        return list(self.tree[path])
+
+    def stat(self, path):
+        self.calls.append(("stat", path))
+        return {"st_ifmt": "S_IFDIR" if path in self.tree else "S_IFREG", "st_size": 10,
+                "st_mtime": dt.datetime(2026, 3, 4, tzinfo=dt.timezone.utc)}
+
+
+walk = lambda ha, **k: asyncio.run(devmod.walk_documents(ha, **k))
+ha = FakeHA(TREE)
+got = walk(ha)
+check(sorted(e.path for e in got) == ["Documents/Locked", "Documents/Sub", "Documents/Sub/Deeper",
+                                      "Documents/Sub/Deeper/c.txt", "Documents/Sub/b.pdf", "Documents/a.pdf"]
+      and {c[0] for c in ha.calls} == {"listdir", "stat"},
+      "the walk lists folders inside folders, skips one it can't read, and only lists and looks (read-only)")
+check([e.path for e in walk(FakeHA(TREE), limit=2)] == ["Documents/a.pdf", "Documents/Sub"],
+      "  it stops at its limit, inside a folder too")
+asked = {"n": 0}
+
+
+def stop_soon():
+    asked["n"] += 1
+    return asked["n"] > 1
+
+
+check(len(walk(FakeHA(TREE), stop=stop_soon)) == 1, "  and when it's told to stop, inside a folder too")
+check(sorted(e.path for e in walk(FakeHA(TREE), max_depth=2)) == ["Documents/Locked", "Documents/Sub",
+                                                                 "Documents/Sub/Deeper", "Documents/Sub/b.pdf",
+                                                                 "Documents/a.pdf"],
+      "  and goes no deeper than its depth limit")
+for what, ha in (("an app whose Documents can't be read", FakeHA({"Documents": None})),
+                 ("a dropped connection in a folder inside", FakeHA(TREE, drop_at="Documents/Sub"))):
+    try:
+        walk(ha)
+        raised = False
+    except Exception:
+        raised = True
+    check(raised, f"  {what} isn't taken for an empty one: it's an error (so it's named, or retried)")
+
+# -- the simulated iPhone ---------------------------------------------------------------------------------------
+E = devmod.Entry
+T = dt.datetime(2026, 3, 4, 10, 30)
+FILES = {
+    "com.apple.Pages": [E("Letters", "Documents/Letters", True), E("Invoice March.pdf", "Documents/Letters/Invoice March.pdf", False, 120_000, T),
+                        E("Scans", "Documents/Letters/Scans", True), E("scan 1.PDF", "Documents/Letters/Scans/scan 1.PDF", False, 900_000, T),
+                        E("notes.txt", "Documents/notes.txt", False, 400, T)],
+    "org.videolan.vlc-ios": [E("clip.mp4", "Documents/clip.mp4", False, 48_000_000, T), E("Invoice.pdf", "Documents/Invoice.pdf", False, 50_000, T)],
+}
+
+
+class SimulatedDevice:
+    def __init__(self, udid, cache_dir=None):
+        self.udid, self.calls = udid, []
+
+    def wallpaper(self, which="homescreen"):
+        return None
+
+    def music(self):
+        return []
+
+    def books(self):
+        return []
+
+    def apps(self):
+        return [devmod.AppInfo("org.videolan.vlc-ios", "VLC", "3.5", True),
+                devmod.AppInfo("com.apple.Pages", "Pages", "14.0", True),
+                devmod.AppInfo("com.example.locked", "Locked Notes", "1.0", True),
+                devmod.AppInfo("com.spotify.client", "Spotify", "8.9", False)]
+
+    def app_list(self, bundle_id, path="Documents"):
+        return [e for e in FILES.get(bundle_id, []) if e.path.rsplit("/", 1)[0] == path]
+
+    def app_walk(self, bundle_id, limit=20000, stop=None):
+        self.calls.append(("app_walk", bundle_id))
+        self.last_stop = stop
+        if bundle_id == "com.example.locked":
+            raise wv.PhoneKeepError("The app didn't answer.")
+        if bundle_id not in FILES:
+            raise AssertionError(f"walked an app that doesn't share files: {bundle_id}")
+        return list(FILES[bundle_id])
+
+    def app_pull(self, bundle_id, path, dest_dir):
+        self.calls.append(("app_pull", bundle_id, path))
+        Path(dest_dir).mkdir(parents=True, exist_ok=True)
+        (Path(dest_dir) / Path(path).name).write_bytes(f"{bundle_id}:{path}".encode())
+        return True
+
+    def close(self):
+        pass
+
+
+class NoDevicePhotos:
+    def __init__(self, udid, cache_dir):
+        raise wv.PhoneKeepError("not simulated")
+
+
+devmod.LiveDevice = SimulatedDevice
+wv.device_overview = lambda udid=None, apps=True, **k: None
+ph.DevicePhotoSource = NoDevicePhotos
+
+
+class FakeApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.withdraw()
+        self.s = {"backup_dir": str(BACKUPS), "archive_dir": str(W / "Archive-f3")}
+        self.busy = False
+        self._backup_password = None
+
+    def detect(self, silent=False):
+        pass
+
+
+def pump(until, timeout=60.0):
+    end = time.time() + timeout
+    while time.time() < end:
+        app.update()
+        if until():
+            return True
+        time.sleep(0.02)
+    return until()
+
+
+app = FakeApp()
+win = phone.PhoneWindow(app, {"DeviceName": "Test iPhone"}, UDID)
+check(pump(lambda: win.data is not None and win.live is not None, 90), "the window opens on the invented backup and the simulated iPhone")
+OUT = W / "f3-saved"
+shutil.rmtree(OUT, ignore_errors=True)
+OUT.mkdir(parents=True)
+phone.ask_save_folder = lambda parent, title, start: str(OUT)
+opened = []
+phone.open_file = lambda p: opened.append(Path(p))
+
+# -- All files: the backup ------------------------------------------------------------------------------------
+win.open_app("allfiles")
+check(pump(lambda: getattr(win, "allfiles_hits", None) is not None and getattr(win, "allfiles_search", None), 60),
+      "All files opens")
+reader = win.data.reader
+want = sorted((d, rel) for d in reader.domains("%") for rel in reader.file_meta(d)
+              if rel.lower().endswith(".jpg"))                 # worked out from the backup on its own
+hits = win.allfiles_hits
+
+
+class _Box:                                   # the search box, through its text
+    def delete(self, *a):
+        win.allfiles_q.set("")
+
+    def insert(self, _i, text):
+        win.allfiles_q.set(text)
+
+
+entry = _Box()
+entry.delete(0, "end")
+entry.insert(0, "*.JPG")
+win.allfiles_search()
+check(pump(lambda: hits.winfo_manager() and len(hits.get_children()) > 0, 60) and want,
+      f"*.JPG in All files ... ({len(want)} JPEGs in the backup)")
+rows = [hits.item(i, "values") for i in hits.get_children()]
+check(sorted(r[1] for r in rows) == sorted(rel for _d, rel in want) and all(r[0] and r[2] and r[3] is not None for r in rows),
+      f"  lists every JPEG the backup has, with its area, path, size and date ({len(rows)} of {len(want)})")
+entry.delete(0, "end")
+entry.insert(0, "no-such-file-anywhere*")
+win.allfiles_search()
+check(pump(lambda: not hits.get_children(), 30), "a newer search replaces the results (none for a name that isn't there)")
+entry.delete(0, "end")
+entry.insert(0, "*.jpg")
+win.allfiles_search()
+pump(lambda: len(hits.get_children()) == len(want), 60)
+first = hits.get_children()[0]
+hits.selection_set(first)
+hits.focus(first)
+win.allfiles_preview()
+v = ql.Viewer.current
+check(v is not None and v.name_lbl.cget("text") == Path(hits.item(first, "values")[1]).name,
+      "a file found opens in the preview")
+v.close()
+before = set(OUT.rglob("*"))
+hits.selection_set(first)
+save_btn = None
+for w in win.content.winfo_children():
+    for c in w.winfo_children():
+        if getattr(c, "text", None) == "Save selected":
+            save_btn = c
+save_btn.command()
+check(pump(lambda: any(p.is_file() for p in set(OUT.rglob("*")) - before), 30)
+      and any(p.name == Path(hits.item(first, "values")[1]).name for p in OUT.rglob("*")),
+      "Save selected saves the file found")
+entry.delete(0, "end")
+win.allfiles_search()
+check(pump(lambda: not hits.winfo_manager(), 10), "clearing the box shows the folders again")
+
+# -- App Files: the phone ---------------------------------------------------------------------------------------
+win.open_app("files")
+check(pump(lambda: getattr(win, "files_search", None) is not None and hasattr(win.live, "calls"), 60), "App Files opens")
+fq, find = win.files_search
+fq.set("*.pdf")
+find()
+
+
+def all_widgets(w):
+    out = [w]
+    for c in w.winfo_children():
+        out += all_widgets(c)
+    return out
+
+
+trees = [w for w in all_widgets(win.content) if w.winfo_class() == "Treeview" and "s" in w.cget("columns")]
+ft = trees[0] if trees else None
+check(ft is not None and pump(lambda: any("Invoice" in str(ft.item(i, "values")[0]) for i in ft.get_children()), 30),
+      "*.pdf in App Files ...")
+names = sorted(str(ft.item(i, "values")[0]) for i in ft.get_children())
+check(names == ["📄 Pages  ›  Letters/Invoice March.pdf", "📄 Pages  ›  Letters/Scans/scan 1.PDF", "📄 VLC  ›  Invoice.pdf"],
+      f"  finds the PDFs in every app that shares files, in folders inside folders too ({names})")
+walked = [c[1] for c in win.live.calls if c[0] == "app_walk"]
+crumb = [w for w in all_widgets(win.content) if w.winfo_class() == "Label" and "match" in str(w.cget("text"))]
+check("com.spotify.client" not in walked and crumb and "Locked Notes" in crumb[0].cget("text")
+      and "3 files match" in crumb[0].cget("text"),
+      f"  only apps that share files are read, and one that couldn't be is named ({crumb[0].cget('text') if crumb else ''})")
+vlc = next(i for i in ft.get_children() if "VLC" in str(ft.item(i, "values")[0]))
+ft.selection_set(vlc)
+ft.focus(vlc)
+win.files_open()
+check(pump(lambda: opened and opened[-1].read_bytes() == b"org.videolan.vlc-ios:Documents/Invoice.pdf", 15),
+      "a result opens from its own app")
+ft.selection_set(*ft.get_children())
+for w in all_widgets(win.content):
+    if getattr(w, "text", None) == "Save selected":
+        w.command()
+check(pump(lambda: (OUT / "VLC" / "Invoice.pdf").exists() and (OUT / "Pages" / "scan 1.PDF").exists(), 30)
+      and (OUT / "Pages" / "Invoice March.pdf").read_bytes() == b"com.apple.Pages:Documents/Letters/Invoice March.pdf",
+      "Save selected saves each result into its own app's folder")
+check(not [c for c in win.live.calls if c[0] not in ("app_walk", "app_pull")],
+      "the phone is only read (its apps' files listed and copied)")
+
+# with the password switch on (S6), the same two-app save is one encrypted ZIP holding each app's folder, and nothing
+# readable is left behind: not in the folder chosen, not in the private folder it was made in
+# (the stand-in app files are named .pdf but aren't PDFs, so they go into the ZIP, not one password PDF each)
+import protect_ui
+import pyzipper
+PW = "correct horse 42"
+LOCKED = W / "f3-protected"
+shutil.rmtree(LOCKED, ignore_errors=True)
+LOCKED.mkdir()
+phone.ask_save_folder = lambda parent, title, start: (asked.append(title), str(LOCKED))[1]
+asked = []
+protect_ui.ask_save_password = lambda parent, what: (asked.append(what), PW)[1]
+win.protect_saves = True
+ft.selection_set(*ft.get_children())
+for w in all_widgets(win.content):
+    if getattr(w, "text", None) == "Save selected":
+        w.command()
+check(pump(lambda: list(LOCKED.glob("*.zip")) and not getattr(win, "_protected", None), 30),
+      "Save selected with the password switch on ...")
+zips = list(LOCKED.glob("*.zip"))
+inside = {}
+if zips:
+    with pyzipper.AESZipFile(zips[0]) as z:
+        z.setpassword(PW.encode())
+        inside = {n: z.read(n) for n in z.namelist()}
+left = [q for q in Path(ql.private_dir()).glob("protect-*")] + [q for q in Path(ql.private_dir()).glob("build-*")]
+check(len(asked) == 2 and asked[1].endswith("(with a password)") and list(LOCKED.iterdir()) == zips and len(zips) == 1
+      and set(inside) == {"Pages/Invoice March.pdf", "Pages/scan 1.PDF", "VLC/Invoice.pdf"}
+      and inside["VLC/Invoice.pdf"] == b"org.videolan.vlc-ios:Documents/Invoice.pdf"
+      and not left and b"org.videolan" not in zips[0].read_bytes(),
+      f"  is one encrypted ZIP with both apps' folders inside, and nothing readable is left ({sorted(inside)}, "
+      f"{len(left)} left)")
+win.protect_saves = False
+fq.set("*.txt")
+find()
+pump(lambda: getattr(win.live, "last_stop", None) is not None, 10)
+stop = win.live.last_stop
+pump(lambda: True, 1)
+was = stop()
+win.show_home()
+app.update()
+check(not was and stop(), "leaving App Files stops a search still walking the phone (Music and Books aren't kept waiting)")
+
+# All files searches the backup through the window's locked reader (closing the window can't pull it away)
+win.allfiles_q = None
+win.open_app("allfiles")
+pump(lambda: getattr(win, "allfiles_q", None) is not None, 30)
+used = []
+real_fm = win.data.file_meta
+win.data.file_meta = lambda d, prefix="": (used.append(d), real_fm(d, prefix))[1]
+win.allfiles_q.set("*.jpg")
+win.allfiles_search()
+check(pump(lambda: len(win.allfiles_hits.get_children()) > 0, 30) and used,
+      "All files' search reads the backup's file lists under the backup's lock")
+
+win.destroy()
+app.destroy()
+print("\nF3 TESTS:", "FAIL" if failures else "PASS", flush=True)
+os._exit(1 if failures else 0)
