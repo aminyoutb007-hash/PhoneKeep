@@ -58,7 +58,7 @@ Photos, Music, Books, App Files and the wallpaper are read **live from the iPhon
 - Search for files with `*` and `?`, in All files and across every app's files on the phone.
 - A timeline slider to see the phone as it was at any earlier backup.
 - Chats as on the phone: voice-note waveforms, quoted replies, reactions and link cards.
-- Call recordings with their transcripts, and saves protected with a password (password PDFs, encrypted ZIP).
+- Call recordings (with the transcript when the iPhone made one), and saves protected with a password (password PDFs, encrypted ZIP).
 
 ## New in 5.2.2
 
