@@ -65,7 +65,7 @@ def m4a(seconds: float) -> bytes:
     return box(b"ftyp", b"M4A \0\0\0\0M4A mp42isom") + box(b"moov", mvhd + trak) + box(b"mdat", b"\0" * 32)
 
 
-def make_backup(name: str, columns_d6: bool = True) -> Path:
+def make_backup(name: str, columns_d6: bool = True, two_in_one: bool = False) -> Path:
     bk = W / "Backups" / name
     bk.mkdir(parents=True)
     with open(bk / "Info.plist", "wb") as f:
@@ -136,6 +136,11 @@ CREATE TABLE ZICNOTEDATA(Z_PK INTEGER PRIMARY KEY, ZNOTE, ZDATA);""")
         ZHOSTAPPLICATIONIDENTIFIER=phone)
     row(Z_PK=61, ZIDENTIFIER="A6", ZTYPEUTI="com.apple.m4a-audio", ZMEDIA=62, ZNOTE=60, ZDURATION=8)
     row(Z_PK=62, ZIDENTIFIER="D6D6D6D6-0000-4000-8000-000000000006", ZFILENAME="Call Recording.m4a")
+    if two_in_one:                               # a second recording in call 1 (recording stopped and started again)
+        row(Z_PK=70, ZIDENTIFIER="A7", ZTYPEUTI="com.apple.m4a-audio", ZMEDIA=72, ZNOTE=10, ZDURATION=30,
+            ZADDITIONALINDEXABLETEXT="And the bike is in the shed.", ZTITLE="Call Recording")
+        row(Z_PK=72, ZIDENTIFIER="D6D6D6D6-0000-4000-8000-000000000007", ZFILENAME="Call Recording.m4a")
+        add(f"Accounts/{ACC}/Media/D6D6D6D6-0000-4000-8000-000000000007/1_0007/Call Recording.m4a", m4a(30))
     c.executemany("INSERT INTO ZICNOTEDATA VALUES (?,?,?)", [(100 + i, 0, b"\x00") for i in range(6)])
     c.commit()
     c.close()
@@ -204,6 +209,37 @@ check(page.count("<audio") == 3 and "The keys are under the blue pot." in page,
       "the page plays each saved recording and shows the transcript")
 csv_text = (d / "call recordings.csv").read_text(encoding="utf-8-sig")
 check("Call with Alex Example" in csv_text and "1:35" in csv_text, "the CSV has who, when and how long")
+
+# two recordings in one call: each its own row and its own name (Play, Space and Save copy by name, so a shared one
+# played or saved the first recording's audio for both, and the second transcript overwrote the first)
+BK2 = make_backup("00008030-D6CALLSTWO000000", two_in_one=True)
+ctx2 = sx.Ctx(wv.BackupReader(BK2, None, lambda m: None), W / "out2", lambda m: None, False, {})
+alex = [c for c in sx.load_call_recordings(ctx2) if c["title"] == "Call with Alex Example"]
+check(len(alex) == 2 and len({c["base"] for c in alex}) == 2
+      and {c["base"] for c in alex} == {"2026-03-01 1000 Call with Alex Example", "2026-03-01 1000 Call with Alex Example 2"},
+      f"two recordings in one call are two rows, each with its own name ({sorted(c['base'] for c in alex)})")
+real_att, seen_budget = sx._note_attachments, []
+
+
+def broken_att(con, dom, rels, budget=None):
+    seen_budget.append(budget)
+    raise ValueError("a damaged gallery elsewhere in Notes")
+
+
+sx._note_attachments = broken_att
+try:
+    hurt = sx.load_call_recordings(ctx2)
+finally:
+    sx._note_attachments = real_att
+check(len(hurt) == 5 and all(c["file"] is None for c in hurt) and isinstance(seen_budget[0], sx.notes_doc.Budget),
+      "a damaged table or gallery elsewhere in Notes doesn't stop the list (its attachments are read within a budget)")
+res2 = sx.sec_callrecordings(ctx2)
+d2 = W / "out2" / "Call Recordings"
+audio2 = sorted(p.name for p in d2.glob("*Alex*.m4a"))
+texts2 = {p.name: p.read_text(encoding="utf-8").strip() for p in d2.glob("*Alex*.txt")}
+check(res2["count"] == 5 and len(audio2) == 2 and {(d2 / n).read_bytes() for n in audio2} == {m4a(95), m4a(30)}
+      and set(texts2.values()) == {"Hello, it's Alex. The keys are under the blue pot.", "And the bike is in the shed."},
+      f"  Save everything saves both recordings and both transcripts, none overwritten ({audio2}, {sorted(texts2)})")
 reader.close()
 
 # ---- the phone window ----

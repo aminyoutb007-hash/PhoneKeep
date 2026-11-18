@@ -1603,7 +1603,10 @@ def load_call_recordings(ctx: Ctx, measure: bool = True) -> list[dict]:
                  and not r["ZMARKEDFORDELETION"]]
         if not notes:
             raise PhoneKeepError("No call recordings in this backup.")
-        attachments = _note_attachments(con, dom, ctx.files(dom))
+        try:                                     # tables and galleries elsewhere in Notes unpack within a budget (D4);
+            attachments = _note_attachments(con, dom, ctx.files(dom), notes_doc.Budget())   # a damaged one: no files
+        except Exception:
+            attachments = {}
         out = []
         for n in notes:
             rows = select(con, "ZICCLOUDSYNCINGOBJECT",
@@ -1628,6 +1631,11 @@ def load_call_recordings(ctx: Ctx, measure: bool = True) -> list[dict]:
     if not out:
         raise PhoneKeepError("No call recordings in this backup.")
     out.sort(key=lambda x: x["when"] or dt.datetime.min, reverse=True)
+    seen: dict[str, int] = {}
+    for c in reversed(out):                      # several recordings in one call (or one minute) each get their own
+        base = safe_name(f"{c['when']:%Y-%m-%d %H%M} {c['title']}" if c["when"] else c["title"], 100)   # name: the
+        n = seen[base.lower()] = seen.get(base.lower(), 0) + 1                    # oldest plain, then " 2", " 3"
+        c["base"] = base if n == 1 else f"{base} {n}"
     return out
 
 
@@ -1641,7 +1649,7 @@ def sec_callrecordings(ctx: Ctx) -> dict:
     for c in load_call_recordings(ctx):
         if f.on and not f.keep(c["when"], c["title"], c["transcript"]):
             continue
-        base = safe_name(f"{c['when']:%Y-%m-%d %H%M} {c['title']}" if c["when"] else c["title"], 100)
+        base = c["base"]
         audio, text = "", ""
         if c["file"]:
             dest = wv.safe_join(d, base + (Path(c["file"][1]).suffix or ".m4a"))

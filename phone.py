@@ -2372,8 +2372,7 @@ class PhoneWindow(tk.Toplevel):
 
         def getter(r):
             c = r[4]
-            when = c["when"].strftime("%Y-%m-%d %H%M ") if c["when"] else ""
-            name = sx.safe_name(when + c["title"], 100) + (Path(c["file"][1]).suffix if c["file"] else ".m4a")
+            name = c["base"] + (Path(c["file"][1]).suffix if c["file"] else ".m4a")      # its own, one per recording
 
             def audio(dest):
                 return bool(c["file"]) and self.data.copy(*c["file"], dest)

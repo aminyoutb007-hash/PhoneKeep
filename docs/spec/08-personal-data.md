@@ -53,7 +53,7 @@
 **What the user sees and does:** a **Call recordings** list (iOS 18 and later): who, when, length; Play; the transcript beside it when the phone made one; Save audio and transcript.
 
 **Done when**
-- [ ] A recorded call on a real phone appears with its audio and transcript. *(18 Nov: on the owner's real backup, `tools/real_check.py` finds every recorded call the Notes database has listed, with its audio in the backup and its length, and in the Call Recordings screen. The owner's recorded call has no transcript (the phone makes one only in some languages and regions), so a real transcript is still to see; transcripts are checked on invented data, `tests/test_d6_call_recordings.py`.)*
+- [ ] A recorded call on a real phone appears with its audio and transcript. *(18 Nov: on the owner's real backup, `tools/real_check.py` finds every recorded call the Notes database has listed, with its audio in the backup and its length, and in the Call Recordings screen. None of the owner's recorded calls has a transcript (the phone makes one only in some languages and regions), so a real transcript is still to see; transcripts are checked on invented data, `tests/test_d6_call_recordings.py`.)*
 
 **How it's built (18 Nov):**
 - **Where iOS keeps them:** from iOS 18.1 a recorded call (Phone or FaceTime audio) is a note in Notes. The note's row in NoteStore.sqlite has the app that made it (`ZHOSTAPPLICATIONIDENTIFIER`, e.g. com.apple.mobilephone). The folder's name follows the phone's language, so PhoneKeep goes by that app, not by the folder.
