@@ -164,7 +164,7 @@ wv.list_devices = lambda: []
 wv.device_overview = lambda udid=None, apps=True, **k: None
 
 
-from tkcompat import hide                                   # Tk 8.6 on a Mac: a withdrawn phone window hangs update()
+from tkcompat import hide, show                                   # Tk 8.6 on a Mac: a withdrawn phone window hangs update()
 
 
 class FakeApp(tk.Tk):
@@ -251,7 +251,7 @@ check(opened == [old_first[1].id] and time.time() - t0 < 0.3, "letting go of the
 check(pump(lambda: messages_count() == latest - 1, 10), "  (the middle one: one message fewer than the latest)")
 
 # the mouse and the keys (on a shown window: a hidden one gets no events)
-win.deiconify()
+show(win)                                                     # undoes hide(): see-through gets no events
 win.geometry("1220x800+40+40")
 pump(lambda: win.snap_slider[0].winfo_ismapped() and win.snap_slider[0].winfo_width() > 100, 10)
 scale, at, old_first, let_go = win.snap_slider
@@ -263,7 +263,8 @@ app.update()
 right = at.get()
 scale.event_generate("<Left>")
 app.update()
-check(right == was + 1 and at.get() == was, f"the arrow keys move it one snapshot ({was} -> {right} -> {at.get()})")
+check(right == was + 1 and at.get() == was, f"the arrow keys move it one snapshot ({was} -> {right} -> {at.get()}; "
+      f"key focus {app.focus_get()!s})")
 opened.clear()
 scale.event_generate("<Button-1>", x=2, y=12)
 scale.event_generate("<ButtonRelease-1>", x=2, y=12)

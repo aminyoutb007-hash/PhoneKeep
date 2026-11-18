@@ -15,6 +15,15 @@ def hide(w) -> None:
         w.withdraw()
 
 
+
+def show(w) -> None:
+    """Undo hide(): the window shown again, for a test that needs a real window (keys, clicks)."""
+    if sys.platform == "darwin" and tk.TkVersion < 8.7:
+        w.attributes("-alpha", 1.0)
+    w.deiconify()
+    w.lift()
+
+
 def too_small(win, width: int, height: int) -> str:
     """Why `win` can't have its normal size width x height on this computer (its screen is smaller), or ""."""
     win.update_idletasks()
