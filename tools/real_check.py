@@ -1062,6 +1062,10 @@ try:
             note(f"Q2: no {label} in the backup")
             continue
         con = ctx.db(loaded["domain"], "ChatStorage.sqlite")
+        if con is None or "ZWAMESSAGEDATAITEM" not in {r[0] for r in con.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}:
+            note(f"Q2: {label}'s database has no link previews table; not tested on real data")
+            continue
         msgs = {m["id"]: m for c in loaded["chats"] for m in c["messages"]}
         want = {pk_ for (pk_,) in con.execute(
             "SELECT DISTINCT ZMESSAGE FROM ZWAMESSAGEDATAITEM WHERE (ZTITLE IS NOT NULL AND ZTITLE != '') "

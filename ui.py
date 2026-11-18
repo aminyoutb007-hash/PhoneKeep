@@ -983,6 +983,8 @@ class ChatPanel(tk.Frame):
             self.text_chat = None           # the conversation is drawn when its tab is shown again
             return
         self.text_chat = self.current
+        self.drawn = getattr(self, "drawn", 0) + 1     # this drawing: a late picture or voice note of an earlier one
+        drawn = self.drawn                             # (even of the same chat) isn't put into it
         t = self.text
         t.configure(state="normal")
         t.delete("1.0", "end")
@@ -1025,7 +1027,7 @@ class ChatPanel(tk.Frame):
                 t.insert("end", "📷 Photo", (tag, mark + "ph") + open_tags)
                 t.insert("end", "\n", tag)
                 self.worker.submit(lambda m=m: self.preview.thumbnail(key, m),
-                                   lambda path, mark=mark, cur=self.current, ot=otag: self._put_image(path, mark, cur, ot))
+                                   lambda path, mark=mark, ot=otag: self._put_image(path, mark, drawn, ot))
             elif m.get("type") == "audio" and otag and hasattr(self.preview, "voice_note"):
                 # Q2: a voice note as on the phone: play button, waveform and length (the label until it's read)
                 mark = f"vn{i}"
@@ -1034,8 +1036,8 @@ class ChatPanel(tk.Frame):
                 t.insert("end", TYPE_LABEL["audio"], (tag, "link", otag, mark + "ph"))
                 t.insert("end", "\n", tag)
                 self.worker.submit(lambda m=m: self.preview.voice_note(key, m),
-                                   lambda got, mark=mark, cur=self.current, m=m, k=key, cid=c["id"], tg=tag:
-                                   self._put_voice(got, mark, cur, tg, lambda: self.open_media(k, cid, m)))
+                                   lambda got, mark=mark, m=m, k=key, cid=c["id"], tg=tag:
+                                   self._put_voice(got, mark, drawn, tg, lambda: self.open_media(k, cid, m)))
             elif otag:
                 t.insert("end", TYPE_LABEL[m["type"]], (tag, "link", otag))
                 t.insert("end", "\n", tag)
@@ -1074,8 +1076,8 @@ class ChatPanel(tk.Frame):
         t.configure(state="disabled")
         t.see(first or "end")
 
-    def _put_image(self, path, mark, cur, otag=None):
-        if cur != self.current or not path:
+    def _put_image(self, path, mark, drawn, otag=None):
+        if drawn != self.drawn or not path or not self.text.tag_ranges(mark + "ph"):
             return
         img = load_photo(path, 220)
         if img is None:
@@ -1095,9 +1097,10 @@ class ChatPanel(tk.Frame):
         t.configure(state="disabled")
         t.see("end")
 
-    def _put_voice(self, got, mark, cur, tag, open_it):
-        """Q2: the voice note drawn in its bubble once its file has been read: ▶, the waveform, the length."""
-        if cur != self.current or not got:
+    def _put_voice(self, got, mark, drawn, tag, open_it):
+        """Q2: the voice note drawn in its bubble once its file has been read: ▶, the waveform, the length. Only
+        into the drawing it was asked for, and only once (its label still there)."""
+        if drawn != self.drawn or not got or not self.text.tag_ranges(mark + "ph"):
             return
         seconds, bars = got
         import voicenote

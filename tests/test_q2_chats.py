@@ -186,6 +186,7 @@ class Ctx:
     def __init__(self):
         self.cache = {}
         self.reads = []
+        self.sizes = {}
         self.tmp = W / "tmp"
 
     def db(self, domain, rel):
@@ -198,6 +199,9 @@ class Ctx:
 
     def label(self, addr):
         return NAMES.get(addr) or addr or "Unknown"
+
+    def size(self, domain, rel):
+        return self.sizes.get(rel, 1000) if (domain, rel) == (sections.MEDIA, VOICE_REL) else None
 
     def read(self, domain, rel):
         self.reads.append((domain, rel))
@@ -220,6 +224,36 @@ check(link == {"title": "Tomato soup in 20 minutes", "site": "Example Recipes",
 check("link" not in by_text["https://example.invalid/broken"], "  a payload that isn't one gives no card")
 check(sections.rich_link(b"x" * 3_000_000) is None and sections.rich_link(plistlib.dumps({"$objects": [{"title": 5}]})) is None,
       "  a payload too big or without a link gives none")
+
+
+def bplist(objects, top=0) -> bytes:
+    """A binary plist written by hand, so that it can hold what plistlib won't write: a dict inside itself."""
+    def enc(o):
+        if isinstance(o, str):
+            return bytes([0x50 | len(o)]) + o.encode("ascii")
+        kind, refs = o
+        if kind == "array":
+            return bytes([0xA0 | len(refs)]) + bytes(refs)
+        keys, vals = zip(*refs)
+        return bytes([0xD0 | len(refs)]) + bytes(keys) + bytes(vals)
+    body, offsets = b"bplist00", []
+    for o in objects:
+        offsets.append(len(body))
+        body += enc(o)
+    table = len(body)
+    body += b"".join(struct.pack(">H", x) for x in offsets)
+    return body + b"\0" * 6 + bytes([2, 1]) + struct.pack(">QQQ", len(objects), top, table)
+
+
+# {"$objects": [{"title": "t", "URL": <a dict whose NS.relative is itself>}]}
+loop = bplist(["$objects", ("array", [3]), ("dict", [(0, 1)]), ("dict", [(4, 5), (6, 7)]), "title", "t", "URL",
+               ("dict", [(8, 7)]), "NS.relative"], top=2)
+uid_loop = plistlib.dumps({"$objects": ["$null", {"title": "x", "URL": plistlib.UID(2)},
+                                        {"NS.relative": plistlib.UID(2)}]}, fmt=plistlib.FMT_BINARY)
+check(sections.rich_link(loop) == {"title": "t"} and sections.rich_link(uid_loop) == {"title": "x"}
+      and sections.rich_link(plistlib.dumps({"$objects": {"title": "t", "URL": "u"}})) is None
+      and sections.rich_link(plistlib.dumps(["not a dict"])) is None,
+      "  a payload that loops back on itself, or isn't laid out as one, gives what it can or nothing (never an error)")
 
 # the chat as drawn
 import tkinter as tk
@@ -271,6 +305,33 @@ root.update()
 cv.event_generate("<ButtonRelease-1>", x=10, y=10)
 root.update()
 check(opened == ["Audio Message.caf"], "  a click on it opens the voice note (to play it)")
+# a voice note bigger than PhoneKeep reads isn't read at all (its size comes from the manifest)
+big = sections.ChatPreview(ctx)
+ctx.sizes[VOICE_REL] = voicenote.MAX_BYTES + 1
+n = len(ctx.reads)
+check(big.voice_note("messages", by_text.get(None) or next(m for m in msgs if m["type"] == "audio")) is None
+      and len(ctx.reads) == n, "  a voice note bigger than the limit isn't read at all")
+ctx.sizes.clear()
+
+# the same chat drawn again while its voice note is still being read: only the new drawing gets one
+slow = sections.ChatPreview(ctx)
+real_vn = slow.voice_note
+slow.voice_note = lambda k, m: (time.sleep(0.4), real_vn(k, m))[1]
+panel.preview = slow
+panel.current = None
+panel.show_chat("messages", 1)
+root.update()
+panel.current = None
+panel.show_chat("messages", 1)
+end = time.time() + 5
+while time.time() < end:
+    root.update()
+    time.sleep(0.02)
+check(len(panel.voice_canvases) == 1 and len(t.window_names()) == 1,
+      f"  the same chat drawn again while its voice note is read: one waveform, in the new drawing "
+      f"({len(panel.voice_canvases)} drawn, {len(t.window_names())} in the text)")
+panel.preview = preview
+cv = panel.voice_canvases[0]
 panel.current = None                          # drawn again from the start
 panel.show_chat("messages", 1)
 root.update()

@@ -238,6 +238,11 @@ class Ctx:
         con.row_factory = sqlite3.Row
         return con
 
+    def size(self, domain: str, rel: str) -> Optional[int]:
+        """One backup file's size as the manifest gives it (None when it isn't there)."""
+        got = self.reader.file_meta(domain, rel).get(rel)
+        return got[2] if got and got[2] is not None else None
+
     def read(self, domain: str, rel: str) -> Optional[bytes]:
         """One backup file's content in memory (Q1 previews)."""
         fid = self.files(domain).get(rel)
@@ -694,29 +699,33 @@ def decode_attributed_body(b: Optional[bytes]) -> str:
 TAPBACKS = {2000: "Love", 2001: "Like", 2002: "Dislike", 2003: "Laugh", 2004: "Emphasis", 2005: "Question"}
 def rich_link(payload: bytes) -> Optional[dict]:
     """Q2: {"title", "site", "summary", "url"} from a Messages link's payload (an archived LPLinkMetadata), or None.
-    Only strings are taken; a payload that isn't one, or is too big, gives None."""
+    Only strings are taken. A payload that isn't one, is too big, or loops back on itself gives None: a bad payload
+    must never cost the rest of the chats."""
     if not payload or len(payload) > 2_000_000:
         return None
     try:
-        objs = plistlib.loads(payload).get("$objects") or []
+        objs = plistlib.loads(payload).get("$objects")
+        if not isinstance(objs, list):
+            return None
+
+        def get(v, depth=0):
+            if depth > 8:
+                return None
+            if isinstance(v, plistlib.UID):
+                return get(objs[v.data] if 0 <= v.data < len(objs) else None, depth + 1)
+            if isinstance(v, dict) and "NS.relative" in v:        # an NSURL
+                return get(v["NS.relative"], depth + 1)
+            if isinstance(v, dict) and "NS.string" in v:
+                return v["NS.string"] if isinstance(v["NS.string"], str) else None
+            return v if isinstance(v, str) else None
+        meta = next((o for o in objs if isinstance(o, dict) and ("title" in o or "siteName" in o)
+                     and ("URL" in o or "originalURL" in o)), None)
+        if meta is None:
+            return None
+        out = {"title": get(meta.get("title")), "site": get(meta.get("siteName")), "summary": get(meta.get("summary")),
+               "url": get(meta.get("URL")) or get(meta.get("originalURL"))}
     except Exception:
         return None
-
-    def get(v, depth=0):
-        while isinstance(v, plistlib.UID) and depth < 8:
-            v = objs[v.data] if v.data < len(objs) else None
-            depth += 1
-        if isinstance(v, dict) and "NS.relative" in v:        # an NSURL
-            return get(v["NS.relative"], depth + 1)
-        if isinstance(v, dict) and "NS.string" in v:
-            return v["NS.string"] if isinstance(v["NS.string"], str) else None
-        return v if isinstance(v, str) else None
-    meta = next((o for o in objs if isinstance(o, dict) and ("title" in o or "siteName" in o)
-                 and ("URL" in o or "originalURL" in o)), None)
-    if meta is None:
-        return None
-    out = {"title": get(meta.get("title")), "site": get(meta.get("siteName")), "summary": get(meta.get("summary")),
-           "url": get(meta.get("URL")) or get(meta.get("originalURL"))}
     out = {k: v.strip()[:500] for k, v in out.items() if isinstance(v, str) and v.strip()}
     return out if out.get("title") or out.get("url") else None
 
@@ -1864,7 +1873,8 @@ class ChatPreview:
         with self.lock:
             if self.closed():
                 return None
-            data = self.ctx.read(*where)
+            size = self.ctx.size(*where)                   # from the manifest: a huge file isn't read at all
+            data = self.ctx.read(*where) if size is not None and size <= voicenote.MAX_BYTES else None
         got = voicenote.shape(data) if data else None
         self._voice[where] = got or ()
         return got
