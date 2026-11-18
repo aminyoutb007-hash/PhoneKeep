@@ -506,7 +506,7 @@ class PhoneWindow(tk.Toplevel):
         H, PAD, Y = 32, 10, 9                             # height; room for the handle at each end; the line's y
         cv = tk.Canvas(self.timeline, height=H, bg=CARD, highlightthickness=0, takefocus=1, cursor="hand2")
         cv.pack(fill="x", padx=14, pady=(6, 0))
-        wait = {"after": None}
+        wait = {"after": None, "down": False}           # down: the mouse button is held (a drag opens on letting go)
 
         def x_of(i, w):
             return PAD + (w - 2 * PAD) * i / last
@@ -534,12 +534,19 @@ class PhoneWindow(tk.Toplevel):
             self.snap_var.set(names[at.get()])           # the date under the handle, in the list above
             if wait["after"]:
                 self.after_cancel(wait["after"])
-            wait["after"] = self.after(250, go)          # the handle stopped (the keys; the mouse opens on letting go)
+                wait["after"] = None
+            if not wait["down"]:
+                wait["after"] = self.after(250, go)      # the keys: the handle stopped (the mouse opens on letting go)
 
         def let_go(_e=None):
+            wait["down"] = False
             if wait["after"]:
                 self.after_cancel(wait["after"])
             go()
+
+        def press(e):
+            wait["down"] = True
+            pointer(e)
 
         def pointer(e):
             cv.focus_set()
@@ -556,7 +563,7 @@ class PhoneWindow(tk.Toplevel):
 
         trace = at.trace_add("write", moved)               # the mouse, the arrow keys or the tests: all move `at`
         cv.bind("<Configure>", draw)
-        cv.bind("<Button-1>", pointer)
+        cv.bind("<Button-1>", press)
         cv.bind("<B1-Motion>", pointer)
         cv.bind("<ButtonRelease-1>", let_go)
         cv.bind("<Left>", lambda e: at.get() > 0 and at.set(at.get() - 1))
@@ -683,6 +690,7 @@ class PhoneWindow(tk.Toplevel):
         import phone_write
         phone_write.log_activity(f"Deleted the snapshot of {snap.when.strftime('%d %b %Y').lstrip('0')}", self.name, kind="backup")
         if self.snapshot and self.snapshot.id == snap.id:
+            self.snaps = sn.list_snapshots(self.backup_dir, self.udid)   # without the one just deleted (Q5 reuses it)
             self.open_snapshot(None)
         else:
             self._build_timeline()

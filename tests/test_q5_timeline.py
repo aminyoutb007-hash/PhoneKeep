@@ -266,6 +266,35 @@ scale.event_generate("<Button-1>", x=2, y=12)
 scale.event_generate("<ButtonRelease-1>", x=2, y=12)
 check(pump(lambda: messages_count() == latest - 2 and bool(opened), 10) and opened == [old_first[0].id],
       "clicking its left end opens the oldest snapshot")
+
+# a drag that pauses opens nothing until the mouse is let go
+scale, at, old_first, let_go = win.snap_slider
+pump(lambda: scale.winfo_ismapped() and scale.winfo_width() > 100, 10)
+opened.clear()
+w = scale.winfo_width()
+scale.event_generate("<Button-1>", x=2, y=12)
+scale.event_generate("<B1-Motion>", x=w // 2, y=12)
+app.update()
+pump(lambda: False, 0.6)
+check(at.get() == 1 and not opened, f"a drag that pauses on a snapshot opens nothing yet (at {at.get()}, {len(opened)} opened)")
+scale.event_generate("<ButtonRelease-1>", x=w // 2, y=12)
+check(pump(lambda: messages_count() == latest - 1, 10) and opened == [old_first[1].id],
+      "  letting go opens the one it's on")
+
+# deleting the snapshot being viewed: it's gone from the list and the slider, and the latest opens
+real_delete = sn.delete_snapshot
+sn.delete_snapshot = lambda bd, ud, sid, to_trash=True: real_delete(bd, ud, sid, to_trash=False)   # not the real Trash
+real_ask = phone.messagebox.askokcancel
+phone.messagebox.askokcancel = lambda *a, **k: True
+gone = win.snapshot.id
+win._delete_snapshot(win.snapshot)
+phone.messagebox.askokcancel = real_ask
+sn.delete_snapshot = real_delete
+pump(lambda: win.data is not None and messages_count() == latest, 10)
+scale, at, old_first, let_go = win.snap_slider
+check(gone not in [x.id for x in win.snaps] and gone not in [x.id for x in old_first] and len(old_first) == 2
+      and win.snapshot is None and not any(gone in c for c in win.snap_choices),
+      "deleting the snapshot being viewed takes it off the list and the slider, and the latest opens")
 win.destroy()
 
 # one snapshot alone: no slider

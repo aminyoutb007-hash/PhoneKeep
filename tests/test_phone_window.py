@@ -443,7 +443,6 @@ _fake.after, _fake.after_cancel = root.after, root.after_cancel
 _fake._build_slider = lambda *a: _phone.PhoneWindow._build_slider(_fake, *a)      # Q5: the slider under the list
 _real_list = _sn.list_snapshots
 _sn.list_snapshots = lambda a, b: _snaps
-import phone as _phone
 _phone.PhoneWindow._build_timeline(_fake)
 _sn.list_snapshots = _real_list
 root.update()
