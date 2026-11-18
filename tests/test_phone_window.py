@@ -438,6 +438,9 @@ _tl_host = tk.Toplevel(root)
 _fake = _NS2(timeline=tk.Frame(_tl_host), snapshot=None, backup_dir=None, udid="x", open_snapshot=_opened.append,
              _snapshot_menu=lambda e, s: None)
 _fake.timeline.pack()
+import phone as _phone
+_fake.after, _fake.after_cancel = root.after, root.after_cancel
+_fake._build_slider = lambda *a: _phone.PhoneWindow._build_slider(_fake, *a)      # Q5: the slider under the list
 _real_list = _sn.list_snapshots
 _sn.list_snapshots = lambda a, b: _snaps
 import phone as _phone

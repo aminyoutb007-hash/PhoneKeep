@@ -29,8 +29,8 @@ What it does, all read-only for the phone:
   * P8: one HEVC video from the phone saved "Most compatible" is an H.264 MP4 with its date and location (yes/no).
   * P2: songs that only stream aren't listed in Music, and the screen says why; a song on the phone is saved into
     Artist / Album with its title, artist, album and artwork in the file (counts only).
-  * Q5: moving the timeline slider one snapshot back shows Messages as it was then within 2 seconds, with the
-    'Viewing' badge, and back at the right end it's the latest again (seconds only).
+  * Q5: the timeline slider one snapshot back with the mouse shows Messages as it was then within 2 seconds, with
+    the 'Viewing' badge; back to the latest with the arrow key within 2 seconds too (seconds only).
 Everything it saves goes to a temporary folder that is deleted at the end. Nothing is written to the phone,
 and PhoneKeep's own folder and settings aren't changed.
 """
@@ -1041,21 +1041,26 @@ try:
     else:
         win.open_app("messages")
         pump(app, lambda: find(win.content, ui.ChatPanel) is not None and not loading(win), 600)
-        was = win.data
-        scale, at, old_first, let_go = win.snap_slider
-        t_q5 = time.time()
-        at.set(len(old_first) - 2)                    # one snapshot back, as a drag would
-        pump(app, lambda: win.data is not None and win.data is not was and win.current == "messages"
-             and find(win.content, ui.ChatPanel) is not None and not loading(win), 120)
-        took = time.time() - t_q5
+        def move_to(i, mouse):
+            was = win.data
+            scale, at, old_first, let_go = win.snap_slider
+            t = time.time()
+            at.set(i)
+            if mouse:
+                let_go()                               # a drag ends: the mouse is let go
+            pump(app, lambda: win.data is not None and win.data is not was and win.current == "messages"
+                 and find(win.content, ui.ChatPanel) is not None and not loading(win), 120)
+            return time.time() - t, old_first
+
+        old_first = win.snap_slider[2]
+        took_mouse, _ = move_to(len(old_first) - 2, True)
         back = win.snapshot is not None and win.snapshot.id == old_first[-2].id
         badge = bool(win.viewing.winfo_manager()) and win.viewing.cget("text").startswith("Viewing ")
-        scale, at, old_first, let_go = win.snap_slider
-        at.set(len(old_first) - 1)
-        pump(app, lambda: win.snapshot is None and win.data is not None and not loading(win), 120)
-        check(back and badge and took <= 2.0 and win.snapshot is None and not win.viewing.winfo_manager(),
-              f"Q5: moving the slider one snapshot back shows Messages as it was then in {took:.1f} s, with the "
-              f"'Viewing' badge; back at the right end it's the latest again")
+        took_keys, _ = move_to(len(old_first) - 1, False)        # the arrow key: opens after its short pause
+        latest = win.snapshot is None and not win.viewing.winfo_manager()
+        check(back and badge and latest and took_mouse <= 2.0 and took_keys <= 2.0,
+              f"Q5: one snapshot back with the mouse shows Messages as it was then in {took_mouse:.1f} s, with the "
+              f"'Viewing' badge; back to the latest with the arrow key in {took_keys:.1f} s, with no badge")
 finally:
     try:
         win.close()

@@ -496,7 +496,7 @@ class PhoneWindow(tk.Toplevel):
     def _build_slider(self, snaps: list, titles: list, current: str):
         """Q5: the snapshots on a slider, oldest on the left, the latest on the right, a tick for each. Dragging
         shows the date under the handle in the list above; the phone window changes to that snapshot once the
-        handle stops (a short pause, or letting go). The arrow keys move it one snapshot."""
+        handle stops (letting go of the mouse, or a short pause after the keys). The arrow keys move it one snapshot."""
         old_first = list(reversed(snaps))
         names = list(reversed(self.snap_choices))
         last = len(old_first) - 1
@@ -532,7 +532,7 @@ class PhoneWindow(tk.Toplevel):
             self.snap_var.set(names[at.get()])           # the date under the handle, in the list above
             if wait["after"]:
                 self.after_cancel(wait["after"])
-            wait["after"] = self.after(400, go)          # the handle stopped: show that snapshot
+            wait["after"] = self.after(250, go)          # the handle stopped (the keys; the mouse opens on letting go)
 
         def let_go(_e=None):
             if wait["after"]:
