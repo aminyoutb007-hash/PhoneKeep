@@ -480,6 +480,43 @@ class LiveDevice:
         with self._lock:
             return self.run(self._app_list(bundle_id, path), 300)
 
+    async def _app_walk(self, bundle_id: str, limit: int, stop) -> list[Entry]:
+        from pymobiledevice3.services.house_arrest import HouseArrestService
+        ha = await HouseArrestService.create(self.lockdown, bundle_id, documents_only=True)
+        try:
+            out: list[Entry] = []
+            todo = [("Documents", 0)]
+            while todo and len(out) < limit and not (stop and stop()):
+                base, depth = todo.pop(0)
+                try:
+                    names = await _aw(ha.listdir(base))
+                except Exception:
+                    continue                                 # a folder that can't be read: the rest still are
+                for n in names:
+                    if n in (".", ".."):
+                        continue
+                    rel = f"{base}/{n}"
+                    try:
+                        st = await _aw(ha.stat(rel))
+                    except Exception:
+                        st = {}
+                    when = st.get("st_mtime")
+                    e = Entry(n, rel, st.get("st_ifmt") == "S_IFDIR", int(st.get("st_size", 0) or 0),
+                              when.replace(tzinfo=None) if isinstance(when, dt.datetime) else None)
+                    out.append(e)
+                    if e.is_dir and depth < 30 and st.get("st_ifmt") != "S_IFLNK":
+                        todo.append((rel, depth + 1))
+            return out
+        finally:
+            await self._close(ha)
+
+    @retry_once
+    def app_walk(self, bundle_id: str, limit: int = 20000, stop=None) -> list[Entry]:
+        """F3: everything in an app's Documents, folders inside folders too (30 deep at most), through one
+        connection; at most `limit` entries; stops early when stop() says so. Read-only."""
+        with self._lock:
+            return self.run(self._app_walk(bundle_id, limit, stop), 900)
+
     async def _app_pull(self, bundle_id: str, path: str, dest_dir: Path) -> bool:
         from pymobiledevice3.services.house_arrest import HouseArrestService
         ha = await HouseArrestService.create(self.lockdown, bundle_id, documents_only=True)
