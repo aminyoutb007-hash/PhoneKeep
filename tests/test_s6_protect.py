@@ -100,7 +100,7 @@ if sys.platform == "darwin":
 st.mkdir()
 (st / "Photos").mkdir()
 (st / "Photos" / "IMG_0001.JPG").write_bytes(b"\xff\xd8 invented" * 500)
-(st / "contacts.csv").write_text("Name\nAlex Example\n", encoding="utf-8")
+(st / "contacts.csv").write_bytes(b"Name\nAlex Example\n")          # bytes: the same on Windows
 out = protect.protect_folder(st, W / "dest", PW, "Contacts 2026-03-01")
 got = zip_reads(out[0]) if out else {}
 check([p.name for p in out] == ["Contacts 2026-03-01.zip"] and set(got) == {"Photos/IMG_0001.JPG", "contacts.csv"}
@@ -250,6 +250,44 @@ check(pump(lambda: list(d.glob("*.zip")), 30) and asked == ["Call History"]
       "a Save from a list goes to the private folder first, then into one encrypted ZIP")
 check(not readable_left() and b"Alex Example" not in list(d.glob("*.zip"))[0].read_bytes(),
       "  nothing readable left behind")
+
+# 3b. App Files (a save into a folder inside the private one, named after the app): one ZIP, nothing left
+asked.clear()
+d = dest("Files out")
+inner = win.out_dir("files")
+sub = inner / "Pages"
+
+
+def pull(app_id, path, into):
+    Path(into).mkdir(parents=True, exist_ok=True)
+    (Path(into) / Path(path).name).write_bytes(b"invented document")
+    return True
+
+
+win.live = type("Live", (), {"app_pull": staticmethod(pull)})()
+win.run_save("1 item(s)", lambda: [sub / "Letter.pages"] if pull("x", "/Documents/Letter.pages", sub) else [],
+             sub, "item", win.backup_runner)    # the app's folder inside the private one, as the old code passed
+check(pump(lambda: list(d.glob("*.zip")), 30), "Save selected in App Files (the app's own folder inside) ...")
+z = list(d.glob("*.zip"))
+check(len(z) == 1 and set(zip_reads(z[0])) == {"Pages/Letter.pages"} and not readable_left() and not win._protected,
+      f"  is one encrypted ZIP with the app's folder inside, nothing left behind ({sorted(zip_reads(z[0])) if z else []})")
+check(win.is_protected(Path(inner) / "Pages" / "deeper") is False and not win._protected,
+      "  a folder inside a finished save's private folder is no longer taken for a protected one")
+
+# 3c. a save that fails: its private folder goes, and the password with it
+d = dest("Failed out")
+inner = win.out_dir("calls")
+
+
+def boom():
+    (Path(inner) / "half.csv").write_text("half", encoding="utf-8")
+    raise OSError(28, "No space left on device")
+
+
+win.run_save("rows", boom, inner, "file")
+check(pump(lambda: "Couldn't save" in banner(), 30) and not win._protected and not readable_left()
+      and list(d.iterdir()) == [],
+      "a protected save that fails leaves no private copy, keeps no password and puts nothing in the folder chosen")
 
 # 4. Save everything: one ZIP of the whole export
 asked.clear()

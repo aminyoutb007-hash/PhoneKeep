@@ -1487,8 +1487,28 @@ class PhoneWindow(tk.Toplevel):
         self._protected[str(staging)] = {"folder": Path(folder), "password": password, "what": what}
         return staging
 
+    def _protect_root(self, folder) -> Optional[str]:
+        """The private folder of the protected save `folder` belongs to (it, or a folder inside it), or None."""
+        if folder is None:
+            return None
+        jobs = getattr(self, "_protected", {})
+        f = Path(folder)
+        for p in (f, *f.parents):
+            if str(p) in jobs:
+                return str(p)
+        return None
+
     def is_protected(self, folder) -> bool:
-        return folder is not None and str(folder) in getattr(self, "_protected", {})
+        return self._protect_root(folder) is not None
+
+    def protect_abort(self, folder) -> None:
+        """A protected save that failed or was cancelled: its private folder goes, and its password with it."""
+        root = self._protect_root(folder)
+        if root is None:
+            return
+        job = self._protected.pop(root)
+        job["password"] = None
+        shutil.rmtree(root, ignore_errors=True)
 
     def protect_finish(self, staging: Path, name: str, done, failed=None):
         """Protect what one save made in `staging` into the folder the owner chose (on the backup reader's
@@ -1563,11 +1583,12 @@ class PhoneWindow(tk.Toplevel):
         return d
 
     def saved(self, paths: list, folder: Path, what: str = "file"):
-        if self.is_protected(folder):        # S6: made in a private folder; now protected into the one chosen
-            job = self._protected[str(folder)]
+        root = self._protect_root(folder)
+        if root is not None:                 # S6: made in a private folder; now protected into the one chosen
+            job = self._protected[root]
             stamp = dt.datetime.now().strftime("%Y-%m-%d %H%M")
-            self.save_skipped = getattr(self, "save_skipped", [])
-            self.protect_finish(folder, f"{job['what']} {stamp}",
+            self.save_skipped = []
+            self.protect_finish(Path(root), f"{job['what']} {stamp}",
                                 lambda out, real: self._protected_banner(out, real, job["what"]))
             return
         n = len([p for p in paths if p])
@@ -1583,8 +1604,10 @@ class PhoneWindow(tk.Toplevel):
 
     def run_save(self, label: str, fn, folder: Path, what: str = "file", runner=None):
         self.banner(f"Saving {label}…")
-        (runner or self.backup_runner).submit(fn, lambda paths: self.saved(paths, folder, what),
-                                              lambda e: self.banner(f"Couldn't save: {describe_error(e)}", color=theme.ERROR_BG))
+        def err(e):
+            self.protect_abort(folder)       # S6: a failed protected save leaves nothing (and drops its password)
+            self.banner(f"Couldn't save: {describe_error(e)}", color=theme.ERROR_BG)
+        (runner or self.backup_runner).submit(fn, lambda paths: self.saved(paths, folder, what), err)
 
     def save_everything(self, choice: Optional[dict] = None, folder: Optional[Path] = None):
         """D9: the Save everything sheet, then one export of every ticked kind into one new folder.
@@ -1644,12 +1667,14 @@ class PhoneWindow(tk.Toplevel):
 
         def err(e):
             state["finished"] = True
+            if staging is not None:
+                self.protect_abort(staging)
             self.banner(f"Couldn't save everything: {describe_error(e)}", color=theme.ERROR_BG)
         self.banner("Saving everything…")
         self.backup_runner.submit(go, ok, err)
 
     def export_section(self, key: str, formats: set, chooser=None, dates=None, pdf_combined: bool = False,
-                       then=None, out: Optional[Path] = None, quiet: bool = False):
+                       then=None, out: Optional[Path] = None, quiet: bool = False, on_fail=None):
         """Full export of one app through the same code as the main 'Back up' button.
         then(index): called on the UI thread when done (Print uses it); out: another folder (Print: a temp one).
         S6: with the password switch on, a save that would go to Saved files asks for the password and where
@@ -1696,6 +1721,10 @@ class PhoneWindow(tk.Toplevel):
 
         def err(e):
             state["finished"] = True
+            if staging is not None:
+                self.protect_abort(staging)
+            if on_fail is not None:
+                on_fail()
             self.banner(f"Couldn't export: {describe_error(e)}", color=theme.ERROR_BG)
         self.banner(f"Exporting {LABEL[key]}… working out time left…")
         self.backup_runner.submit(go, ok, err)
@@ -1778,7 +1807,9 @@ class PhoneWindow(tk.Toplevel):
                              (lambda: open_file(saved[0])) if len(saved) == 1 else (lambda: reveal(folder))))
                 reveal(saved[0] if len(saved) == 1 else folder)      # show it straight away: the result is visible
             self.export_section(key, {"pdf"}, chooser=lambda lists, pv: sel, dates=dates, pdf_combined=combined,
-                                then=then, out=build_root)
+                                then=then, out=build_root,
+                                on_fail=(lambda: (shutil.rmtree(build_root, ignore_errors=True),
+                                                  self.protect_abort(folder))) if protected else None)
 
         def print_chats():
             """Print makes the same PDF (all ticked chats in one file) and opens the system print dialog."""
@@ -2692,15 +2723,17 @@ class PhoneWindow(tk.Toplevel):
                 messagebox.showinfo(wv.APP_NAME, "Select files or folders to save first.", parent=self)
                 return
             a = by_id[state["app"]]
-            folder = self.out_dir("files")
-            if folder is None:
+            base = self.out_dir("files")
+            if base is None:
                 return
-            folder = folder / sx.safe_name(a.name, 60)
+            folder = base / sx.safe_name(a.name, 60)
             app_id = state["app"]
 
             def go():
                 return [folder / e.name for e in sel if self.live.app_pull(app_id, e.path, folder)]
-            self.run_save(f"{len(sel):,} item(s)", go, folder, "item", self.live_runner)
+            # S6: a protected save is finished from its private folder (base), the app's folder inside it zipped
+            self.run_save(f"{len(sel):,} item(s)", go, base if self.is_protected(base) else folder, "item",
+                          self.live_runner)
         RoundButton(foot, "Save selected", save, "primary", 160, 38, 12).pack(side="right")
         tk.Label(foot, text="Double-click a folder to open it, or a file to view it", bg=BG, fg=MUTED,
                  font=font(11)).pack(side="right", padx=10)
