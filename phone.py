@@ -1950,13 +1950,6 @@ class PhoneWindow(tk.Toplevel):
                            "click, then Save", bg=BG, fg=MUTED, font=font(11)).pack(side="left", padx=10)
         box = card(self.content)
         box.pack(fill="both", expand=True)
-        # F3: while there's a search, its results replace the folders: where, path, size, date
-        hits = ttk.Treeview(box, columns=("area", "path", "size", "date"), show="headings", selectmode="extended")
-        for c, h, w in (("area", "Area", 200), ("path", "Path", 440), ("size", "Size", 90), ("date", "Modified", 140)):
-            hits.heading(c, text=h)
-            hits.column(c, width=w, stretch=(c == "path"), anchor="e" if c == "size" else "w")
-        hmeta: dict = {}      # iid -> ("file", domain, rel, size, mtime), as `meta` has for the folders' files
-        self.allfiles_hits = hits                 # for the tests
         tree = ttk.Treeview(box, columns=("size", "date"), selectmode="extended")
         tree.heading("#0", text="Folder / file")
         tree.heading("size", text="Size")
@@ -1968,6 +1961,13 @@ class PhoneWindow(tk.Toplevel):
         tree.configure(yscrollcommand=sb.set)
         tree.pack(side="left", fill="both", expand=True, padx=(4, 0), pady=4)
         sb.pack(side="left", fill="y", pady=4)
+        # F3: while there's a search, its results replace the folders: where, path, size, date
+        hits = ttk.Treeview(box, columns=("area", "path", "size", "date"), show="headings", selectmode="extended")
+        for c, h, w in (("area", "Area", 200), ("path", "Path", 440), ("size", "Size", 90), ("date", "Modified", 140)):
+            hits.heading(c, text=h)
+            hits.column(c, width=w, stretch=(c == "path"), anchor="e" if c == "size" else "w")
+        hmeta: dict = {}      # iid -> ("file", domain, rel, size, mtime), as `meta` has for the folders' files
+        self.allfiles_hits = hits                 # for the tests
         meta: dict = {}       # iid -> (domain, rel, size, mtime) for files
         loaded: set = set()
         import device as devmod
@@ -2082,6 +2082,8 @@ class PhoneWindow(tk.Toplevel):
 
         def run_search():
             look["after"] = None
+            if not hits.winfo_exists():           # the view was left while the typing pause ran
+                return
             look["gen"] += 1
             gen = look["gen"]
             pat = filesearch.Pattern(q.get())
@@ -2115,6 +2117,7 @@ class PhoneWindow(tk.Toplevel):
             foot_count.configure(text=(f"{total:,} file{'s' if total != 1 else ''} match{'' if total != 1 else 'es'}"
                                        f"{more}" if total else "No file matches. * matches anything: *.pdf, invoice*"))
         q.trace_add("write", search)
+        hits.bind("<Destroy>", lambda e: look["after"] and self.after_cancel(look["after"]))
         self.allfiles_search = run_search         # the tests run it at once instead of waiting for the typing pause
         self.allfiles_q = q
 
