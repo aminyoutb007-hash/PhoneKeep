@@ -72,9 +72,12 @@ check(all(win.tile_count[k].cget("text") for k in keys), "  and a count, or wher
 import tkcompat
 small = tkcompat.too_small(win, 1220, 800)                        # the phone window's normal size
 print("    " + tkcompat.screen(win), flush=True)
-if small:                # a smaller screen shrinks the window and cuts off what's below (GitHub's Mac machines)
-    print(f"skip the line under the tiles and every tile can be seen: {small}", flush=True)
-check(win.src_line is not None and (small or win.src_line.winfo_ismapped()) and win.src_line.cget("text") == win.src_text
+# a smaller screen can shrink the window and cut off what's below (GitHub's Mac machines): skipped only then, and only
+# what is really cut off
+cut_line = bool(small) and win.src_line is not None and not win.src_line.winfo_ismapped()
+if cut_line:
+    print(f"skip the line under the tiles is shown: it's cut off, {small}", flush=True)
+check(win.src_line is not None and (cut_line or win.src_line.winfo_ismapped()) and win.src_line.cget("text") == win.src_text
       and "from the backup" in win.src_text, "under the tiles: what comes from the backup and what is read live")  # noqa: F821
 kept = (win.data, win.data_error)
 for err in ("No backup yet. Messages, chats, calls & notes appear after the first backup.", None):
@@ -88,7 +91,9 @@ seen = []
 for k in keys:                                  # every tile fits in the window's normal size
     t = win.tiles[k]
     seen.append(t.winfo_rooty() + t.winfo_height() <= win.content.winfo_rooty() + win.content.winfo_height() + 1)
-if not small:
+if small and not all(seen):
+    print(f"skip every tile can be seen: {len(seen) - sum(seen)} of {len(seen)} cut off, {small}", flush=True)
+else:
     check(all(seen), f"  every tile can be seen in the window's normal size ({sum(seen)} of {len(seen)})")  # noqa: F821
 
 # -- every section opens from its tile; the cards open their details ----------------------------------------------

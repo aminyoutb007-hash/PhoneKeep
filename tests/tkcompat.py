@@ -1,4 +1,5 @@
-"""Two ways the machines the window tests run on differ (nothing here changes PhoneKeep itself)."""
+"""Helpers for how the machines the window tests run on differ: Tk 8.6 on a Mac, and small screens (nothing here
+changes PhoneKeep itself)."""
 import sys
 import tkinter as tk
 
