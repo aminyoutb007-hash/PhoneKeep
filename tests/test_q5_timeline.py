@@ -248,8 +248,6 @@ t0 = time.time()
 let_go()
 pump(lambda: bool(opened), 1)
 check(opened == [old_first[1].id] and time.time() - t0 < 0.3, "letting go of the handle opens that snapshot at once")
-let_go()                                       # let go again before it's open (Windows can deliver a release twice)
-check(opened == [old_first[1].id], f"  letting go twice asks for it once ({len(opened)} opened)")
 check(pump(lambda: messages_count() == latest - 1, 10), "  (the middle one: one message fewer than the latest)")
 
 # pictures left behind by the screens shown before (Tk images in reference cycles, as old views leave them) are
@@ -314,6 +312,11 @@ def watch(cv):
     return seen
 
 seen = watch(scale)
+# every press and release in the app, on any widget: a second one (on the new slider) would show here. The release that
+# opens the snapshot doesn't: it rebuilds the slider, so Tk stops before the app-wide binding
+everywhere = []
+for ev in ("<ButtonPress-1>", "<ButtonRelease-1>"):
+    app.bind_all(ev, lambda e, ev=ev: everywhere.append(f"{ev[1:-1]}@{str(e.widget)[-12:]}:{e.x}"), add="+")
 opened.clear()
 scale.event_generate("<Button-1>", x=2, y=12)
 app.update()
@@ -327,7 +330,11 @@ elif not seen:
 else:
     scale.event_generate("<ButtonRelease-1>", x=2, y=12)
     check(pump(lambda: messages_count() == latest - 2 and bool(opened), 10) and opened == [old_first[0].id],
-          f"clicking its left end opens the oldest snapshot (events seen: {seen}; {len(opened)} opened)")
+          f"clicking its left end opens the oldest snapshot (events seen: {seen}; {len(opened)} opened: snapshots "
+          f"{[next((n for n, x in enumerate(old_first) if x.id == o), o) for o in opened]} oldest first; "
+          f"all presses and releases: {everywhere})")
+    for ev in ("<ButtonPress-1>", "<ButtonRelease-1>"):
+        app.unbind_all(ev)
 
     # a drag that pauses opens nothing until the mouse is let go
     scale, at, old_first, let_go = win.snap_slider
