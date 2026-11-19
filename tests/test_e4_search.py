@@ -104,6 +104,7 @@ BK = W / "00008030-E4TEST000000000000"
 import tkinter as tk
 from tkinter import ttk
 import app as appmod
+from tkcompat import hide                                   # Tk 8.6 on a Mac: a withdrawn phone window hangs update()
 import device as devmod
 import phone
 
@@ -139,7 +140,7 @@ def files_now():
 
 check(a.open_backup(BK), "the invented backup opens in a phone window")
 win = a.phone_windows[-1]
-win.withdraw()
+hide(win)
 check(pump(lambda: win.data is not None, 60), "  its backup is read")
 win.show_home()
 before = files_now()

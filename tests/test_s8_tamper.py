@@ -306,6 +306,7 @@ check(tamper.banner_text(MADE) == "This backup was changed after it was made on 
 
 # -- in the phone window ---------------------------------------------------------------------------------------
 import app as appmod
+from tkcompat import hide                                   # Tk 8.6 on a Mac: a withdrawn phone window hangs update()
 import device as devmod
 from tkinter import messagebox
 
@@ -342,7 +343,7 @@ def window(udid: str, seal_backups=True):
     check(a.open_backup(W / "Backups" / udid, udid=udid), f"  the snapshot opens in a phone window")
     w = a.phone_windows[-1]
     w.seal_backups = seal_backups
-    w.withdraw()
+    hide(w)
     pump(lambda: w.data is not None and w.tamper_state is not None, 90)
     return w
 

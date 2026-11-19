@@ -182,12 +182,15 @@ check(not any(w in body for w in ("set_value", "remove_value", "uninstall", "ins
 try:
     import tkinter as tk
     import overview_ui
+    from tkcompat import hide                               # Tk 8.6 on a Mac: a withdrawn window hangs update()
     root = tk.Tk()
-    root.withdraw()
+    hide(root)                                              # its window is a Toplevel of it: see-through, not withdrawn
 
     class Win(tk.Toplevel):
         def __init__(self):
             super().__init__(root)
+            self.geometry("1220x800")   # the phone window's size: a window sized by its contents keeps resizing
+            #                              itself as the Storage tips re-wrap (never settles; the phone window has a size)
             self.content = tk.Frame(self)
             self.content.pack(fill="both", expand=True)
             self.current, self.opened = None, []
@@ -214,7 +217,7 @@ try:
         return out
 
     w = Win()
-    w.withdraw()
+    hide(w)
     w.show_home()
     w.update()
     t = " | ".join(texts(w.content))

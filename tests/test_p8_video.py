@@ -227,8 +227,9 @@ if videoconv.available():
     check([p.name for p in out] == ["IMG_0200.MP4"] and info.get("codec") == "avc1",
           f"Most compatible: the HEVC video is saved as an H.264 MP4 ({[p.name for p in out]}, {info.get('codec')})")
     check(info.get("times") and all(t == SECS for t in info["times"])
-          and info["keys"].get("com.apple.quicktime.creationdate") == "2023-06-14T10:30:00+0100",
-          "  with the date taken inside (what QuickTime, Finder and Windows Media Player show as created)")
+          and info["keys"].get("com.apple.quicktime.creationdate") == TAKEN.astimezone().strftime("%Y-%m-%dT%H:%M:%S%z"),
+          "  with the date taken inside (what QuickTime, Finder and Windows Media Player show as created), in this "
+          "computer's time zone, as the library's dates are")
     check(info.get("xyz") == "+48.8584+002.2945/"
           and info["keys"].get("com.apple.quicktime.location.ISO6709") == "+48.8584+002.2945/",
           "  and the location")

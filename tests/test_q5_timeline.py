@@ -164,6 +164,9 @@ wv.list_devices = lambda: []
 wv.device_overview = lambda udid=None, apps=True, **k: None
 
 
+from tkcompat import hide, show                                   # Tk 8.6 on a Mac: a withdrawn phone window hangs update()
+
+
 class FakeApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -199,7 +202,7 @@ def messages_count():
 
 app = FakeApp()
 win = phone.PhoneWindow(app, {"DeviceName": "Test iPhone"}, UD)
-win.withdraw()
+hide(win)
 check(pump(lambda: win.data is not None, 60), "the window opens on the latest of three invented snapshots")
 win.open_app("messages")
 check(pump(lambda: messages_count() is not None, 30), "Messages is open")
@@ -248,38 +251,65 @@ check(opened == [old_first[1].id] and time.time() - t0 < 0.3, "letting go of the
 check(pump(lambda: messages_count() == latest - 1, 10), "  (the middle one: one message fewer than the latest)")
 
 # the mouse and the keys (on a shown window: a hidden one gets no events)
-win.deiconify()
+show(win)                                                     # undoes hide(): see-through gets no events
 win.geometry("1220x800+40+40")
 pump(lambda: win.snap_slider[0].winfo_ismapped() and win.snap_slider[0].winfo_width() > 100, 10)
 scale, at, old_first, let_go = win.snap_slider
 was = at.get()
 scale.focus_force()
 app.update()
-scale.event_generate("<Right>")
-app.update()
-right = at.get()
-scale.event_generate("<Left>")
-app.update()
-check(right == was + 1 and at.get() == was, f"the arrow keys move it one snapshot ({was} -> {right} -> {at.get()})")
-opened.clear()
-scale.event_generate("<Button-1>", x=2, y=12)
-scale.event_generate("<ButtonRelease-1>", x=2, y=12)
-check(pump(lambda: messages_count() == latest - 2 and bool(opened), 10) and opened == [old_first[0].id],
-      "clicking its left end opens the oldest snapshot")
+if app.focus_get() is not scale and not scale.winfo_viewable():   # not on this machine's screen (GitHub's Mac)
+    print(f"skip the arrow keys: the slider isn't viewable here, so it gets no key focus (it's on {app.focus_get()!s})",
+          flush=True)
+elif app.focus_get() is not scale:
+    check(False, f"the slider takes the key focus (it's on {app.focus_get()!s})")
+else:
+    scale.event_generate("<Right>")
+    app.update()
+    right = at.get()
+    scale.event_generate("<Left>")
+    app.update()
+    check(right == was + 1 and at.get() == was, f"the arrow keys move it one snapshot ({was} -> {right} -> {at.get()})")
+# the mouse: clicks and a drag, played on the slider. On GitHub's Mac machines the window isn't on their screen, so
+# the slider is mapped but not viewable and Tk gives it no events: skipped there only, with why. A press that doesn't
+# arrive while the slider is viewable (a stray grab, something over it) fails
+def watch(cv):
+    seen = []
+    for ev in ("<Button-1>", "<B1-Motion>", "<ButtonRelease-1>"):
+        cv.bind(ev, lambda e, ev=ev: seen.append(f"{ev[1:-1]}@{e.x}"), add="+")
+    return seen
 
-# a drag that pauses opens nothing until the mouse is let go
-scale, at, old_first, let_go = win.snap_slider
-pump(lambda: scale.winfo_ismapped() and scale.winfo_width() > 100, 10)
+seen = watch(scale)
 opened.clear()
-w = scale.winfo_width()
 scale.event_generate("<Button-1>", x=2, y=12)
-scale.event_generate("<B1-Motion>", x=w // 2, y=12)
 app.update()
-pump(lambda: False, 0.6)
-check(at.get() == 1 and not opened, f"a drag that pauses on a snapshot opens nothing yet (at {at.get()}, {len(opened)} opened)")
-scale.event_generate("<ButtonRelease-1>", x=w // 2, y=12)
-check(pump(lambda: messages_count() == latest - 1, 10) and opened == [old_first[1].id],
-      "  letting go opens the one it's on")
+x, y = scale.winfo_rootx() + 2, scale.winfo_rooty() + 12
+why = (f"grab {app.grab_current()!s}, viewable {scale.winfo_viewable()}, under that point "
+       f"{win.winfo_containing(x, y)!s}, key focus {app.focus_get()!s}")
+if not seen and not scale.winfo_viewable():
+    print(f"skip clicking and dragging the slider: it isn't viewable here, so it gets no press ({why})", flush=True)
+elif not seen:
+    check(False, f"a press on the slider reaches it ({why})")
+else:
+    scale.event_generate("<ButtonRelease-1>", x=2, y=12)
+    check(pump(lambda: messages_count() == latest - 2 and bool(opened), 10) and opened == [old_first[0].id],
+          f"clicking its left end opens the oldest snapshot (events seen: {seen}; {len(opened)} opened)")
+
+    # a drag that pauses opens nothing until the mouse is let go
+    scale, at, old_first, let_go = win.snap_slider
+    pump(lambda: scale.winfo_ismapped() and scale.winfo_width() > 100, 10)
+    seen = watch(scale)
+    opened.clear()
+    w = scale.winfo_width()
+    scale.event_generate("<Button-1>", x=2, y=12)
+    scale.event_generate("<B1-Motion>", x=w // 2, y=12)
+    app.update()
+    pump(lambda: False, 0.6)
+    check(at.get() == 1 and not opened and seen[-1:] == [f"B1-Motion@{w // 2}"],
+          f"a drag that pauses on a snapshot opens nothing yet (at {at.get()}, {len(opened)} opened, events seen: {seen})")
+    scale.event_generate("<ButtonRelease-1>", x=w // 2, y=12)
+    check(pump(lambda: messages_count() == latest - 1, 10) and opened == [old_first[1].id],
+          f"  letting go opens the one it's on (events seen: {seen}; {len(opened)} opened)")
 
 # deleting the snapshot being viewed: it's gone from the list and the slider, and the latest opens
 real_delete = sn.delete_snapshot
@@ -299,7 +329,7 @@ win.destroy()
 
 # one snapshot alone: no slider
 win = phone.PhoneWindow(app, {"DeviceName": "Test iPhone"}, UD1)
-win.withdraw()
+hide(win)
 pump(lambda: win.data is not None, 60)
 check(len(win.snaps) == 1 and not any(isinstance(w, tk.Canvas) for w in win.timeline.winfo_children()
                                       for w in [w, *w.winfo_children()]),

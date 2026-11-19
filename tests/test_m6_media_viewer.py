@@ -388,7 +388,14 @@ check(v.name_lbl.cget("text") == "Audio Message.caf", "  → goes to the next ti
 v.close()
 
 # ---- Save all ----
-check(panel.save_media_btn.winfo_ismapped() and panel.save_media_btn.enabled, "the Media tab has Save all")
+import tkcompat
+small = tkcompat.too_small(win, 1220, 800)                        # the phone window's normal size
+print("    " + tkcompat.screen(win), flush=True)
+if small and not panel.save_media_btn.winfo_ismapped():   # a smaller screen can cut the button off (GitHub's Mac)
+    print(f"skip the Media tab's Save all can be seen: it's cut off, {small}", flush=True)
+    check(panel.save_media_btn.enabled, "the Media tab has Save all")
+else:
+    check(panel.save_media_btn.winfo_ismapped() and panel.save_media_btn.enabled, "the Media tab has Save all")
 panel.save_all_media()
 check(pump(lambda: panel.saving is None and getattr(panel, "saved_media", None), 30), "Save all finishes")
 res = panel.saved_media

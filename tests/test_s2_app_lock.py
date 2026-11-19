@@ -20,6 +20,7 @@ os.environ["PYTHONUTF8"] = "1"
 os.environ["PHONEKEEP_NO_HELPER"] = "1"
 
 import applock
+from tkcompat import hide                                   # Tk 8.6 on a Mac: a withdrawn window hangs update()
 import keychain
 import phonekeep as wv
 
@@ -82,7 +83,7 @@ try:
     appmod.SETTINGS_FILE.write_text(json.dumps({"backup_dir": str(W / "Backups"), "archive_dir": str(W / "Archive"),
                                                 "first_run_done": True}), encoding="utf-8")
     a = appmod.App()
-    a.withdraw()
+    hide(a)  # Settings is tied (transient) to it: see-through, not withdrawn
 
     def pump(until, timeout=20):
         end = time.time() + timeout
@@ -162,7 +163,7 @@ try:
     # switching the lock off asks first when locked
     a.s["app_lock"] = True
     sw = appmod.SettingsWindow(a)
-    sw.withdraw()
+    hide(sw)
     a._unlocked = False
     answers[:] = [False]
     sw.lock_var.set(False)
@@ -205,10 +206,10 @@ try:
     # no Touch ID, no password, no Windows Hello: not offered, and nothing is locked
     kind["v"] = None
     c = appmod.App()
-    c.withdraw()
+    hide(c)  # Settings is tied (transient) to it: see-through, not withdrawn
     check(not c.lock_on() and c.is_unlocked(), "without any system check, there's no lock")
     sw = appmod.SettingsWindow(c)
-    sw.withdraw()
+    hide(sw)
     texts = []
 
     def walk(w):

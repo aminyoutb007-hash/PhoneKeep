@@ -20,6 +20,7 @@ import netguard
 netguard.install()
 
 import phonekeep as wv
+from tkcompat import hide                                   # Tk 8.6 on a Mac: a withdrawn window hangs update()
 import sections as sx
 import keychain
 
@@ -163,7 +164,7 @@ class FakeApp(tk.Tk):
 import time
 app = FakeApp()
 win = phone.PhoneWindow(app, {"DeviceName": "S3 iPhone"}, "00008030-S3TEST")
-win.withdraw()
+hide(win)
 end = time.time() + 90
 backup_apps = [k for k, *_r, where in phone.APPS if where == "backup"]
 while time.time() < end and not all(k in win.counts for k in backup_apps):
