@@ -276,15 +276,22 @@ if off:
           f"{scale.winfo_rooty()} {scale.winfo_width()}x{scale.winfo_height()}, screen "
           f"{win.winfo_screenwidth()}x{win.winfo_screenheight()})", flush=True)
 else:
+    def watch(cv):                      # which mouse events reach the slider (for the message if a check fails)
+        seen = []
+        for ev in ("<Button-1>", "<B1-Motion>", "<ButtonRelease-1>"):
+            cv.bind(ev, lambda e, ev=ev: seen.append(f"{ev[1:-1]}@{e.x}"), add="+")
+        return seen
+    seen = watch(scale)
     opened.clear()
     scale.event_generate("<Button-1>", x=2, y=12)
     scale.event_generate("<ButtonRelease-1>", x=2, y=12)
     check(pump(lambda: messages_count() == latest - 2 and bool(opened), 10) and opened == [old_first[0].id],
-          "clicking its left end opens the oldest snapshot")
+          f"clicking its left end opens the oldest snapshot (events seen: {seen}; {len(opened)} opened)")
 
     # a drag that pauses opens nothing until the mouse is let go
     scale, at, old_first, let_go = win.snap_slider
     pump(lambda: scale.winfo_ismapped() and scale.winfo_width() > 100, 10)
+    seen = watch(scale)
     opened.clear()
     w = scale.winfo_width()
     scale.event_generate("<Button-1>", x=2, y=12)
@@ -294,7 +301,7 @@ else:
     check(at.get() == 1 and not opened, f"a drag that pauses on a snapshot opens nothing yet (at {at.get()}, {len(opened)} opened)")
     scale.event_generate("<ButtonRelease-1>", x=w // 2, y=12)
     check(pump(lambda: messages_count() == latest - 1, 10) and opened == [old_first[1].id],
-          "  letting go opens the one it's on")
+          f"  letting go opens the one it's on (events seen: {seen}; {len(opened)} opened)")
 
 # deleting the snapshot being viewed: it's gone from the list and the slider, and the latest opens
 real_delete = sn.delete_snapshot
