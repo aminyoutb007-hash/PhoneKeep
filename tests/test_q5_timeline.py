@@ -248,6 +248,8 @@ t0 = time.time()
 let_go()
 pump(lambda: bool(opened), 1)
 check(opened == [old_first[1].id] and time.time() - t0 < 0.3, "letting go of the handle opens that snapshot at once")
+let_go()                                       # let go again before it's open (Windows can deliver a release twice)
+check(opened == [old_first[1].id], f"  letting go twice asks for it once ({len(opened)} opened)")
 check(pump(lambda: messages_count() == latest - 1, 10), "  (the middle one: one message fewer than the latest)")
 
 # pictures left behind by the screens shown before (Tk images in reference cycles, as old views leave them) are

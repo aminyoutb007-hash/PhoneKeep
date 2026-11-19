@@ -536,7 +536,10 @@ class PhoneWindow(tk.Toplevel):
         def go():
             wait["after"] = None
             snap = old_first[at.get()]
-            if snap.id != current:
+            # this slider stays until the snapshot it asked for is open: a second let-go meanwhile (a release Windows
+            # delivered twice) mustn't ask for the same one again
+            if snap.id != current and snap.id != wait.get("asked"):
+                wait["asked"] = snap.id
                 self.open_snapshot(snap)
 
         def moved(*_):
