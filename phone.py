@@ -15,6 +15,7 @@ Where the data comes from:
 from __future__ import annotations
 
 import datetime as dt
+import gc
 import io
 import os
 import queue
@@ -1162,6 +1163,10 @@ class PhoneWindow(tk.Toplevel):
             self.data_error = msg
             self.banner(msg, color=theme.ERROR_BG)
             self._update_src_line()
+        # Q5: the screens shown before leave Tk pictures behind as garbage. Collected on a worker thread (as the
+        # backup's reading makes garbage there), each one waits its turn on this thread to be deleted: after
+        # Photos, Contacts and the rest, going back to the latest snapshot took 14 s. Collect them here first.
+        gc.collect()
         self.backup_runner.submit(lambda: BackupData(self.backup_path, password), ok, err)
 
     def _count_next(self, keys: list):
