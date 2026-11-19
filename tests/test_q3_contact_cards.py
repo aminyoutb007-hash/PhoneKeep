@@ -256,6 +256,42 @@ pump(lambda: False, 0.5)
 check(win.contacts_view is old and win.current == "contacts" and "isn't in the iPhone's Contacts" in win.bar_text.cget("text"),
       f"a number in no contact opens nothing, and says so ({win.bar_text.cget('text')!r})")
 
+# a group chat's People window: the chosen person's Contact card (M5 + Q3)
+import exportfilter
+ppl = exportfilter.people_in([{"from_me": True, "text": "hi"},
+                              {"sender": "Sam", "detail": {"number": "+447700900111"}, "text": "a"},
+                              {"sender": "Sam", "text": "b"},
+                              {"sender": "Hidden", "detail": {}, "text": "c"}])
+check({p["name"]: p["addr"] for p in ppl} == {"Sam": "+447700900111", "You": "", "Hidden": ""},
+      "a group's people carry the number their messages came from (none for you, or when the app kept none)")
+cv = win.contacts_view
+check(card_of("Karim B"), "Karim's card again")
+cv.with_tab("chats")
+grp_row = next(i for i in cv.with_list.get_children() if "Messages group" in cv.with_list.item(i, "text"))
+cv.open_with(grp_row)
+
+
+def chat_panel():
+    return getattr(win, "chat_panel", None) or next((c for c in win.content.winfo_children() if hasattr(c, "show_chat")), None)
+
+
+check(pump(lambda: win.current == "messages" and chat_panel() is not None and chat_panel().shown_chat is not None
+           and chat_panel().shown_chat[1] == cv.with_items[grp_row][1][0], 30), "his Messages group opens")
+panel = chat_panel()
+panel.open_people()
+pw = panel.people_win
+check(pw is not None and pw.winfo_exists(), "  its People window opens")
+names = {panel.people_tree.item(i, "text"): i for i in panel.people_tree.get_children()}
+karim_row = next((i for n, i in names.items() if "Karim" in n), None)
+check(karim_row is not None, f"  Karim is in it ({sorted(names)})")
+old = win.contacts_view
+panel.people_tree.focus(karim_row)
+pw.card()
+check(pump(lambda: win.current == "contacts" and win.contacts_view is not old
+           and win.contacts_view.current is not None, 30)
+      and win.contacts_view.current["name"] == "Karim B" and not pw.winfo_exists(),
+      "  Contact card on him opens his card (and the People window closes)")
+
 # arrowing down the list: only the card on screen is looked for, not every one passed on the way
 cv = win.contacts_view
 calls_made = []
@@ -264,7 +300,9 @@ pp.find_all = lambda get, keys: (calls_made.append(1), time.sleep(0.3), real_fin
 cv.bg.submit(lambda: time.sleep(0.5), lambda _r: None)          # the worker is busy when the clicks come
 for name in ("Alex Example", "Dentist, Smile & Co", "Karim B", "Alex Example", "Karim B"):
     cv.pick(next(i for i, p in enumerate(cv.people) if p["name"] == name))
-check(pump(lambda: cv.with_found is not None and cv.current["name"] == "Karim B", 30) and len(calls_made) == 1,
+pump(lambda: len(calls_made) >= 1 and cv.with_found is not None and cv.current["name"] == "Karim B", 30)
+pump(lambda: False, 1.0)                                         # time for any further lookup to show up
+check(cv.with_found is not None and cv.current["name"] == "Karim B" and len(calls_made) == 1,
       f"five cards in a row: only the last is looked for ({len(calls_made)} looked for)")
 pp.find_all = real_find
 

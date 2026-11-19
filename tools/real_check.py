@@ -1046,6 +1046,67 @@ try:
                 check(shown == (q3_ref[0], q3_ref[1][0]), "Q3: a click on the card's newest chat opens that chat "
                                                           f"in its app ({shown is not None})")
 
+        # Q3 in group chats: everyone in a group whose messages came from a number or address of exactly one contact
+        # (by this check's own matcher) gets that contact's card from the People window. Then one is opened for real.
+        import exportfilter
+        q3_own = {}
+        for i, q3_p in enumerate(q3_people):
+            for _l, v in list(q3_p.get("phones", ())) + list(q3_p.get("emails", ())):
+                if _own_key(v):
+                    q3_own.setdefault(_own_key(v), set()).add(i)
+        q3_groups = []
+        for q3_app, _l in pp.CHAT_APPS:
+            try:
+                v = win.data.get(q3_app)
+                q3_groups += [(q3_app, c) for c in (v if q3_app == "messages" else v["chats"]) if c.get("group")]
+            except wv.PhoneKeepError:
+                pass
+        same = differ = 0
+        sample = None
+        for q3_app, c in q3_groups:
+            for gp in exportfilter.people_in(c["messages"]):
+                if not gp["addr"]:
+                    continue
+                hits = q3_own.get(_own_key(gp["addr"]), set())
+                want_i = next(iter(hits)) if len(hits) == 1 else None
+                if pp.person_for(q3_people, gp["addr"]) == want_i:
+                    same += 1
+                else:
+                    differ += 1
+                if want_i is not None and sample is None:
+                    sample = (q3_app, c["id"], gp["name"], want_i)
+        if not q3_groups:
+            note("Q3: no group chats in the backup; the People window's Contact card was not tried on real data")
+        else:
+            check(differ == 0, f"Q3 in group chats: the People window finds the same contact as counted here for everyone "
+                               f"whose number it has ({same} people in {len(q3_groups)} groups, {differ} different)")
+        if sample is not None:
+            q3_app, q3_cid, q3_name, q3_i = sample
+            win.open_app(q3_app)
+            q3_panel = []
+            pump(app, lambda: win.current == q3_app and not loading(win)
+                 and bool(q3_panel or q3_panel.extend(c for c in win.content.winfo_children()
+                                                       if hasattr(c, "show_chat"))), 300)
+            opened_card = False
+            if q3_panel:
+                q3_panel[0].show_chat(q3_app, q3_cid)
+                app.update()
+                q3_panel[0].open_people()
+                pw = q3_panel[0].people_win
+                rows_ = {q3_panel[0].people_tree.item(i, "text"): i for i in q3_panel[0].people_tree.get_children()}
+                if pw is not None and q3_name in rows_:
+                    old_cv = getattr(win, "contacts_view", None)
+                    q3_panel[0].people_tree.focus(rows_[q3_name])
+                    pw.card()
+                    pump(app, lambda: win.current == "contacts" and getattr(win, "contacts_view", None) is not old_cv
+                         and win.contacts_view.current is not None, 300)
+                    opened_card = (win.current == "contacts" and win.contacts_view is not None
+                                   and win.contacts_view.current == q3_people[q3_i])
+            check(opened_card, "Q3: in a real group chat, the People window's Contact card opens that person's card")
+        else:
+            note("Q3: no one in a group chat is a contact by their number; the People window's Contact card was not "
+                 "opened on real data")
+
     # -- D4: Notes as on the phone: every note's body read with its styles, every attachment found in the Notes
     # database with its file in the backup, every picture drawn in the Notes screen, and a PDF of every note that has
     # the same pictures. The attachments are counted straight from NoteStore.sqlite (rows that are attachments of a

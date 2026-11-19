@@ -1348,8 +1348,9 @@ class ChatPanel(tk.Frame):
         w = self.people_win = PeopleWindow(self, f"People in {c['name']}")
         tk.Label(w, text=f"People in {c['name']}", bg=BG, fg=INK, font=font(15, "bold"),
                  anchor="w").pack(fill="x", padx=16, pady=(14, 2))
-        tk.Label(w, text="Tick one or more people to see only their messages. Saving this chat keeps the same choice.",
-                 bg=BG, fg=MUTED, font=font(11), anchor="w", justify="left", wraplength=380).pack(fill="x", padx=16, pady=(0, 8))
+        w.note = tk.Label(w, text="Tick one or more people to see only their messages. Saving this chat keeps the same "
+                                  "choice.", bg=BG, fg=MUTED, font=font(11), anchor="w", justify="left", wraplength=380)
+        w.note.pack(fill="x", padx=16, pady=(0, 8))
         people = self._people_of(key, c)
         frm = tk.Frame(w, bg=BG)
         frm.pack(fill="both", expand=True, padx=16)
@@ -1378,6 +1379,23 @@ class ChatPanel(tk.Frame):
         tree.bind("<space>", lambda e: (flip(tree.focus()), "break")[1])
         bar = tk.Frame(w, bg=BG)
         bar.pack(fill="x", padx=16, pady=12)
+
+        def card():
+            """Q3: the chosen person's contact card (the row with the key focus, or the first one)."""
+            p_iid = tree.focus() or next(iter(tree.get_children()), "")
+            p = people[int(p_iid[1:])] if p_iid else None
+            if p is None:
+                return
+            fn = self.card_for(p["addr"]) if self.card_for and p.get("addr") else None
+            if fn is None:
+                w.note.configure(text=f"{p['name']}: " + ("that's you." if p["name"] == "You" else
+                                 "not in the iPhone's Contacts." if p.get("addr") else
+                                 "the app didn't keep their number, so their card can't be found."))
+                return
+            w.destroy()
+            fn()
+        w.card = card
+        RoundButton(bar, "Contact card", card, "secondary", 130, 34, 12, bg=BG).pack(side="left")
         RoundButton(bar, "Done", w.destroy, "primary", 90, 34, 12, bg=BG).pack(side="right")
         RoundButton(bar, "Everyone", lambda: self.set_people(key, cid, set()), "secondary", 110, 34, 12,
                     bg=BG).pack(side="right", padx=6)

@@ -110,14 +110,17 @@ def sender_of(m: dict) -> Optional[str]:
 
 
 def people_in(messages: list) -> list[dict]:
-    """A group chat's participants: [{"name", "count", "days"}], most messages first ("days": sorted dates)."""
+    """A group chat's participants: [{"name", "count", "days", "addr"}], most messages first ("days": sorted dates;
+    "addr": the number or address their messages came from, "" for your own and when the app didn't keep one)."""
     got: dict = {}
     for m in messages:
         who = sender_of(m)
         if who is None:
             continue
-        p = got.setdefault(who, {"name": who, "count": 0, "days": []})
+        p = got.setdefault(who, {"name": who, "count": 0, "days": [], "addr": ""})
         p["count"] += 1
+        if not p["addr"] and not m.get("from_me"):
+            p["addr"] = ((m.get("detail") or {}).get("number") or "").strip()
         if m.get("time"):
             p["days"].append(m["time"][:10])
     for p in got.values():
