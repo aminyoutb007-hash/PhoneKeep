@@ -9,6 +9,7 @@ from typing import Optional
 
 import deviceinfo as di
 import storage_advice
+import storage_map
 import theme
 import ui
 from ui import BG, CARD, INK, LINE, MUTED, RoundButton, font
@@ -230,8 +231,13 @@ def storage_view(win, ov: di.Overview):
     c.pack(fill="x")
     if storage_unknown(win, c, ov, wrap=640):
         return
-    tk.Label(c, text=f"{di.human(ov.used)} used · {di.human(ov.free)} free", bg=CARD, fg=INK, font=font(17, "bold"),
-             anchor="w").pack(fill="x", padx=18, pady=(16, 6))
+    line = tk.Frame(c, bg=CARD)
+    line.pack(fill="x", padx=18, pady=(16, 6))
+    tk.Label(line, text=f"{di.human(ov.used)} used · {di.human(ov.free)} free", bg=CARD, fg=INK, font=font(17, "bold"),
+             anchor="w").pack(side="left")
+    win.map_button = RoundButton(line, "Storage map ›", lambda: storage_map.view(win, win.overview or ov, again=True),
+                                 "secondary", 140, 30, 12)       # Q4
+    win.map_button.pack(side="right")
     bar = storage_bar(c, ov, cats, width=640, height=16)
     bar.pack(anchor="w", padx=18)
     win.storage_rows = {}

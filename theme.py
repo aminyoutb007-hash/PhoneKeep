@@ -149,6 +149,26 @@ STORAGE = {"Apps": "#4F7CFF", "Photos": "#F2A93B", "Messages": "#34C759", "Syste
 if DARK:
     STORAGE["Free"], STORAGE["Other"] = "#3A3A3C", "#636366"
 
+
+def _rgb(c: str) -> tuple[int, int, int]:
+    return int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+
+
+def storage_shade(colour: str, i: int, n: int) -> str:
+    """Q4: the i-th of n shades of a storage colour, for what's inside it on the storage map: the colour itself first,
+    then paler ones (deeper in dark mode), never as far as the card's own colour."""
+    t = 0.55 * i / max(1, n - 1) if n > 1 else 0.0
+    to = (0, 0, 0) if DARK else (255, 255, 255)
+    return "#%02X%02X%02X" % tuple(round(c + (e - c) * t) for c, e in zip(_rgb(colour), to))
+
+
+def ink_on(colour: str) -> str:
+    """Q4: dark or light text on a block of this colour, whichever stands out more."""
+    lum = lambda v: (v / 255 / 12.92) if v <= 10 else ((v / 255 + 0.055) / 1.055) ** 2.4
+    r, g, b = (lum(v) for v in _rgb(colour))
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return "#1C1C1E" if (y + 0.05) / 0.05 >= 1.05 / (y + 0.05) else "#FFFFFF"
+
 # -- the preview viewer (Space) is dark, like Quick Look ---------------------------------------------------------------------
 VIEWER_BG, VIEWER_TEXT, VIEWER_TEXT_2 = "#1C1C1E", "#F2F2F7", "#A1A1AA"
 VIEWER_PANEL, VIEWER_ERROR, VIEWER_BUTTON = "#2C2C2E", "#FF6B6B", "#0A84FF"
