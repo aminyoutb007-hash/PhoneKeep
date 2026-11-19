@@ -44,8 +44,9 @@ These make PhoneKeep pleasant. They never come before security or ease of use, a
 **What the user sees and does:** clicking a person anywhere (chat, call, contact) opens their card: photo, numbers, emails, and tabs for every Message / WhatsApp chat, call and voicemail with them, newest first.
 
 **Done when**
-- [ ] A person's card lists their chats in all three messaging apps, their calls and voicemails. (Built and tested on
-  an invented backup; waits for the real-iPhone check.)
+- [x] A person's card lists their chats in all three messaging apps, their calls and voicemails. *(19 Nov: tested on
+  an invented backup, and on the owner's iPhone `tools/real_check.py`'s Q3 step found the same one-to-one chats, calls
+  and voicemails for every contact as its own count, and the card's click opened the newest chat; #117.)*
 
 **How it's built (people.py):** the card's foot has Chats, Calls and Voicemail tabs, found in the background from what
 the phone window loads anyway. A number matches by its last nine digits, so the same number written differently is one
@@ -67,7 +68,7 @@ told). Not yet: the people in a group chat (M5's People window) don't open their
 A block too small for its name is named under the map; pointing at a block shows its name, size and share. Read-only: the figures are the Storage screen's (V3) and the backup's file list, read once per backup in the background; nothing is asked of the phone.
 
 **Done when**
-- [ ] On a real iPhone, the map adds up to the whole iPhone, Photos' blocks add up to the backup's photo files, and Photos › Videos lists its largest videos biggest first (`tools/real_check.py`, Q4 step).
+- [x] On a real iPhone, the map adds up to the whole iPhone, Photos' blocks add up to the backup's photo files, and Photos › Videos lists its largest videos biggest first (`tools/real_check.py`, Q4 step). *(19 Nov, the owner's iPhone: passed three times, with System left off and said, as it can't be estimated there; #118.)*
 
 ## Q5. Backup timeline
 
