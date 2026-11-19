@@ -746,6 +746,9 @@ class ChatPanel(tk.Frame):
         self.people_win = self.people_tree = None
         self.shown_chat = None
         self.people_btn = RoundButton(head, "People", self.open_people, "secondary", 120, 30, 12, bg=CARD)
+        # Q3: a one-to-one chat with someone in Contacts opens their card; card_for(jid) -> open it, or None
+        self.card_for = None
+        self.card_btn = RoundButton(head, "Contact card", None, "secondary", 130, 30, 12, bg=CARD)
         self.pv_sub = tk.Label(right, text="Click a chat on the left to see its latest messages.",
                                bg=CARD, fg=MUTED, font=font(11), anchor="w")
         self.pv_sub.pack(fill="x", padx=14, pady=(0, 6))
@@ -979,6 +982,12 @@ class ChatPanel(tk.Frame):
             self.people_btn.pack(side="right")
         else:
             self.people_btn.pack_forget()
+        go = self.card_for(c.get("jid")) if self.card_for and not c["group"] else None
+        if go is not None:
+            self.card_btn.command = go
+            self.card_btn.pack(side="right")
+        else:
+            self.card_btn.pack_forget()
         if self.tab == "media":
             self._show_media()
             self.text_chat = None           # the conversation is drawn when its tab is shown again

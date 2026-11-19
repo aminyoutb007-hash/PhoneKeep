@@ -311,13 +311,13 @@ a.update()
 # the card
 v.tree.selection_set(str(alex["id"]))
 a.update()
-texts = [w.cget("text") for w in v.card_box.winfo_children()[0].winfo_children()]
+texts = [w.cget("text") for w in v.card_inner.winfo_children()[0].winfo_children()]
 check("Alex Example" in texts and v.card_photo.cget("image"), "a click on Alex shows his card with his photo")
 kinds = [(k, val) for k, _w, val in v.links]
 check(kinds == [("phone number", "+44 7700 900111"), ("email address", "alex@example.com"),
                 ("address", "1 Test Street\nTestbury TE1 1ST\nUnited Kingdom"), ("web address", "https://example.com/alex")],
       f"the number, email, address and website can be clicked: {kinds}")
-fields = [w.cget("text") for w in v.card_box.winfo_children()[1].winfo_children()]
+fields = [w.cget("text") for w in v.card_inner.winfo_children()[1].winfo_children()]
 check("1 January 1990" in fields and "iCloud, Book club" in fields, "…the birthday and his lists are there too")
 for kind, w, val in v.links:
     w.event_generate("<Button-1>")

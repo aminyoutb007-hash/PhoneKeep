@@ -1400,6 +1400,26 @@ class PhoneWindow(tk.Toplevel):
         self.pending_find = (hit.key, query.strip(), hit.ref)
         self.open_app(hit.key)
 
+    def card_for(self, addr) -> Optional[Callable]:
+        """Q3: a way to open the card of the contact with this number or address, or None (not in Contacts)."""
+        import people as pp
+        data = self.data
+        i = pp.person_for(data.contacts if data is not None else [], addr)
+        if i is None:
+            return None
+        import search
+        return lambda: self.open_hit(search.Hit("contacts", "", "", ref=i), "")
+
+    def open_card_for(self, addr, what: str = "") -> None:
+        if addr is None:
+            self.banner(f"Click a {what} first, then Contact card", color=theme.ACCENT_PALE)
+            return
+        go = self.card_for(addr)
+        if go is None:
+            self.banner("This number or address isn't in the iPhone's Contacts", color=theme.ACCENT_PALE)
+        else:
+            go()
+
     def _apply_find(self, key: str):
         pending, self.pending_find = self.pending_find, None
         hook = self.find_hook
@@ -1825,6 +1845,7 @@ class PhoneWindow(tk.Toplevel):
                                      f"{sum(len(c['messages']) for c in chats):,} messages"
                                      f" · backup of {self.data.info.get('date') or '?'}")
         panel = ui.ChatPanel(self.content, lists, self.data.preview, select_all=False, preview_limit=600)
+        panel.card_for = self.card_for                              # Q3: "Contact card" on a one-to-one chat
         panel.pack(fill="both", expand=True)
         self.find_hook = (key, panel.q, lambda ref: panel.show_chat(key, ref[0], ref[1]))
 
@@ -2124,7 +2145,8 @@ class PhoneWindow(tk.Toplevel):
     def v_calls(self, key, rows):
         missed = sum(1 for r in rows if r[1] == "Missed")
         self.view_sub.configure(text=f"{len(rows):,} calls · {missed:,} missed")
-        self.table_view(key, sx.CALL_HEADERS, rows, [150, 80, 180, 140, 110, 70, 120])
+        self.table_view(key, sx.CALL_HEADERS, rows, [150, 80, 180, 140, 110, 70, 120],
+                        actions=[("Contact card", lambda sel: self.open_card_for(sel[0][3] if sel else None, "call"))])
 
     def v_contacts(self, key, people):
         import contacts_ui
@@ -2647,7 +2669,9 @@ class PhoneWindow(tk.Toplevel):
         play, save = self._audio_actions(key, getter)
         self.table_view(key, ["Date", "From", "Number", "Length", "Status"], [r for r in rows],
                         [150, 200, 150, 80, 80], on_double=play, preview=self._preview_from(getter),
-                        actions=[("▶  Play", play), ("Save selected", save)])
+                        actions=[("▶  Play", play), ("Save selected", save),
+                                 ("Contact card", lambda sel: self.open_card_for(sel[0][5]["number"] if sel else None,
+                                                                   "voicemail"))])
 
     def v_voicememos(self, key, items):
         self.view_sub.configure(text=f"{len(items):,} recordings")
