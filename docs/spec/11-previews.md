@@ -47,8 +47,8 @@ These make PhoneKeep pleasant. They never come before security or ease of use, a
 - [x] A person's card lists their chats in all three messaging apps, their calls and voicemails. *(19 Nov: tested on
   an invented backup, and on the owner's iPhone `tools/real_check.py`'s Q3 step found the same one-to-one chats, calls
   and voicemails for every contact as its own count, and the card's click opened the newest chat; #117.)*
-- [x] In a group chat, the People window opens the chosen person's card. *(19 Nov, the owner's iPhone: in its WhatsApp
-  group, whose members all have hidden-number ids, the People window found the same contact as `tools/real_check.py`'s own
+- [x] In a group chat, the People window opens the chosen person's card. *(19 Nov, the owner's iPhone: in a WhatsApp
+  group whose members all have hidden-number ids, the People window found the same contact as `tools/real_check.py`'s own
   count for everyone whose number it had, and Contact card opened that person's card.)*
 
 **How it's built (people.py):** the card's foot has Chats, Calls and Voicemail tabs, found in the background from what

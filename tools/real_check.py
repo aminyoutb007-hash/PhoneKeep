@@ -1093,8 +1093,11 @@ try:
                 app.update()
                 q3_panel[0].open_people()
                 pw = q3_panel[0].people_win
-                rows_ = {q3_panel[0].people_tree.item(i, "text"): i for i in q3_panel[0].people_tree.get_children()}
-                if pw is not None and q3_name in rows_:
+                ok_win = pw is not None and pw.winfo_exists() and q3_panel[0].people_tree is not None \
+                    and q3_panel[0].people_tree.winfo_exists()
+                rows_ = ({q3_panel[0].people_tree.item(i, "text"): i for i in q3_panel[0].people_tree.get_children()}
+                         if ok_win else {})
+                if ok_win and q3_name in rows_:
                     old_cv = getattr(win, "contacts_view", None)
                     q3_panel[0].people_tree.focus(rows_[q3_name])
                     pw.card()
