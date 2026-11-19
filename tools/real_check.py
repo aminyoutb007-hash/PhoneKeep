@@ -993,7 +993,6 @@ try:
                 pump(app, lambda: win.current == q3_ref[0] and not loading(win)
                      and bool(q3_panel or q3_panel.extend(c for c in win.content.winfo_children()
                                                            if hasattr(c, "show_chat"))), 300)
-                shown = q3_panel[0].shown_chat if q3_panel else None
                 pump(app, lambda: bool(q3_panel) and q3_panel[0].shown_chat == (q3_ref[0], q3_ref[1][0]), 60)
                 shown = q3_panel[0].shown_chat if q3_panel else None
                 check(shown == (q3_ref[0], q3_ref[1][0]), "Q3: a click on the card's newest chat opens that chat "

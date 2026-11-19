@@ -200,6 +200,24 @@ check(pump(lambda: win.current == "contacts" and win.contacts_view is not old
            and win.contacts_view.current is not None, 30)
       and win.contacts_view.current["name"] == "Karim B", "the call's Contact card opens Karim's card")
 
+# a click on the voicemail opens Voicemail with it chosen, and its Contact card opens Karim's card
+cv = win.contacts_view
+by_name = {p["name"]: i for i, p in enumerate(cv.people)}
+check(card_of("Karim B"), "Karim's card again")
+cv.with_tab("voicemail")
+cv.open_with(cv.with_list.get_children()[0])
+check(pump(lambda: win.current == "voicemail" and win.find_hook and win.find_hook[0] == "voicemail", 30),
+      "a click on the voicemail opens Voicemail")
+pump(lambda: False, 0.3)
+t = tree_in(win.content)
+chosen = [t.item(i, "values") for i in t.selection()] if t is not None else []
+check(len(chosen) == 1 and chosen[0][2] == "+447700900456", f"  with that voicemail chosen ({chosen})")
+old = win.contacts_view
+win.open_card_for(chosen[0][2], "voicemail")
+check(pump(lambda: win.current == "contacts" and win.contacts_view is not old
+           and win.contacts_view.current is not None, 30)
+      and win.contacts_view.current["name"] == "Karim B", "  its Contact card opens Karim's card")
+
 # Alex: a Messages chat (iMessage and SMS together), a phone call and a FaceTime by email; no voicemail
 cv = win.contacts_view
 by_name = {p["name"]: i for i, p in enumerate(cv.people)}
@@ -228,8 +246,23 @@ check(pump(lambda: win.current == "contacts" and win.contacts_view is not old
       and win.contacts_view.current["name"] == "Alex Example", "  which opens Alex's card")
 
 # a number in no contact: said, nothing opened
+old = win.contacts_view
 win.open_card_for("+447700900999", "call")
-check(win.current == "contacts", "a number in no contact opens nothing (it says so)")
+pump(lambda: False, 0.5)
+check(win.contacts_view is old and win.current == "contacts" and "isn't in the iPhone's Contacts" in win.bar_text.cget("text"),
+      f"a number in no contact opens nothing, and says so ({win.bar_text.cget('text')!r})")
+
+# arrowing down the list: only the card on screen is looked for, not every one passed on the way
+cv = win.contacts_view
+calls_made = []
+real_find = pp.find_all
+pp.find_all = lambda get, keys: (calls_made.append(1), time.sleep(0.3), real_find(get, keys))[2]
+cv.bg.submit(lambda: time.sleep(0.5), lambda _r: None)          # the worker is busy when the clicks come
+for name in ("Alex Example", "Dentist, Smile & Co", "Karim B", "Alex Example", "Karim B"):
+    cv.pick(next(i for i, p in enumerate(cv.people) if p["name"] == name))
+check(pump(lambda: cv.with_found is not None and cv.current["name"] == "Karim B", 30) and len(calls_made) == 1,
+      f"five cards in a row: only the last is looked for ({len(calls_made)} looked for)")
+pp.find_all = real_find
 
 check(not any(p.is_file() for p in (W / "Archive").rglob("*")) if (W / "Archive").exists() else True,
       "nothing was saved anywhere")

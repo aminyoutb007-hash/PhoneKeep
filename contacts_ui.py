@@ -332,6 +332,7 @@ class ContactsView:
         if not keys or data is None:
             self._found(p, {"chats": [], "calls": [], "voicemail": [], "missing": []})
             return
+        self.bg.clear()                              # a card no longer shown needn't be looked for (arrowing down a list)
         self.bg.submit(lambda: pp.find_all(data.get, keys), lambda res: self._found(p, res))
 
     def _found(self, p, res):
