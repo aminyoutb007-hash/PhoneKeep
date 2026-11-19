@@ -190,6 +190,40 @@ try:
     check(ok, "the latest backup opens and the home screen counts fill in")
     note("counts: " + ", ".join(f"{k} {win.counts.get(k)}" for k in backup_apps if win.counts.get(k)))
 
+    # -- Q4: the storage map. Its blocks add up to the whole iPhone, Photos' blocks to the backup's photo files
+    # (summed here on their own), and Videos lists the largest videos biggest first. Counts and sizes only.
+    import storage_map
+    t = time.time()
+    storage_map.view(win, win.overview)
+    pump(app, lambda: getattr(win, "map_media", None) and win.map_media[0] is win.data, 300)
+    storage_map.view(win, win.overview)
+    app.update()
+    top_ok = (win.current == "storagemap" and win.overview.total
+              and sum(b.size for b in win.map_blocks) == win.overview.total)
+    dcim = win.data.file_meta("CameraRollDomain", "Media/DCIM/")
+    own_all = sum((m[2] or 0) for m in dcim.values())
+    own_vids = sorted(((m[2] or 0) for rel, m in dcim.items()
+                       if rel.lower().endswith((".mov", ".mp4", ".m4v", ".3gp", ".avi"))), reverse=True)
+    q4_photos = storage_map.levels(win.overview, [], win.map_media[1])
+    photo_sum = sum(b.size for b in q4_photos["photos"][1])
+    check(top_ok and photo_sum == own_all,
+          f"Q4: the storage map adds up to the whole iPhone, and Photos' blocks to the backup's photo files "
+          f"({len(q4_photos['photos'][1])} blocks; read in {time.time() - t:.0f} s)")
+    if own_vids:
+        win.map_open("Photos")
+        app.update()
+        win.map_open("Videos")
+        app.update()
+        shown = [b.size for b in win.map_blocks]
+        want = own_vids[:storage_map.MOST_VIDEOS] + ([sum(own_vids[storage_map.MOST_VIDEOS:])]
+                                                     if sum(own_vids[storage_map.MOST_VIDEOS:]) else [])
+        check(win.map_key == "videos" and shown == [v for v in want if v],
+              f"Q4: Photos › Videos lists the largest videos biggest first ({min(len(own_vids), storage_map.MOST_VIDEOS)} "
+              f"blocks, {max(0, len(own_vids) - storage_map.MOST_VIDEOS)} smaller together)")
+    else:
+        note("Q4: no videos in the backup; the Videos level was not tried on real data")
+    win.show_home()
+
     # -- every app screen -----------------------------------------------------------------------------------
     for key, label, *_r in phone.APPS:
         t = time.time()
