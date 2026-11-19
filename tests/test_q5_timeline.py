@@ -267,23 +267,25 @@ else:
     scale.event_generate("<Left>")
     app.update()
     check(right == was + 1 and at.get() == was, f"the arrow keys move it one snapshot ({was} -> {right} -> {at.get()})")
-# the mouse: only where the slider is on the screen. On a smaller one (GitHub's Mac machines: 1024x768) the window is
-# cut to the screen and the slider, at the card's foot, is below it, where a click Tk plays never lands
-off = (scale.winfo_rooty() + scale.winfo_height() > win.winfo_screenheight()
-       or scale.winfo_rootx() + scale.winfo_width() > win.winfo_screenwidth())
-if off:
-    print(f"skip clicking and dragging the slider: it's off the screen here (slider at {scale.winfo_rootx()},"
-          f"{scale.winfo_rooty()} {scale.winfo_width()}x{scale.winfo_height()}, screen "
-          f"{win.winfo_screenwidth()}x{win.winfo_screenheight()})", flush=True)
+# the mouse: clicks and a drag, played on the slider. Tk hands them to it only where the machine delivers events to
+# the window: GitHub's Mac machines deliver none (the slider gets no press, as it gets no key focus above), and there
+# the clicks are skipped, with why. Seen by the slider's own bindings, so it's measured, not guessed
+def watch(cv):
+    seen = []
+    for ev in ("<Button-1>", "<B1-Motion>", "<ButtonRelease-1>"):
+        cv.bind(ev, lambda e, ev=ev: seen.append(f"{ev[1:-1]}@{e.x}"), add="+")
+    return seen
+
+seen = watch(scale)
+opened.clear()
+scale.event_generate("<Button-1>", x=2, y=12)
+app.update()
+if not seen:
+    x, y = scale.winfo_rootx() + 2, scale.winfo_rooty() + 12
+    print(f"skip clicking and dragging the slider: this machine delivered no press to it (grab "
+          f"{app.grab_current()!s}, viewable {scale.winfo_viewable()}, under that point "
+          f"{win.winfo_containing(x, y)!s}, key focus {app.focus_get()!s})", flush=True)
 else:
-    def watch(cv):                      # which mouse events reach the slider (for the message if a check fails)
-        seen = []
-        for ev in ("<Button-1>", "<B1-Motion>", "<ButtonRelease-1>"):
-            cv.bind(ev, lambda e, ev=ev: seen.append(f"{ev[1:-1]}@{e.x}"), add="+")
-        return seen
-    seen = watch(scale)
-    opened.clear()
-    scale.event_generate("<Button-1>", x=2, y=12)
     scale.event_generate("<ButtonRelease-1>", x=2, y=12)
     check(pump(lambda: messages_count() == latest - 2 and bool(opened), 10) and opened == [old_first[0].id],
           f"clicking its left end opens the oldest snapshot (events seen: {seen}; {len(opened)} opened)")
@@ -298,7 +300,8 @@ else:
     scale.event_generate("<B1-Motion>", x=w // 2, y=12)
     app.update()
     pump(lambda: False, 0.6)
-    check(at.get() == 1 and not opened, f"a drag that pauses on a snapshot opens nothing yet (at {at.get()}, {len(opened)} opened)")
+    check(at.get() == 1 and not opened and seen[-1:] == [f"B1-Motion@{w // 2}"],
+          f"a drag that pauses on a snapshot opens nothing yet (at {at.get()}, {len(opened)} opened, events seen: {seen})")
     scale.event_generate("<ButtonRelease-1>", x=w // 2, y=12)
     check(pump(lambda: messages_count() == latest - 1, 10) and opened == [old_first[1].id],
           f"  letting go opens the one it's on (events seen: {seen}; {len(opened)} opened)")
