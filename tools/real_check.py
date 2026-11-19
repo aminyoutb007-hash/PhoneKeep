@@ -190,6 +190,54 @@ try:
     check(ok, "the latest backup opens and the home screen counts fill in")
     note("counts: " + ", ".join(f"{k} {win.counts.get(k)}" for k in backup_apps if win.counts.get(k)))
 
+    # -- Q4: the storage map. Its blocks add up to the whole iPhone, Photos' blocks to the backup's photo files
+    # (summed here on their own), and Videos lists the largest videos biggest first. Counts and sizes only.
+    import storage_map
+    t = time.time()
+    storage_map.view(win, win.overview, again=True)
+    pump(app, lambda: win.data is None or (getattr(win, "map_media", None) and win.map_media[0] is win.data)
+         or getattr(win, "map_failed", None), 300)
+    if win.data is None or not (getattr(win, "map_media", None) and win.map_media[0] is win.data):
+        check(False, "Q4: the storage map read the backup's file list" + (": " + win.map_failed[1][:100]
+                                                                          if getattr(win, "map_failed", None) else
+                                                                          " (no backup open, or no answer in 300 s)"))
+    else:
+        storage_map.view(win, win.overview)
+        app.update()
+        q4_cats = __import__("deviceinfo").categories(win.overview, win.photos_bytes, win.messages_bytes)
+        unknown = any(n is None for _c, n, _e in q4_cats)
+        drawn = sum(b.size for b in win.map_blocks)
+        # every category with a size is on the map; when System can't be estimated it's left out, and the map says so
+        top_ok = (win.current == "storagemap" and win.overview.total
+                  and (drawn < win.overview.total and "can't be estimated" in win.map_note.cget("text") if unknown
+                       else drawn == win.overview.total))
+        dcim = win.data.file_meta("CameraRollDomain", "Media/DCIM/")
+        own_all = sum((m[2] or 0) for m in dcim.values())
+        own_vids = sorted(((m[2] or 0) for rel, m in dcim.items()
+                           if rel.lower().endswith((".mov", ".mp4", ".m4v", ".3gp", ".avi"))), reverse=True)
+        q4_photos = storage_map.levels(win.overview, [], win.map_media[1])
+        photo_sum = sum(b.size for b in q4_photos["photos"][1])
+        check(top_ok and photo_sum == own_all,
+              f"Q4: the storage map adds up to the whole iPhone" + (" less System (can't be estimated, said)" if unknown
+                                                                     else "")
+              + f", and Photos' blocks to the backup's photo files ({len(q4_photos['photos'][1])} blocks; "
+              f"read in {time.time() - t:.0f} s)")
+        if own_vids:
+            win.map_open("Photos")
+            app.update()
+            win.map_open("Videos")
+            app.update()
+            shown = [b.size for b in win.map_blocks]
+            rest = sum(own_vids[storage_map.MOST_VIDEOS:])
+            want = [v for v in own_vids[:storage_map.MOST_VIDEOS] if v] + ([rest] if rest else [])
+            check(win.map_key == "videos" and shown == want,
+                  f"Q4: Photos › Videos lists the largest videos biggest first "
+                  f"({min(len(own_vids), storage_map.MOST_VIDEOS)} blocks, "
+                  f"{max(0, len(own_vids) - storage_map.MOST_VIDEOS)} smaller together)")
+        else:
+            note("Q4: no videos in the backup; the Videos level was not tried on real data")
+    win.show_home()
+
     # -- every app screen -----------------------------------------------------------------------------------
     for key, label, *_r in phone.APPS:
         t = time.time()

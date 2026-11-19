@@ -1,0 +1,289 @@
+"""Q4: the storage map. What fills the iPhone as blocks as big as the space each takes, that can be clicked into:
+Photos → Videos → the largest videos (which open Photo clean-up on Large videos); Apps → the largest apps;
+Messages → its attachments.
+
+With a fake iPhone, invented apps and an invented backup file list (nothing talks to a real phone), checks:
+- the layout: every block's area is in proportion to its size, inside the map, with no overlaps, and close to square;
+- Storage → Storage map: the whole iPhone first (Apps, Photos, Messages, System, Other, Free);
+- Photos opens Videos, Photos and other files; Videos opens the 30 largest videos, the rest as one block; a click on
+  one opens Photo clean-up on Large videos; Apps opens the 20 largest apps and one block for the rest; Messages opens
+  its attachments by kind and its history;
+- the path at the top goes back up; a name on a block fits inside it;
+- read-only: the map asks the phone nothing, and the backup's file list is read once per backup.
+"""
+import os, sys, threading, time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+os.environ.setdefault("PHONEKEEP_HOME", str(HERE / "work" / "home"))
+sys.path.insert(0, str(HERE.parent))
+_src = (HERE / "test_phone_window.py").read_text(encoding="utf-8")
+exec(compile(_src.split("# the test\n")[0], str(HERE / "test_phone_window.py"), "exec"))
+faulthandler.cancel_dump_traceback_later()                                              # noqa: F821
+
+import checkup_ui
+import deviceinfo as di
+import overview_ui
+import storage_map as sm
+
+G = 1000 ** 3
+M = 1000 ** 2
+
+# -- the layout -------------------------------------------------------------------------------------------------------
+sizes = [500, 300, 120, 80, 40, 30, 20, 7, 2, 1]
+for BW, BH in ((800, 400), (300, 600), (640, 360)):
+    rects = sm.squarify(sizes, 0, 0, BW, BH)
+    tot = sum(sizes)
+    ok_area = all(abs(rw * rh - BW * BH * s / tot) < 0.005 * BW * BH for s, (x, y, rw, rh) in zip(sizes, rects))
+    inside = all(x >= -0.01 and y >= -0.01 and x + rw <= BW + 0.01 and y + rh <= BH + 0.01 for x, y, rw, rh in rects)
+    overlap = any(min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0]) > 0.01
+                  and min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]) > 0.01
+                  for i, a in enumerate(rects) for b in rects[i + 1:])
+    worst = max(max(rw / rh, rh / rw) for x, y, rw, rh in rects[:4])
+    check(ok_area and inside and not overlap and worst < 3.5,                                   # noqa: F821
+          f"{BW}x{BH}: each block's area in proportion, inside, no overlaps, the big ones near square (worst {worst:.1f})")
+check(sm.squarify([0, 0], 0, 0, 100, 100) == [(0, 0, 0.0, 0.0)] * 2 and sm.squarify([], 0, 0, 10, 10) == [],   # noqa: F821
+      "nothing to show: no blocks, no error")
+
+# -- an invented phone and backup ---------------------------------------------------------------------------------------
+names = [(f"Example App {i:02d}", f"com.example.app{i:02d}") for i in range(23)]                    # invented
+apps = [di.AppSize(b, n, (30 - i) * G // 10, G // 20) for i, (n, b) in enumerate(names)]
+OV = di.Overview(name="Test iPhone", model="iPhone 16", ios="26.5", total=256 * G, free=60 * G, apps=apps)
+videos = {f"Media/DCIM/100APPLE/IMG_{i:04d}.MOV": (f"{i:040x}", 1_750_000_000 + i * 86400, (900 - i * 20) * M)
+          for i in range(40)}                                                                     # 40 invented videos
+stills = {f"Media/DCIM/100APPLE/IMG_{i:04d}.HEIC": (f"{i:040x}", 1_750_000_000, 3 * M) for i in range(100, 2100)}
+edits = {f"Media/DCIM/100APPLE/IMG_{i:04d}.AAE": (f"{i:040x}", 1_750_000_000, 2_000) for i in range(100, 200)}
+FILES = {("CameraRollDomain", "Media/DCIM/"): {**videos, **stills, **edits},
+         ("MediaDomain", "Library/SMS/Attachments/"): {"Library/SMS/Attachments/aa/01/a.mov": ("1" * 40, 0, 400 * M),
+                                                       "Library/SMS/Attachments/aa/02/b.jpeg": ("2" * 40, 0, 250 * M),
+                                                       "Library/SMS/Attachments/aa/03/c.pdf": ("3" * 40, 0, 50 * M)},
+         ("HomeDomain", "Library/SMS/"): {"Library/SMS/sms.db": ("4" * 40, 0, 300 * M)}}
+reads = {"n": 0}
+
+
+class FakeBackup:
+    """Just the file list the map reads, under the window's lock as BackupData would."""
+    def file_meta(self, domain, prefix=""):
+        reads["n"] += 1
+        return dict(FILES.get((domain, prefix), {}))
+
+    def close(self):
+        pass
+
+
+asked = {"n": 0}
+
+
+class Quiet(SimulatedDevice):                                                            # noqa: F821
+    def app_names(self, timeout=60):
+        asked["n"] += 1
+        return {a.bundle: a.name for a in apps}
+
+    def app_sizes(self, bundles, timeout=120):
+        asked["n"] += 1
+        return {a.bundle: (a.app_bytes, a.data_bytes) for a in apps if a.bundle in bundles}
+
+
+wv.device_overview = lambda udid=None, apps=True, **k: OV                                # noqa: F821
+devmod.LiveDevice = Quiet                                                                # noqa: F821
+app = FakeApp()                                                                          # noqa: F821
+win = phone.PhoneWindow(app, {"DeviceName": "Test iPhone", "ConnectionType": "USB", "ProductVersion": "26.5"}, UDID)  # noqa: F821
+pump(app, lambda: win.overview is not None and win.live is not None, 30, "overview")    # noqa: F821
+win.overview.apps, win.overview.apps_as_of = list(apps), ""
+win._apps_state = "done"
+win.geometry("1220x800")
+data = FakeBackup()
+win.data = data
+win.photos_bytes = sum(v[2] for v in FILES[("CameraRollDomain", "Media/DCIM/")].values())
+win.messages_bytes = 1000 * M
+
+
+def settle(secs=0.3):
+    end = time.time() + secs
+    while time.time() < end:
+        app.update()
+        time.sleep(0.02)
+
+
+opened = []
+checkup_ui.open_cleanup = lambda w, card: opened.append(card)
+before = asked["n"]
+
+overview_ui.storage_view(win, win.overview)
+app.update()
+check(getattr(win, "map_button", None) is not None and win.map_button.winfo_ismapped(),          # noqa: F821
+      "Storage has a Storage map button")
+win.map_button.command()
+pump(app, lambda: win.current == "storagemap" and getattr(win, "map_media", None), 30, "the backup's file list")  # noqa: F821
+settle()                                                                    # noqa: F821
+names_top = [b.name for b in win.map_blocks]
+check(win.current == "storagemap" and set(names_top) == {"Apps", "Photos", "Messages", "System", "Other", "Free"},   # noqa: F821
+      f"the map: the whole iPhone first ({', '.join(names_top)})")
+check([b.size for b in win.map_blocks] == sorted((b.size for b in win.map_blocks), reverse=True),    # noqa: F821
+      "  biggest first")
+check(sum(b.size for b in win.map_blocks) == OV.total, "  and together they're the whole capacity")     # noqa: F821
+check({b.name for b in win.map_blocks if b.open} == {"Apps", "Photos", "Messages"},              # noqa: F821
+      "  Apps, Photos and Messages can be opened")
+check(win.map_crumbs == ["iPhone"], f"  the path at the top says where it is ({win.map_crumbs})")    # noqa: F821
+cv = win.map_canvas
+MW, MH = cv.winfo_width(), cv.winfo_height()
+check(MW > 500 and MH > 250, f"  the map has room ({MW}x{MH})")                                      # noqa: F821
+total = sum(b.size for b in win.map_blocks)
+areas = {n: rw * rh for n, x, y, rw, rh in win.map_rects}
+check(all(abs(areas[b.name] - MW * MH * b.size / total) < 0.01 * MW * MH for b in win.map_blocks),    # noqa: F821
+      "  each block on screen is as big as the space it takes")
+
+
+def texts_fit():
+    """Every name and size drawn on a block stays inside that block, and no two overlap."""
+    bad = []
+    cv = win.map_canvas
+    boxes = [cv.bbox(t) for t in cv.find_all() if cv.type(t) == "text"]
+    for i, a in enumerate(boxes):
+        for c in boxes[i + 1:]:
+            if min(a[2], c[2]) - max(a[0], c[0]) > 1 and min(a[3], c[3]) - max(a[1], c[1]) > 1:
+                bad.append(f"overlap at {a[:2]}")
+    for name, x, y, rw, rh in win.map_rects:
+        i = [r[0] for r in win.map_rects].index(name)
+        for t in win.map_canvas.find_withtag(f"b{i}"):
+            if win.map_canvas.type(t) == "text":
+                x0, y0, x1, y1 = win.map_canvas.bbox(t)
+                if x0 < x - 1 or y0 < y - 1 or x1 > x + rw + 1 or y1 > y + rh + 1:
+                    bad.append(name)
+    return bad
+
+
+check(not texts_fit(), f"  a name on a block fits inside it ({texts_fit() or 'all fit'})")               # noqa: F821
+check("Messages" in win.map_unnamed and any("Messages · about" in str(w.cget("text"))
+      for w in win.content.winfo_children()[-1].winfo_children()),
+      f"  a block too small for its name is named under the map ({win.map_unnamed})")             # noqa: F821
+
+
+def click(name):
+    """A real click in the middle of that block on the map."""
+    n, x, y, rw, rh = next(r for r in win.map_rects if r[0] == name)
+    win.map_canvas.event_generate("<Motion>", x=int(x + rw / 2), y=int(y + rh / 2))
+    win.map_canvas.event_generate("<Button-1>", x=int(x + rw / 2), y=int(y + rh / 2))
+    app.update()
+
+
+click("Photos")
+pump(app, lambda: getattr(win, "map_key", "") == "photos", 5)                                    # noqa: F821
+if win.map_key != "photos":                    # no pointer events here (a window not on screen): the same action
+    print("  (no pointer events on this screen: opening the block as a click would)")
+    win.map_open("Photos")
+    app.update()
+settle()                                                                    # noqa: F821
+pb = {b.name: b for b in win.map_blocks}
+check(win.map_key == "photos" and set(pb) == {"Videos", "Photos", "Edits and other files"},     # noqa: F821
+      f"Photos opens: what's in it ({', '.join(pb)})")
+check(pb["Videos"].size == sum(v[2] for v in videos.values()) and pb["Videos"].sub == "40 videos"
+      and pb["Photos"].size == 2000 * 3 * M, "  videos and photos, with their sizes from the backup")    # noqa: F821
+check(win.map_crumbs == ["iPhone", "Photos"], f"  the path: {' › '.join(win.map_crumbs)}")      # noqa: F821
+win.map_open("Videos")
+settle()                                                                    # noqa: F821
+vb = win.map_blocks
+check(win.map_key == "videos" and len(vb) == 31 and vb[0].name == "IMG_0000.MOV" and vb[0].size == 900 * M
+      and vb[-1].name == "10 smaller videos" and vb[-1].size == sum((900 - i * 20) * M for i in range(30, 40)),
+      f"Videos opens: the 30 largest, biggest first, and the rest as one ({vb[-1].name})")          # noqa: F821
+check(vb[0].sub and "2025" in vb[0].sub, f"  each with its date ({vb[0].sub})")                    # noqa: F821
+check(win.map_crumbs == ["iPhone", "Photos", "Videos"], f"  the path: {' › '.join(win.map_crumbs)}")  # noqa: F821
+check(not texts_fit(), f"  names fit inside their blocks ({texts_fit() or 'all fit'})")           # noqa: F821
+win.map_open("IMG_0003.MOV")
+check(opened == ["videos"], f"a click on a video opens Photo clean-up on Large videos ({opened})")    # noqa: F821
+# back up by the path
+crumb = [w for w in win.content.winfo_children()[1].winfo_children() if isinstance(w, tk.Label)
+         and w.cget("text") == "iPhone"]                                                           # noqa: F821
+crumb[0].event_generate("<Button-1>")
+app.update()
+check(win.map_key == "top", "the path at the top goes back up (iPhone)")                           # noqa: F821
+win.map_open("Apps")
+app.update()
+ab = win.map_blocks
+check(win.map_key == "apps" and len(ab) == 21 and ab[0].name == "Example App 00"
+      and ab[-1].name == "3 other apps", f"Apps opens: the 20 largest and the rest as one ({ab[-1].name})")   # noqa: F821
+sm.view(win, win.overview, "top")
+win.map_open("Messages")
+app.update()
+mb = {b.name: b.size for b in win.map_blocks}
+check(mb == {"Videos sent and received": 400 * M, "Photos sent and received": 250 * M, "Other attachments": 50 * M,
+             "The messages themselves": 300 * M}, f"Messages opens: its attachments by kind and its history")  # noqa: F821
+check(reads["n"] == 3, f"the backup's file list was read once for this backup ({reads['n']} reads: 3 folders)")  # noqa: F821
+# another backup: it's read again; the map says so while it's read
+win.data = FakeBackup()
+sm.view(win, win.overview, "top")
+check("Reading the backup" in win.map_note.cget("text"), "a newer backup: read again, and the map says so meanwhile")  # noqa: F821
+pump(app, lambda: reads["n"] == 6 and win.map_media[0] is win.data, 30)                         # noqa: F821
+# while the list is being read, neither Photos nor Messages can be opened (what's inside them comes from it)
+slow_go = threading.Event()
+
+
+class SlowBackup(FakeBackup):
+    def file_meta(self, domain, prefix=""):
+        slow_go.wait(20)
+        return super().file_meta(domain, prefix)
+
+
+win.data = SlowBackup()
+sm.view(win, win.overview, "top")
+closed = {b.name for b in win.map_blocks if not b.open}
+check({"Photos", "Messages"} <= closed and "Reading the backup" in win.map_note.cget("text"),
+      "while the backup is read, Photos and Messages don't open yet")                             # noqa: F821
+slow_go.set()
+pump(app, lambda: win.map_media[0] is win.data, 30)                                               # noqa: F821
+
+
+class FlakyBackup(FakeBackup):
+    """Its file list can't be read the first time; it can after that."""
+    def __init__(self):
+        self.calls = 0
+
+    def file_meta(self, domain, prefix=""):
+        self.calls += 1
+        if self.calls == 1:
+            raise wv.PhoneKeepError("This backup was closed.")                                     # noqa: F821
+        return super().file_meta(domain, prefix)
+
+
+flaky = FlakyBackup()
+win.data = flaky
+sm.view(win, win.overview, "top")
+pump(app, lambda: getattr(win, "map_failed", None) and win.map_failed[0] is flaky, 30)            # noqa: F821
+settle()
+check("couldn't be read" in win.map_note.cget("text") and "Reading the backup" not in win.map_note.cget("text")
+      and not any(b.open for b in win.map_blocks if b.name in ("Photos", "Messages")),
+      f"a list that can't be read: the map says so plainly, and Photos and Messages stay closed")  # noqa: F821
+sm.view(win, win.overview, "top")
+settle(1)
+check(flaky.calls == 1 and "couldn't be read" in win.map_note.cget("text"),
+      f"  it isn't tried again by itself (no endless retries; {flaky.calls} read)")                 # noqa: F821
+sm.view(win, win.overview, "top", again=True)                       # as the Storage map button opens it
+pump(app, lambda: getattr(win, "map_media", None) and win.map_media[0] is flaky, 30)              # noqa: F821
+settle()
+check(flaky.calls > 1 and win.map_failed is None and "couldn't be read" not in win.map_note.cget("text")
+      and any(b.open for b in win.map_blocks if b.name == "Photos"),
+      "  opening it again from Storage tries the same backup again, and then Photos opens")        # noqa: F821
+# an iPhone whose System can't be estimated: it's left off the map, and the map says the blocks add up to less
+big = [di.AppSize(f"com.example.big{i}", f"Example Big {i}", 42 * G, 0) for i in range(4)]         # invented
+was_apps = win.overview.apps
+win.overview.apps = big
+sm.view(win, win.overview, "top")
+settle()
+check(not any(b.name.startswith("System") for b in win.map_blocks) and "can't be estimated" in win.map_note.cget("text")
+      and sum(b.size for b in win.map_blocks) < OV.total,
+      "System can't be estimated: it's left off, and the map says the blocks add up to less than the iPhone")  # noqa: F821
+win.overview.apps = was_apps
+win.data = None
+sm.view(win, win.overview, "top")
+check(not next(b for b in win.map_blocks if b.name == "Photos").open
+      and "once there's a backup" in win.map_note.cget("text"), "no backup: Photos can't be opened, and it says why")  # noqa: F821
+# back to Storage
+win.content.winfo_children()[0].winfo_children()[0].command()                     # ‹ Storage
+app.update()
+check(win.current == "storage", "‹ Storage goes back")                                             # noqa: F821
+check(asked["n"] == before, "read-only: the map asks the phone nothing")                           # noqa: F821
+win.data = data
+win.close()
+app.destroy()
+print("\nQ4 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)), flush=True)  # noqa: F821
+os._exit(1 if failures else 0)

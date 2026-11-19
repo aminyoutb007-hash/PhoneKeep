@@ -79,6 +79,7 @@ STEPS = [
     ("All phones in one list (E5): a card for each phone backed up here or connected; each opens its own window", "test_e5_all_phones.py", True),
     ("Chats as on the phone (Q2): replies quoted, reactions on the bubble, link cards from the backup, voice notes with a waveform", "test_q2_chats.py", True),
     ("Backup timeline (Q5): the slider changes the open screen to the snapshot it stops on within 2 seconds, with the badge", "test_q5_timeline.py", True),
+    ("Storage map (Q4): blocks as big as the space each takes; Photos › Videos › the largest videos, Apps, Messages", "test_q4_storage_map.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)

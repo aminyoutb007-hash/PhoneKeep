@@ -50,6 +50,16 @@ These make PhoneKeep pleasant. They never come before security or ease of use, a
 
 **What the user sees and does:** a colourful map of what fills the phone (V3) that can be clicked into: Photos → Videos → the largest videos.
 
+**How it's built** (5.3): Storage → **Storage map ›**. The whole iPhone as blocks, each as big as the space it takes (a squarified treemap), in the Storage colours: Apps, Photos, Messages, System, Other and Free. Blocks with › open what's inside, and the path at the top goes back up:
+- **Photos** → Videos, Photos, and edits and other files, from the newest backup's file list. **Videos** → the 30 largest videos with their dates, the rest as one block; a click opens Photo clean-up on Large videos (C1), where they can be saved to the computer.
+- **Apps** → the 20 largest apps (with their data, as the iPhone reports them), the rest as one block.
+- **Messages** → its videos, photos and other attachments, and the messages themselves.
+
+A block too small for its name is named under the map; pointing at a block shows its name, size and share. Read-only: the figures are the Storage screen's (V3) and the backup's file list, read once per backup in the background; nothing is asked of the phone.
+
+**Done when**
+- [ ] On a real iPhone, the map adds up to the whole iPhone, Photos' blocks add up to the backup's photo files, and Photos › Videos lists its largest videos biggest first (`tools/real_check.py`, Q4 step).
+
 ## Q5. Backup timeline
 
 **What the user sees and does:** a slider of snapshot dates under the phone picture (B3). Dragging it changes the whole phone window to that date; a small badge shows "Viewing 3 Nov".
