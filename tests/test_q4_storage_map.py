@@ -92,6 +92,14 @@ pump(app, lambda: win.overview is not None and win.live is not None, 30, "overvi
 win.overview.apps, win.overview.apps_as_of = list(apps), ""
 win._apps_state = "done"
 win.geometry("1220x800")
+# the window opens this test phone's own backup (and works out its sizes) in the background: let that finish, so it
+# can't land on top of the invented backup put in its place here (seen on Linux)
+pump(app, lambda: win.data is not None and win.photos_bytes is not None and win.messages_bytes is not None, 60,
+     "the window's own backup")                                                                    # noqa: F821
+drained = []                                     # a marker after anything still queued on the backup's worker
+win.backup_runner.submit(lambda: None, lambda _r: drained.append(1), lambda _e: drained.append(1))
+pump(app, lambda: bool(drained), 60, "the backup's worker")                                        # noqa: F821
+win.data.close()
 data = FakeBackup()
 win.data = data
 win.photos_bytes = sum(v[2] for v in FILES[("CameraRollDomain", "Media/DCIM/")].values())

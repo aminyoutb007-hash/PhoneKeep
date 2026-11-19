@@ -44,8 +44,9 @@ These make PhoneKeep pleasant. They never come before security or ease of use, a
 **What the user sees and does:** clicking a person anywhere (chat, call, contact) opens their card: photo, numbers, emails, and tabs for every Message / WhatsApp chat, call and voicemail with them, newest first.
 
 **Done when**
-- [ ] A person's card lists their chats in all three messaging apps, their calls and voicemails. (Built and tested on
-  an invented backup; waits for the real-iPhone check.)
+- [x] A person's card lists their chats in all three messaging apps, their calls and voicemails. *(19 Nov: tested on
+  an invented backup, and on the owner's iPhone `tools/real_check.py`'s Q3 step found the same one-to-one chats, calls
+  and voicemails for every contact as its own count, and the card's click opened the newest chat; #117.)*
 
 **How it's built (people.py):** the card's foot has Chats, Calls and Voicemail tabs, found in the background from what
 the phone window loads anyway. A number matches by its last nine digits, so the same number written differently is one
@@ -59,7 +60,7 @@ told). Not yet: the people in a group chat (M5's People window) don't open their
 
 **What the user sees and does:** a colourful map of what fills the phone (V3) that can be clicked into: Photos → Videos → the largest videos.
 
-**How it's built** (5.3): Storage → **Storage map ›**. The whole iPhone as blocks, each as big as the space it takes (a squarified treemap), in the Storage colours: Apps, Photos, Messages, System, Other and Free. Blocks with › open what's inside, and the path at the top goes back up:
+**How it's built** (5.2.5): Storage → **Storage map ›**. The whole iPhone as blocks, each as big as the space it takes (a squarified treemap), in the Storage colours: Apps, Photos, Messages, System, Other and Free. Blocks with › open what's inside, and the path at the top goes back up:
 - **Photos** → Videos, Photos, and edits and other files, from the newest backup's file list. **Videos** → the 30 largest videos with their dates, the rest as one block; a click opens Photo clean-up on Large videos (C1), where they can be saved to the computer.
 - **Apps** → the 20 largest apps (with their data, as the iPhone reports them), the rest as one block.
 - **Messages** → its videos, photos and other attachments, and the messages themselves.
@@ -67,7 +68,7 @@ told). Not yet: the people in a group chat (M5's People window) don't open their
 A block too small for its name is named under the map; pointing at a block shows its name, size and share. Read-only: the figures are the Storage screen's (V3) and the backup's file list, read once per backup in the background; nothing is asked of the phone.
 
 **Done when**
-- [ ] On a real iPhone, the map adds up to the whole iPhone, Photos' blocks add up to the backup's photo files, and Photos › Videos lists its largest videos biggest first (`tools/real_check.py`, Q4 step).
+- [x] On a real iPhone, the map adds up to the whole iPhone, Photos' blocks add up to the backup's photo files, and Photos › Videos lists its largest videos biggest first (`tools/real_check.py`, Q4 step). *(19 Nov, the owner's iPhone: passed three times, with System left off and said, as it can't be estimated there; #118.)*
 
 ## Q5. Backup timeline
 
