@@ -927,7 +927,7 @@ try:
         elif "@" in s:
             return "" if s.endswith(("@g.us", "@lid", "@broadcast")) else s
         d = _re.sub(r"\D", "", s)
-        return d[-9:] if len(d) >= 7 else s          # a short number (a service's) as written
+        return d[-9:] if len(d) >= 7 else (d or s)   # a short number (a service's) by its digits
 
     q3_people = list(win.data.contacts or [])
     q3_chats = {}

@@ -330,7 +330,7 @@ class ContactsView:
         self.with_tab("chats")
         keys, data = pp.keys_of(p), getattr(self.win, "data", None)
         if not keys or data is None:
-            self._found(p, {"chats": [], "calls": [], "voicemail": [], "missing": []})
+            self._found(p, {"chats": [], "calls": [], "voicemail": [], "missing": [], "unread": []})
             return
         self.bg.clear()                              # a card no longer shown needn't be looked for (arrowing down a list)
         self.bg.submit(lambda: pp.find_all(data.get, keys), lambda res: self._found(p, res))
@@ -339,7 +339,7 @@ class ContactsView:
         if p is not self.current or not self.with_list.winfo_exists():
             return                                   # the card shows someone else now
         if res is None:
-            res = {"chats": [], "calls": [], "voicemail": [], "missing": ["chats, calls and voicemail"]}
+            res = {"chats": [], "calls": [], "voicemail": [], "missing": [], "unread": ["chats, calls and voicemail"]}
         self.with_found = res
         self.with_tab(self.with_shown)
 
@@ -383,6 +383,8 @@ class ContactsView:
         note = counts + "."
         if res["missing"]:
             note += f" Not in this backup: {', '.join(res['missing'])}."
+        if res.get("unread"):
+            note += f" Couldn't read: {', '.join(res['unread'])}."
         self.with_note.configure(text=note)
 
     def open_with(self, iid):

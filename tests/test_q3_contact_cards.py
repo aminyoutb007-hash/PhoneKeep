@@ -41,6 +41,7 @@ check(keys == {"700900111", "sam@example.org"}, f"a person's keys: their numbers
 check(pp.key_of("07700 900111") in keys and pp.key_of("+447700900111") in keys
       and pp.key_of("447700900111@s.whatsapp.net") in keys and pp.key_of("SAM@example.org") in keys,
       "  the same number written three ways, a WhatsApp id and the email in capitals all match")
+check(pp.key_of("123 45") == pp.key_of("12345") == "12345", "  a short number with spaces is the same number without")
 check(pp.key_of("123456789@g.us") == "" and pp.key_of("98765@lid") == "" and pp.key_of("") == "",
       "  a WhatsApp group id or a hidden-number id matches nobody")
 
@@ -85,13 +86,16 @@ check(pp.person_for(people_list, "447700900222@s.whatsapp.net") == 1 and pp.pers
 def boom(key):
     if key in ("whatsappbusiness", "voicemail"):
         raise wv.PhoneKeepError("not in this backup")
+    if key == "calls":
+        raise OSError("disk error")
     return {"messages": chats, "whatsapp": {"chats": wa}, "calls": calls}[key]
 
 
 res = pp.find_all(boom, keys)
-check(len(res["chats"]) == 4 and len(res["calls"]) == 2 and res["voicemail"] == []
-      and res["missing"] == ["WhatsApp Business", "Voicemail"],
-      f"what a backup doesn't have is said, the rest still found ({res['missing']})")
+check(len(res["chats"]) == 4 and res["calls"] == [] and res["voicemail"] == []
+      and res["missing"] == ["WhatsApp Business", "Voicemail"] and res["unread"] == ["Calls"],
+      f"what a backup doesn't have is said apart from what couldn't be read, the rest still found "
+      f"({res['missing']}, {res['unread']})")
 
 # -- the phone window, on the invented backup ------------------------------------------------------------------------
 fake = HERE / "work" / "Backups" / "00008030-FULLTEST"

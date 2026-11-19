@@ -10,15 +10,26 @@ from __future__ import annotations
 
 from typing import Optional
 
+import re
+
 import phonekeep as wv
 import sections as sx
 
 CHAT_APPS = (("messages", "Messages"), ("whatsapp", "WhatsApp"), ("whatsappbusiness", "WhatsApp Business"))
 
 
+def _number(s: str) -> str:
+    """sections.phone_key, and a short number (a service's) by its digits too: "123 45" is "12345"."""
+    k = sx.phone_key(s)
+    if "@" in k:
+        return k
+    d = re.sub(r"\D", "", k)
+    return d or k
+
+
 def keys_of(p: dict) -> set[str]:
     """The person's numbers and email addresses, as compared."""
-    out = {sx.phone_key(v) for _l, v in p.get("phones", ()) if (v or "").strip()}
+    out = {_number(v) for _l, v in p.get("phones", ()) if (v or "").strip()}
     out |= {v.strip().lower() for _l, v in p.get("emails", ()) if (v or "").strip()}
     return {k for k in out if k}
 
@@ -29,7 +40,7 @@ def key_of(addr: Optional[str]) -> str:
     addr = (addr or "").strip()
     if addr.endswith(("@s.whatsapp.net", "@g.us", "@lid", "@broadcast")):
         addr = wv.jid_number(addr)
-    return sx.phone_key(addr) if addr else ""
+    return _number(addr) if addr else ""
 
 
 def _sender_key(m: dict) -> str:
@@ -85,22 +96,23 @@ def person_for(people: list, addr: Optional[str]) -> Optional[int]:
 
 def find_all(get, keys: set[str]) -> dict:
     """get(key) -> what the phone window loads for that app (BackupData.get). Returns {"chats", "calls",
-    "voicemail", "missing"}: what's with them in each, newest first, and the apps this backup doesn't have."""
-    loaded, missing = {}, []
-    for app, label in CHAT_APPS:
+    "voicemail", "missing", "unread"}: what's with them in each, newest first; the apps this backup doesn't have
+    (PhoneKeep says so for them); and the ones that are there but couldn't be read."""
+    loaded, missing, unread = {}, [], []
+
+    def load(key, label):
         try:
-            v = get(app)
-            loaded[app] = v if app == "messages" else v["chats"]
-        except Exception:
+            return get(key)
+        except wv.PhoneKeepError:
             missing.append(label)
-    try:
-        calls = calls_with(get("calls"), keys)
-    except Exception:
-        calls = []
-        missing.append("Calls")
-    try:
-        vms = voicemails_with(get("voicemail"), keys)
-    except Exception:
-        vms = []
-        missing.append("Voicemail")
-    return {"chats": all_chats_with(loaded, keys), "calls": calls, "voicemail": vms, "missing": missing}
+        except Exception:
+            unread.append(label)
+        return None
+    for app, label in CHAT_APPS:
+        v = load(app, label)
+        if v is not None:
+            loaded[app] = v if app == "messages" else v["chats"]
+    calls = load("calls", "Calls")
+    vms = load("voicemail", "Voicemail")
+    return {"chats": all_chats_with(loaded, keys), "calls": calls_with(calls or [], keys),
+            "voicemail": voicemails_with(vms or [], keys), "missing": missing, "unread": unread}
