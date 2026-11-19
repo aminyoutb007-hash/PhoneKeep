@@ -60,7 +60,7 @@ told). Not yet: the people in a group chat (M5's People window) don't open their
 
 **What the user sees and does:** a colourful map of what fills the phone (V3) that can be clicked into: Photos → Videos → the largest videos.
 
-**How it's built** (5.3): Storage → **Storage map ›**. The whole iPhone as blocks, each as big as the space it takes (a squarified treemap), in the Storage colours: Apps, Photos, Messages, System, Other and Free. Blocks with › open what's inside, and the path at the top goes back up:
+**How it's built** (5.2.5): Storage → **Storage map ›**. The whole iPhone as blocks, each as big as the space it takes (a squarified treemap), in the Storage colours: Apps, Photos, Messages, System, Other and Free. Blocks with › open what's inside, and the path at the top goes back up:
 - **Photos** → Videos, Photos, and edits and other files, from the newest backup's file list. **Videos** → the 30 largest videos with their dates, the rest as one block; a click opens Photo clean-up on Large videos (C1), where they can be saved to the computer.
 - **Apps** → the 20 largest apps (with their data, as the iPhone reports them), the rest as one block.
 - **Messages** → its videos, photos and other attachments, and the messages themselves.
