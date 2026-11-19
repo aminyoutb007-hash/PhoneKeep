@@ -17,9 +17,10 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import ttk
 
+import people as pp
 import sections as sx
 import theme
-from ui import BG, CARD, INK, MUTED, RoundButton, card, font
+from ui import BG, CARD, INK, MUTED, BgWorker, RoundButton, card, font, wheel_scroll
 
 ROW_PX, CARD_PX = 24, 96
 
@@ -93,6 +94,15 @@ def file_name(name: str) -> str:
     return re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", name).strip(" .")[:80] or "Contacts"
 
 
+
+def _day(iso: str) -> str:
+    """'2026-11-03T10:00:00' -> the date as PhoneKeep shows dates."""
+    try:
+        return sx.fmt(dt.datetime.fromisoformat(iso[:19]), False)
+    except (TypeError, ValueError):
+        return ""
+
+
 class ContactsView:
     def __init__(self, win, key: str, people: list[dict]):
         self.win, self.key, self.people = win, key, people
@@ -100,6 +110,8 @@ class ContactsView:
         self.by_iid: dict[str, dict] = {}
         self.current = None                          # the contact on the card
         self.list_name = ""                          # "" = all contacts
+        self.bg = BgWorker(win.content)              # Q3: finds the chats, calls and voicemail with someone
+        self.with_items: dict[str, tuple] = {}       # Q3: a row on the card -> (app key, what to open)
         with_photo = sum(1 for p in people if p.get("photo"))
         win.view_sub.configure(text=f"{len(people):,} contacts · {with_photo:,} with a photo")
         parent = win.content
@@ -147,8 +159,20 @@ class ContactsView:
 
         self.card_box = card(body)
         self.card_box.pack(side="right", fill="y", padx=(10, 0))
-        self.card_box.configure(width=300)
+        self.card_box.configure(width=320)
         self.card_box.pack_propagate(False)
+        # Q3: the foot (chats, calls, voicemail) keeps its place; the details above it scroll when they don't fit
+        self.with_host = tk.Frame(self.card_box, bg=CARD)
+        self.with_host.pack(side="bottom", fill="x")
+        self.card_canvas = tk.Canvas(self.card_box, bg=CARD, highlightthickness=0, bd=0)
+        self.card_canvas.pack(fill="both", expand=True)
+        self.card_inner = tk.Frame(self.card_canvas, bg=CARD)
+        inner_id = self.card_canvas.create_window(0, 0, window=self.card_inner, anchor="nw")
+        self.card_inner.bind("<Configure>", lambda e: self.card_canvas.configure(
+            scrollregion=(0, 0, e.width, e.height)))
+        self.card_canvas.bind("<Configure>", lambda e: self.card_canvas.itemconfigure(inner_id, width=e.width))
+        wheel_scroll(self.card_canvas)
+        self.card_box.bind("<Destroy>", lambda e: e.widget is self.card_box and self.bg.stop())
 
         mid = card(body)
         mid.pack(side="left", fill="both", expand=True, padx=(10, 0))
@@ -230,27 +254,29 @@ class ContactsView:
     def show_card(self, p):
         self.current = p
         self.links = []                              # (kind, label widget, value): what a click copies
-        for w in self.card_box.winfo_children():
-            w.destroy()
+        for box in (self.card_inner, self.with_host):
+            for w in box.winfo_children():
+                w.destroy()
+        self.card_canvas.yview_moveto(0)
         if p is None:
-            tk.Label(self.card_box, text="Click a contact to see their card.", bg=CARD, fg=MUTED,
+            tk.Label(self.card_inner, text="Click a contact to see their card.", bg=CARD, fg=MUTED,
                      font=font(12)).pack(padx=16, pady=24)
             return
-        head = tk.Frame(self.card_box, bg=CARD)
+        head = tk.Frame(self.card_inner, bg=CARD)
         head.pack(fill="x", padx=16, pady=(16, 8))
         self.card_photo = tk.Label(head, image=self.image(p, CARD_PX), bg=CARD)
         self.card_photo.pack()
-        tk.Label(head, text=p["name"], bg=CARD, fg=INK, font=font(17, "bold"), wraplength=260).pack(pady=(8, 0))
+        tk.Label(head, text=p["name"], bg=CARD, fg=INK, font=font(17, "bold"), wraplength=285).pack(pady=(8, 0))
         sub = " · ".join(x for x in (p.get("title"), p.get("org")) if x)
         if sub and sub != p["name"]:
-            tk.Label(head, text=sub, bg=CARD, fg=MUTED, font=font(12), wraplength=260).pack()
-        rows = tk.Frame(self.card_box, bg=CARD)
-        rows.pack(fill="both", expand=True, padx=16)
+            tk.Label(head, text=sub, bg=CARD, fg=MUTED, font=font(12), wraplength=285).pack()
+        rows = tk.Frame(self.card_inner, bg=CARD)
+        rows.pack(fill="both", expand=True, padx=16, pady=(0, 12))
 
         def field(label, value, kind=None):
             tk.Label(rows, text=label, bg=CARD, fg=MUTED, font=font(11), anchor="w").pack(fill="x", pady=(6, 0))
             w = tk.Label(rows, text=value, bg=CARD, fg=theme.LINK if kind else INK, font=font(13), anchor="w",
-                         justify="left", wraplength=260, cursor="hand2" if kind else "")
+                         justify="left", wraplength=285, cursor="hand2" if kind else "")
             w.pack(fill="x")
             if kind:
                 w.bind("<Button-1>", lambda e, v=value, k=kind: self.copy(v, k))
@@ -270,9 +296,104 @@ class ContactsView:
             field("lists", ", ".join(lists))
         if p.get("note"):
             field("note", p["note"][:600] + ("…" if len(p["note"]) > 600 else ""))
+        self._with_them(p)
         if self.links:
-            tk.Label(self.card_box, text="Click a number, email, address or link to copy it", bg=CARD, fg=MUTED,
-                     font=font(11), wraplength=260, justify="center").pack(side="bottom", pady=(4, 12))
+            tk.Label(head, text="Click a number, email, address or link to copy it", bg=CARD, fg=MUTED,
+                     font=font(11), wraplength=285, justify="center").pack(pady=(6, 0))
+
+    # -- Q3: their chats, calls and voicemails -----------------------------------------------------------------------
+    def _with_them(self, p):
+        """At the card's foot: Chats / Calls / Voicemail with them, newest first, found in the background; a click
+        opens it in its own app view."""
+        box = tk.Frame(self.with_host, bg=CARD)
+        box.pack(fill="x", padx=12, pady=(6, 12))
+        tk.Frame(box, bg=theme.BORDER, height=1).pack(fill="x", pady=(0, 8))
+        tabs = tk.Frame(box, bg=CARD)
+        tabs.pack(fill="x")
+        self.with_tabs = {}
+        for name, label in (("chats", "Chats"), ("calls", "Calls"), ("voicemail", "Voicemail")):
+            b = RoundButton(tabs, label, lambda n=name: self.with_tab(n), "secondary", 90, 28, 11, bg=CARD)
+            b.pack(side="left", padx=(0, 4))
+            self.with_tabs[name] = b
+        self.with_list = ttk.Treeview(box, show="tree", selectmode="browse", height=6, style="ContactsWith.Treeview",
+                                      cursor="hand2")      # a click opens the row
+        ttk.Style(box).configure("ContactsWith.Treeview", background=CARD, fieldbackground=CARD, foreground=INK,
+                                 rowheight=24, font=font(11))
+        self.with_list.column("#0", width=290, stretch=True)
+        self.with_list.pack(fill="x", pady=(6, 0))
+        self.with_note = tk.Label(box, text="Looking for chats, calls and voicemail with them…", bg=CARD, fg=MUTED,
+                                  font=font(11), wraplength=290, justify="left", anchor="w")
+        self.with_note.pack(fill="x", pady=(4, 0))
+        self.with_list.bind("<ButtonRelease-1>", lambda e: self.open_with(self.with_list.identify_row(e.y)))
+        self.with_list.bind("<Return>", lambda e: self.open_with(self.with_list.focus()))
+        self.with_found, self.with_shown = None, "chats"
+        self.with_tab("chats")
+        keys, data = pp.keys_of(p), getattr(self.win, "data", None)
+        if not keys or data is None:
+            self._found(p, {"chats": [], "calls": [], "voicemail": [], "missing": [], "unread": []})
+            return
+        self.bg.clear()                              # a card no longer shown needn't be looked for (arrowing down a list)
+        self.bg.submit(lambda: pp.find_all(data.get, keys), lambda res: self._found(p, res))
+
+    def _found(self, p, res):
+        if p is not self.current or not self.with_list.winfo_exists():
+            return                                   # the card shows someone else now
+        if res is None:
+            res = {"chats": [], "calls": [], "voicemail": [], "missing": [], "unread": ["chats, calls and voicemail"]}
+        self.with_found = res
+        self.with_tab(self.with_shown)
+
+    def with_tab(self, name: str):
+        self.with_shown = name
+        for n, b in self.with_tabs.items():
+            b.kind = "primary" if n == name else "secondary"
+            b._draw()
+        self.with_list.delete(*self.with_list.get_children())
+        self.with_items.clear()
+        res = self.with_found
+        if res is None:
+            return
+        rows = []
+        if name == "chats":
+            label_of = dict(pp.CHAT_APPS)
+            for x in res["chats"]:
+                c, app = x["chat"], label_of[x["app"]]
+                when = _day(x["last"])
+                if x["group"]:                       # the group's name last: a long one is cut at the card's edge
+                    text = f"{when} · {app} group · {x['count']:,} of theirs · {c.get('name') or 'Group'}"
+                else:
+                    text = f"{when} · {app} · {x['count']:,} message{'s' if x['count'] != 1 else ''}"
+                rows.append((text, (x["app"], (c["id"], x["last"] if x["group"] else None))))
+        elif name == "calls":
+            for i, r in res["calls"]:
+                svc = "" if r[4] == "Phone" else r[4]   # the length before the service: a long one is cut last
+                rows.append((" · ".join(str(v) for v in (r[0], r[1], r[5], svc) if v), ("calls", i)))
+        else:
+            for i, v in res["voicemail"]:
+                text = f"{sx.fmt(v['when'])} · {sx.dur(v['length'])}" + (" · deleted" if v.get("deleted") else "")
+                rows.append((text, ("voicemail", i)))
+        self.with_list.configure(height=max(1, min(6, len(rows))))   # no empty rows: the card's details keep the room
+        for n, (text, ref) in enumerate(rows):
+            iid = f"w{n}"
+            self.with_list.insert("", "end", iid=iid, text=text)
+            self.with_items[iid] = ref
+        counts = (f"{len(res['chats']):,} chat{'s' if len(res['chats']) != 1 else ''} · "
+                  f"{len(res['calls']):,} call{'s' if len(res['calls']) != 1 else ''} · "
+                  f"{len(res['voicemail']):,} voicemail{'s' if len(res['voicemail']) != 1 else ''}")
+        note = counts + "."
+        if res["missing"]:
+            note += f" Not in this backup: {', '.join(res['missing'])}."
+        if res.get("unread"):
+            note += f" Couldn't read: {', '.join(res['unread'])}."
+        self.with_note.configure(text=note)
+
+    def open_with(self, iid):
+        """Open that chat, call or voicemail in its own view (as a search result opens, E4)."""
+        if iid not in self.with_items:
+            return
+        import search
+        key, ref = self.with_items[iid]
+        self.win.open_hit(search.Hit(key, "", "", ref=ref), "")
 
     def copy(self, value: str, what: str):
         """Copies, nothing more: no call, no email, no map (a map would send the address to the internet)."""

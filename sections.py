@@ -2085,7 +2085,7 @@ def _msg_text(m: dict) -> str:
 
 def _chat_summary(c: dict) -> dict:
     times = [m["time"] for m in c["messages"] if m.get("time")]
-    return {"id": c["id"], "name": c["name"], "group": c.get("group", False),
+    return {"id": c["id"], "name": c["name"], "group": c.get("group", False), "jid": c.get("jid") or "",
             "messages": len(c["messages"]), "last": times[-1][:10] if times else "",
             "first": times[0][:10] if times else "", "days": sorted(t[:10] for t in times)}
 

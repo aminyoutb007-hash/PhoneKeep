@@ -960,6 +960,92 @@ try:
                   f"as a JPEG ({good} of {len(pictured)}), lines folded at 75 bytes: {folded_ok}")
             shutil.rmtree(vdir, ignore_errors=True)
 
+    # -- Q3: contact cards. For every contact, their one-to-one chats (Messages, WhatsApp, WhatsApp Business), calls
+    # and voicemails are counted again here with a matcher of this check's own (numbers by their last nine digits,
+    # email addresses as written, WhatsApp ids by their number), and compared with what the cards find. Then the card
+    # of the contact with the most is opened in the Contacts screen, and a click on its newest chat opens that chat.
+    # Counts only: no names, numbers or chat names.
+    import people as pp
+    import re as _re
+
+    def _own_key(s):
+        s = str(s or "").strip().lower()
+        if s.endswith("@s.whatsapp.net"):
+            s = s.split("@")[0]
+        elif "@" in s:
+            return "" if s.endswith(("@g.us", "@lid", "@broadcast")) else s
+        d = _re.sub(r"\D", "", s)
+        return d[-9:] if len(d) >= 7 else (d or s)   # a short number (a service's) by its digits
+
+    q3_people = list(win.data.contacts or [])
+    q3_chats = {}
+    for q3_app, _l in pp.CHAT_APPS:
+        try:
+            v = win.data.get(q3_app)
+            q3_chats[q3_app] = [c for c in (v if q3_app == "messages" else v["chats"]) if not c.get("group")]
+        except wv.PhoneKeepError:
+            q3_chats[q3_app] = []
+    try:
+        q3_calls = win.data.get("calls")
+    except wv.PhoneKeepError:
+        q3_calls = []
+    try:
+        q3_vms = win.data.get("voicemail")
+    except wv.PhoneKeepError:
+        q3_vms = []
+    if not q3_people:
+        note("Q3: no contacts in the backup; not tested on real data")
+    else:
+        own, card = [0, 0, 0], [0, 0, 0]
+        best, best_n = None, 0
+        for q3_p in q3_people:
+            ks = {_own_key(v) for _l, v in q3_p.get("phones", ())} | {_own_key(v) for _l, v in q3_p.get("emails", ())}
+            ks.discard("")
+            mine = [sum(1 for cs in q3_chats.values() for c in cs if _own_key(c.get("jid")) in ks),
+                    sum(1 for r in q3_calls if _own_key(r[3]) in ks),
+                    sum(1 for v in q3_vms if _own_key(v.get("number")) in ks)]
+            keys = pp.keys_of(q3_p)
+            theirs = [len(pp.all_chats_with(q3_chats, keys)), len(pp.calls_with(q3_calls, keys)),
+                      len(pp.voicemails_with(q3_vms, keys))]
+            own = [a + b for a, b in zip(own, mine)]
+            card = [a + b for a, b in zip(card, theirs)]
+            if sum(theirs) > best_n and theirs[0]:
+                best, best_n = q3_p, sum(theirs)
+        check(own == card, f"Q3 on real data: for every contact ({len(q3_people)}), the cards find the same one-to-one "
+                           f"chats, calls and voicemails as counted here ({card[0]} chats, {card[1]} calls, "
+                           f"{card[2]} voicemails; counted here {own[0]}, {own[1]}, {own[2]})")
+        if best is None:
+            note("Q3: no contact has a one-to-one chat; the card's click was not tried on real data")
+        else:
+            win.contacts_view = None
+            win.open_app("contacts")
+            pump(app, lambda: getattr(win, "contacts_view", None) is not None and not loading(win), 300)
+            cv = win.contacts_view
+            cv.pick(cv.people.index(best))
+            pump(app, lambda: cv.with_found is not None, 300)
+            got = cv.with_found or {"chats": [], "calls": [], "voicemail": []}
+            ones = [x for x in got["chats"] if not x["group"]]
+            groups = len(got["chats"]) - len(ones)
+            want = pp.find_all(win.data.get, pp.keys_of(best))
+            check(cv.with_found is not None and len(got["chats"]) == len(want["chats"])
+                  and len(got["calls"]) == len(want["calls"]) and len(got["voicemail"]) == len(want["voicemail"])
+                  and len(ones) == len(pp.all_chats_with(q3_chats, pp.keys_of(best))),
+                  f"Q3: the card of the contact with the most shows them in its tabs ({len(ones)} one-to-one chats, "
+                  f"{groups} group chats they wrote in, {len(got['calls'])} calls, {len(got['voicemail'])} voicemails)")
+            cv.with_tab("chats")
+            first = cv.with_list.get_children()[0] if cv.with_list.get_children() else None
+            q3_ref = cv.with_items.get(first) if first else None
+            if q3_ref:
+                cv.open_with(first)
+                q3_panel = []
+                pump(app, lambda: win.current == q3_ref[0] and not loading(win)
+                     and bool(q3_panel or q3_panel.extend(c for c in win.content.winfo_children()
+                                                           if hasattr(c, "show_chat"))), 300)
+                pump(app, lambda: bool(q3_panel) and q3_panel[0].shown_chat == (q3_ref[0], q3_ref[1][0]), 60)
+                shown = q3_panel[0].shown_chat if q3_panel else None
+                check(shown == (q3_ref[0], q3_ref[1][0]), "Q3: a click on the card's newest chat opens that chat "
+                                                          f"in its app ({shown is not None})")
+
     # -- D4: Notes as on the phone: every note's body read with its styles, every attachment found in the Notes
     # database with its file in the backup, every picture drawn in the Notes screen, and a PDF of every note that has
     # the same pictures. The attachments are counted straight from NoteStore.sqlite (rows that are attachments of a

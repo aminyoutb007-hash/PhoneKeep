@@ -44,7 +44,16 @@ These make PhoneKeep pleasant. They never come before security or ease of use, a
 **What the user sees and does:** clicking a person anywhere (chat, call, contact) opens their card: photo, numbers, emails, and tabs for every Message / WhatsApp chat, call and voicemail with them, newest first.
 
 **Done when**
-- [ ] A person's card lists their chats in all three messaging apps, their calls and voicemails.
+- [ ] A person's card lists their chats in all three messaging apps, their calls and voicemails. (Built and tested on
+  an invented backup; waits for the real-iPhone check.)
+
+**How it's built (people.py):** the card's foot has Chats, Calls and Voicemail tabs, found in the background from what
+the phone window loads anyway. A number matches by its last nine digits, so the same number written differently is one
+person; an email address matches as written (FaceTime and iMessage use them); a WhatsApp id gives its number. A
+one-to-one chat matches by its number or address; a group chat is listed when the person wrote in it, with their own
+messages counted. A click opens the chat, call or voicemail in its own view. The other way round: a one-to-one chat's
+header, Calls and Voicemail have *Contact card*. A number two contacts share opens neither card (whose it is can't be
+told). Not yet: the people in a group chat (M5's People window) don't open their cards.
 
 ## Q4. Storage map
 
