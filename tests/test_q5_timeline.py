@@ -250,6 +250,38 @@ pump(lambda: bool(opened), 1)
 check(opened == [old_first[1].id] and time.time() - t0 < 0.3, "letting go of the handle opens that snapshot at once")
 check(pump(lambda: messages_count() == latest - 1, 10), "  (the middle one: one message fewer than the latest)")
 
+# pictures left behind by the screens shown before (Tk images in reference cycles, as old views leave them) are
+# cleared on the window's own thread when a snapshot opens. Cleared on the thread reading the backup, each one waits
+# its turn on this thread: on a real iPhone, after Photos, Contacts and the rest, going back to the latest took 14 s
+import gc, weakref
+from PIL import Image, ImageTk
+
+
+class LeftBehind:
+    pass
+
+
+gc.disable()                                   # they stay as garbage until something collects them
+left = []
+for _n in range(2000):
+    o = LeftBehind()
+    o.me, o.pic = o, ImageTk.PhotoImage(Image.new("RGB", (4, 4)), master=win)
+    left.append(weakref.ref(o))
+del o
+scale, at, old_first, let_go = win.snap_slider
+at.set(2)
+let_go()
+alive = sum(1 for r in left if r() is not None)
+gc.enable()
+check(alive == 0, f"pictures left behind by earlier screens are cleared on the window's thread when a snapshot opens "
+                  f"({alive} of 2000 left)")
+check(pump(lambda: messages_count() == latest and not bool(win.viewing.winfo_manager()), 10),
+      "  and the latest opens")
+scale, at, old_first, let_go = win.snap_slider
+at.set(1)                                      # back to the middle one, where the checks below start
+let_go()
+pump(lambda: messages_count() == latest - 1, 10)
+
 # the mouse and the keys (on a shown window: a hidden one gets no events)
 show(win)                                                     # undoes hide(): see-through gets no events
 win.geometry("1220x800+40+40")
