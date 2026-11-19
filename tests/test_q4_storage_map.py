@@ -233,25 +233,36 @@ slow_go.set()
 pump(app, lambda: win.map_media[0] is win.data, 30)                                               # noqa: F821
 
 
-class BrokenBackup(FakeBackup):
+class FlakyBackup(FakeBackup):
+    """Its file list can't be read the first time; it can after that."""
+    def __init__(self):
+        self.calls = 0
+
     def file_meta(self, domain, prefix=""):
-        raise wv.PhoneKeepError("This backup was closed.")                                         # noqa: F821
+        self.calls += 1
+        if self.calls == 1:
+            raise wv.PhoneKeepError("This backup was closed.")                                     # noqa: F821
+        return super().file_meta(domain, prefix)
 
 
-win.data = BrokenBackup()
+flaky = FlakyBackup()
+win.data = flaky
 sm.view(win, win.overview, "top")
-pump(app, lambda: getattr(win, "map_failed", None) and win.map_failed[0] is win.data, 30)          # noqa: F821
+pump(app, lambda: getattr(win, "map_failed", None) and win.map_failed[0] is flaky, 30)            # noqa: F821
 settle()
 check("couldn't be read" in win.map_note.cget("text") and "Reading the backup" not in win.map_note.cget("text")
       and not any(b.open for b in win.map_blocks if b.name in ("Photos", "Messages")),
       f"a list that can't be read: the map says so plainly, and Photos and Messages stay closed")  # noqa: F821
 sm.view(win, win.overview, "top")
+settle(1)
+check(flaky.calls == 1 and "couldn't be read" in win.map_note.cget("text"),
+      f"  it isn't tried again by itself (no endless retries; {flaky.calls} read)")                 # noqa: F821
+sm.view(win, win.overview, "top", again=True)                       # as the Storage map button opens it
+pump(app, lambda: getattr(win, "map_media", None) and win.map_media[0] is flaky, 30)              # noqa: F821
 settle()
-check("couldn't be read" in win.map_note.cget("text"), "  it isn't tried again by itself (no endless retries)")  # noqa: F821
-win.data = FakeBackup()
-sm.view(win, win.overview, "top", again=True)
-pump(app, lambda: win.map_media[0] is win.data, 30)                                              # noqa: F821
-check(win.map_failed is None, "  opening it again from Storage tries again")                       # noqa: F821
+check(flaky.calls > 1 and win.map_failed is None and "couldn't be read" not in win.map_note.cget("text")
+      and any(b.open for b in win.map_blocks if b.name == "Photos"),
+      "  opening it again from Storage tries the same backup again, and then Photos opens")        # noqa: F821
 # an iPhone whose System can't be estimated: it's left off the map, and the map says the blocks add up to less
 big = [di.AppSize(f"com.example.big{i}", f"Example Big {i}", 42 * G, 0) for i in range(4)]         # invented
 was_apps = win.overview.apps
