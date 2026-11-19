@@ -1267,9 +1267,12 @@ def _select(con, table, wanted: list[str], extra: str = "") -> list[sqlite3.Row]
 
 
 def parse_whatsapp(db_path: Path, log: Log = _print,
-                   name_for: Optional[Callable[[str], Optional[str]]] = None) -> list[dict]:
-    """Return a list of chats, each with its messages, from ChatStorage.sqlite (a temp copy)."""
+                   name_for: Optional[Callable[[str], Optional[str]]] = None,
+                   lid_numbers: Optional[dict] = None) -> list[dict]:
+    """Return a list of chats, each with its messages, from ChatStorage.sqlite (a temp copy).
+    lid_numbers: {hidden-number @lid id: "+number"} from WhatsApp's own LID.sqlite (_lid_numbers)."""
     name_for = name_for or (lambda _x: None)
+    lid_numbers = lid_numbers or {}
     con = sqlite3.connect(str(db_path))
     con.row_factory = sqlite3.Row
     tables = _tables(con)
@@ -1368,8 +1371,9 @@ def parse_whatsapp(db_path: Path, log: Log = _print,
             "from_me": bool(r["ZISFROMME"]), "sender": sender, "type": mtype,
             "text": r["ZTEXT"] or "", "starred": bool(r["ZSTARRED"]),
         }
-        if chat["group"] and not r["ZISFROMME"]:     # M4: the sender's number (a phone-number JID only)
-            number = jid_number(member_jid.get(r["ZGROUPMEMBER"]) or r["ZFROMJID"])
+        if chat["group"] and not r["ZISFROMME"]:     # M4: the sender's number; Q3: a @lid one's from LID.sqlite
+            sender_jid = member_jid.get(r["ZGROUPMEMBER"]) or r["ZFROMJID"]
+            number = jid_number(sender_jid) or lid_numbers.get(sender_jid or "", "")
             if number:
                 msg["detail"] = {"number": number}
         if r["Z_PK"] in links:
@@ -1473,7 +1477,40 @@ def load_whatsapp(reader: "BackupReader", business: bool = False, strict: bool =
                 "No WhatsApp data in this backup. If WhatsApp's end-to-end encrypted chat "
                 "backup is on, iOS may leave chats out of device backups.")
     db_local, files = _extract_wa_db(reader, domain, log)
-    return {"domain": domain, "files": files, "chats": parse_whatsapp(db_local, log, name_for)}
+    return {"domain": domain, "files": files,
+            "chats": parse_whatsapp(db_local, log, name_for, _lid_numbers(reader, domain, files, db_local.parent))}
+
+
+def _lid_numbers(reader: "BackupReader", domain: str, files: dict, work: Path) -> dict:
+    """Q3: WhatsApp's own record of which number a hidden-number id (…@lid, what newer WhatsApp uses for people in
+    groups) belongs to: LID.sqlite's ZWAZACCOUNT (ZIDENTIFIER, ZPHONENUMBER). {"…@lid": "+number"}; {} when the
+    backup has no such file or it reads differently (older WhatsApp)."""
+    name = "LID.sqlite"
+    if name not in files:
+        return {}
+    local = work / name
+    try:
+        if not local.exists():
+            if not reader.extract(domain, name, files[name], local):
+                return {}
+            for extra in (name + "-wal", name + "-shm"):
+                if extra in files:
+                    reader.extract(domain, extra, files[extra], work / extra)
+        con = sqlite3.connect(str(local))
+        try:
+            if "ZWAZACCOUNT" not in _tables(con) or not {"ZIDENTIFIER", "ZPHONENUMBER"} <= _cols(con, "ZWAZACCOUNT"):
+                return {}
+            out = {}
+            for ident, num in con.execute("SELECT ZIDENTIFIER, ZPHONENUMBER FROM ZWAZACCOUNT"):
+                digits = str(num or "").lstrip("+")
+                ident = str(ident or "")
+                if ident and digits.isdigit():
+                    out[ident if "@" in ident else ident + "@lid"] = "+" + digits
+            return out
+        finally:
+            con.close()
+    except (sqlite3.Error, OSError):
+        return {}
 
 
 def whatsapp_media_rel(loaded: dict, m: dict) -> Optional[str]:

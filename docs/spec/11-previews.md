@@ -47,6 +47,9 @@ These make PhoneKeep pleasant. They never come before security or ease of use, a
 - [x] A person's card lists their chats in all three messaging apps, their calls and voicemails. *(19 Nov: tested on
   an invented backup, and on the owner's iPhone `tools/real_check.py`'s Q3 step found the same one-to-one chats, calls
   and voicemails for every contact as its own count, and the card's click opened the newest chat; #117.)*
+- [x] In a group chat, the People window opens the chosen person's card. *(19 Nov, the owner's iPhone: in a WhatsApp
+  group whose members all have hidden-number ids, the People window found the same contact as `tools/real_check.py`'s own
+  count for everyone whose number it had, and Contact card opened that person's card.)*
 
 **How it's built (people.py):** the card's foot has Chats, Calls and Voicemail tabs, found in the background from what
 the phone window loads anyway. A number matches by its last nine digits, so the same number written differently is one
@@ -54,7 +57,9 @@ person; an email address matches as written (FaceTime and iMessage use them); a 
 one-to-one chat matches by its number or address; a group chat is listed when the person wrote in it, with their own
 messages counted. A click opens the chat, call or voicemail in its own view. The other way round: a one-to-one chat's
 header, Calls and Voicemail have *Contact card*. A number two contacts share opens neither card (whose it is can't be
-told). Not yet: the people in a group chat (M5's People window) don't open their cards.
+told). In a group chat, the People window has *Contact card* for the chosen person, found by the number their
+messages came from. Newer WhatsApp hides group members' numbers behind ids of its own (…@lid); WhatsApp's own
+LID.sqlite in the backup says which number each belongs to, and PhoneKeep reads it.
 
 ## Q4. Storage map
 

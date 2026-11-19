@@ -238,6 +238,47 @@ check(wby["Meet at the car park"]["Group sender number"].value == "+447700900333
       "WhatsApp: a group sender's number")
 check(wby["Running late"]["Group sender number"].value is None and wby["On my way"]["Group sender number"].value is None,
       "WhatsApp: no number for a hidden-number (@lid) member or for your own messages")
+# Q3: newer WhatsApp keeps which number a hidden-number id belongs to in its own LID.sqlite (ZWAZACCOUNT)
+lid = W / "LID.sqlite"
+c = sqlite3.connect(lid)
+c.executescript("""CREATE TABLE ZWAZACCOUNT(Z_PK INTEGER PRIMARY KEY, ZIDENTIFIER, ZPHONENUMBER, ZDISPLAYNAME);
+INSERT INTO ZWAZACCOUNT VALUES (1, '123456789@lid', '447700900555', NULL), (2, '987654321@lid', NULL, NULL);""")
+c.commit()
+c.close()
+
+
+class LidReader:
+    """Just extract(), as BackupReader does: copies the named file into the work folder."""
+    def extract(self, domain, rel, fid, dest):
+        import shutil
+        shutil.copyfile(W / rel, dest)
+        return True
+
+
+import tempfile
+lid_work = Path(tempfile.mkdtemp(dir=W))
+nums = wv._lid_numbers(LidReader(), wv.WA_DOMAIN, {"LID.sqlite": "x"}, lid_work)
+check(nums == {"123456789@lid": "+447700900555"}, f"WhatsApp: LID.sqlite gives a hidden-number id's number ({nums})")
+lchats = wv.parse_whatsapp(wa, lambda m: None, lid_numbers=nums)
+lby = {m["text"]: m for c in lchats for m in c["messages"]}
+check(lby["Running late"].get("detail", {}).get("number") == "+447700900555"
+      and lby["Meet at the car park"]["detail"]["number"] == "+447700900333" and "detail" not in lby["On my way"],
+      "  so the hidden-number member's messages carry it, the others are unchanged")
+check(wv._lid_numbers(LidReader(), wv.WA_DOMAIN, {}, lid_work) == {}, "  no LID.sqlite in the backup: nothing, no error")
+(lid_work / "LID.sqlite").unlink()
+bad = Path(tempfile.mkdtemp(dir=W))
+(W / "LID-bad.sqlite").write_bytes(b"not a database")
+
+
+class BadReader(LidReader):
+    def extract(self, domain, rel, fid, dest):
+        import shutil
+        shutil.copyfile(W / "LID-bad.sqlite", dest)
+        return True
+
+
+check(wv._lid_numbers(BadReader(), wv.WA_DOMAIN, {"LID.sqlite": "x"}, bad) == {},
+      "  a LID.sqlite that can't be read: nothing, no error")
 check(all(r["Service"].value == "WhatsApp" for r in wrows), "WhatsApp: the service says WhatsApp")
 check(all(r[k].value is None for r in wrows for k in ("Reply to", "Reactions", "Edited at", "Deleted at", "Read at")),
       "WhatsApp: replies, reactions, edits, deletions and read times are left blank (the backup doesn't say them reliably)")
