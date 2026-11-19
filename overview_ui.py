@@ -235,7 +235,7 @@ def storage_view(win, ov: di.Overview):
     line.pack(fill="x", padx=18, pady=(16, 6))
     tk.Label(line, text=f"{di.human(ov.used)} used · {di.human(ov.free)} free", bg=CARD, fg=INK, font=font(17, "bold"),
              anchor="w").pack(side="left")
-    win.map_button = RoundButton(line, "Storage map ›", lambda: storage_map.view(win, win.overview or ov),
+    win.map_button = RoundButton(line, "Storage map ›", lambda: storage_map.view(win, win.overview or ov, again=True),
                                  "secondary", 140, 30, 12)       # Q4
     win.map_button.pack(side="right")
     bar = storage_bar(c, ov, cats, width=640, height=16)

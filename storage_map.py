@@ -120,7 +120,7 @@ def levels(ov: di.Overview, cats: list, media: Optional[dict]) -> dict[str, tupl
         if not n:
             continue
         opens = {"Photos": "photos", "Apps": "apps", "Messages": "messages"}.get(name)
-        if opens == "photos" and not media:
+        if opens in ("photos", "messages") and not media:     # what's inside them comes from the backup
             opens = None
         top.append(Block(name, n, col[name], open=opens, exact=exact))
     out = {"top": ("iPhone", sorted(top, key=lambda b: -b.size))}
@@ -173,8 +173,11 @@ NOTES = {
 
 
 # -- the screen -----------------------------------------------------------------------------------------------------
-def view(win, ov: di.Overview, key: str = "top"):
-    """The map, at level `key`. Below the first level it needs the backup's file list, read in the background."""
+def view(win, ov: di.Overview, key: str = "top", again: bool = False):
+    """The map, at level `key`. Below the first level it needs the backup's file list, read in the background.
+    again=True (opened from Storage): a list that couldn't be read last time is tried once more."""
+    if again:
+        win.map_failed = None
     win.current = "storagemap"
     win._clear()
     win.map_key = key
@@ -189,7 +192,9 @@ def view(win, ov: di.Overview, key: str = "top"):
              bg=BG, fg=MUTED, font=font(12)).pack(side="left")
 
     media = win.map_media[1] if getattr(win, "map_media", None) and win.map_media[0] is win.data else None
-    if media is None and getattr(win, "data", None) is not None:
+    failed = getattr(win, "map_failed", None)
+    failed = failed[1] if failed and failed[0] is getattr(win, "data", None) else None
+    if media is None and failed is None and getattr(win, "data", None) is not None:
         _read_media(win, ov, key)
     lv = levels(ov, cats, media)
     if key not in lv:
@@ -211,7 +216,12 @@ def view(win, ov: di.Overview, key: str = "top"):
         win.map_crumbs.append(lab.cget("text"))
 
     note = NOTES.get(key, "")
-    if key == "top" and media is None and getattr(win, "data", None) is not None:
+    if key == "top" and any(n is None for _c, n, _e in cats):
+        note += (f" {di.SYSTEM_UNKNOWN} can't be estimated on this iPhone (the app sizes it reports overlap with "
+                 "it), so it isn't on the map and the blocks add up to less than the whole iPhone.")
+    if key == "top" and failed:
+        note += f" {failed}"
+    elif key == "top" and media is None and getattr(win, "data", None) is not None:
         note += " Reading the backup for what's inside Photos and Messages…"
     elif key == "top" and getattr(win, "data", None) is None:
         note += " Photos and Messages open once there's a backup."
@@ -327,4 +337,11 @@ def _read_media(win, ov, key):
 
     def err(_e):
         win.map_reading = None
+        if data is not win.data:
+            return
+        # said once, not tried again by itself (that would loop); opening the map from Storage tries again
+        win.map_failed = (data, "The backup's list of files couldn't be read, so what's inside Photos and Messages "
+                                "can't be shown. Open the map again from Storage to try again.")
+        if win.current == "storagemap" and win.overview is not None:
+            view(win, win.overview, getattr(win, "map_key", "top"))
     win.backup_runner.submit(lambda: media_sizes(data.file_meta), ok, err)

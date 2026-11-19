@@ -11,7 +11,7 @@ With a fake iPhone, invented apps and an invented backup file list (nothing talk
 - the path at the top goes back up; a name on a block fits inside it;
 - read-only: the map asks the phone nothing, and the backup's file list is read once per backup.
 """
-import os, sys, time
+import os, sys, threading, time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -214,6 +214,54 @@ win.data = FakeBackup()
 sm.view(win, win.overview, "top")
 check("Reading the backup" in win.map_note.cget("text"), "a newer backup: read again, and the map says so meanwhile")  # noqa: F821
 pump(app, lambda: reads["n"] == 6 and win.map_media[0] is win.data, 30)                         # noqa: F821
+# while the list is being read, neither Photos nor Messages can be opened (what's inside them comes from it)
+slow_go = threading.Event()
+
+
+class SlowBackup(FakeBackup):
+    def file_meta(self, domain, prefix=""):
+        slow_go.wait(20)
+        return super().file_meta(domain, prefix)
+
+
+win.data = SlowBackup()
+sm.view(win, win.overview, "top")
+closed = {b.name for b in win.map_blocks if not b.open}
+check({"Photos", "Messages"} <= closed and "Reading the backup" in win.map_note.cget("text"),
+      "while the backup is read, Photos and Messages don't open yet")                             # noqa: F821
+slow_go.set()
+pump(app, lambda: win.map_media[0] is win.data, 30)                                               # noqa: F821
+
+
+class BrokenBackup(FakeBackup):
+    def file_meta(self, domain, prefix=""):
+        raise wv.PhoneKeepError("This backup was closed.")                                         # noqa: F821
+
+
+win.data = BrokenBackup()
+sm.view(win, win.overview, "top")
+pump(app, lambda: getattr(win, "map_failed", None) and win.map_failed[0] is win.data, 30)          # noqa: F821
+settle()
+check("couldn't be read" in win.map_note.cget("text") and "Reading the backup" not in win.map_note.cget("text")
+      and not any(b.open for b in win.map_blocks if b.name in ("Photos", "Messages")),
+      f"a list that can't be read: the map says so plainly, and Photos and Messages stay closed")  # noqa: F821
+sm.view(win, win.overview, "top")
+settle()
+check("couldn't be read" in win.map_note.cget("text"), "  it isn't tried again by itself (no endless retries)")  # noqa: F821
+win.data = FakeBackup()
+sm.view(win, win.overview, "top", again=True)
+pump(app, lambda: win.map_media[0] is win.data, 30)                                              # noqa: F821
+check(win.map_failed is None, "  opening it again from Storage tries again")                       # noqa: F821
+# an iPhone whose System can't be estimated: it's left off the map, and the map says the blocks add up to less
+big = [di.AppSize(f"com.example.big{i}", f"Example Big {i}", 42 * G, 0) for i in range(4)]         # invented
+was_apps = win.overview.apps
+win.overview.apps = big
+sm.view(win, win.overview, "top")
+settle()
+check(not any(b.name.startswith("System") for b in win.map_blocks) and "can't be estimated" in win.map_note.cget("text")
+      and sum(b.size for b in win.map_blocks) < OV.total,
+      "System can't be estimated: it's left off, and the map says the blocks add up to less than the iPhone")  # noqa: F821
+win.overview.apps = was_apps
 win.data = None
 sm.view(win, win.overview, "top")
 check(not next(b for b in win.map_blocks if b.name == "Photos").open
