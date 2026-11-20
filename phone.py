@@ -34,6 +34,7 @@ import checkup_ui
 import keychain
 import deviceinfo as di
 import overview_ui
+import storage_map
 import phoneapps
 import protect
 import protect_ui
@@ -1083,6 +1084,9 @@ class PhoneWindow(tk.Toplevel):
         try:
             if self.current == "storage" and self.overview is not None:
                 overview_ui.storage_view(self, self.overview)
+            elif self.current == "storagemap" and self.overview is not None \
+                    and getattr(self, "map_key", "top") in ("top", "apps"):       # the levels app sizes are on
+                storage_map.view(self, self.overview, getattr(self, "map_key", "top"))
             elif self.current == "checkup:storage" and force:
                 checkup_ui.details(self, "storage")
         except tk.TclError:

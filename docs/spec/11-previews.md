@@ -71,7 +71,7 @@ has no phone window behind it, so its People window has no *Contact card*.
 - **Apps** → the 20 largest apps (with their data, as the iPhone reports them), the rest as one block.
 - **Messages** → its videos, photos and other attachments, and the messages themselves.
 
-A block too small for its name is named under the map; pointing at a block shows its name, size and share. Read-only: the figures are the Storage screen's (V3) and the backup's file list, read once per backup in the background; nothing is asked of the phone.
+A block too small for its name is named under the map; pointing at a block shows its name, size and share. Read-only: the figures are the Storage screen's (V3) and the backup's file list, read once per backup in the background; nothing is asked of the phone. While the app sizes are still coming in, the map's top and Apps levels are drawn again as they arrive (at most every 2 seconds) and say so; the map and its path always use the phone's newest figures (5.2.6 follow-up).
 
 **Done when**
 - [x] On a real iPhone, the map adds up to the whole iPhone, Photos' blocks add up to the backup's photo files, and Photos › Videos lists its largest videos biggest first (`tools/real_check.py`, Q4 step). *(19 Nov, the owner's iPhone: passed three times, with System left off and said, as it can't be estimated there; #118.)*

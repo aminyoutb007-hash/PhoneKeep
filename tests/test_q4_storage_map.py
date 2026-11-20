@@ -285,6 +285,54 @@ win.data = None
 sm.view(win, win.overview, "top")
 check(not next(b for b in win.map_blocks if b.name == "Photos").open
       and "once there's a backup" in win.map_note.cget("text"), "no backup: Photos can't be opened, and it says why")  # noqa: F821
+# the app sizes arrive while the map is open (5.2.6 follow-up): it's drawn again with them, and says they're coming in
+import dataclasses
+sm.view(win, win.overview, "apps")
+win._apps_shown_at = 0.0                                            # the 2-second limit between redraws has passed
+win._apps_arrived(list(apps[:5]), True)                             # the first sizes are in, more to come
+app.update()
+check(win.current == "storagemap" and win.map_key == "apps" and len(win.map_blocks) == 5
+      and "still sending app sizes" in win.map_note.cget("text"),
+      f"app sizes arriving: the open map is drawn again with them, and says more are coming ({len(win.map_blocks)} apps)")  # noqa: F821
+win.data = flaky                                                    # its file list is in (read above)
+sm.view(win, win.overview, "top")
+win.map_open("Photos")
+app.update()
+drawn = win.map_canvas
+win._apps_shown_at = 0.0
+win._apps_arrived(list(apps[:6]), True)
+app.update()
+check(win.map_key == "photos" and win.map_canvas is drawn,
+      "  a level without app sizes on it (Photos) isn't drawn again for them")                    # noqa: F821
+win.data = None
+sm.view(win, win.overview, "apps")
+win._apps_shown_at = 0.0
+win._apps_arrived(list(apps), False)                                # all of them
+app.update()
+check(win.map_key == "apps" and len(win.map_blocks) == 21 and "still sending" not in win.map_note.cget("text"),
+      f"  and again when they're all in ({len(win.map_blocks)} blocks)")                           # noqa: F821
+# the phone is read again (a new overview) while the map is open: the path and the blocks use the new figures
+was_ov = win.overview
+new_ov = dataclasses.replace(OV, apps=[di.AppSize(f"com.example.new{i}", f"Example New {i}", 2 * G, 0)
+                                       for i in range(3)])                                          # invented
+sm.view(win, was_ov, "top")                                         # the top level, drawn with the old figures
+win.overview = new_ov
+win.map_open("Apps")                                                # a block click alone, no path link first
+app.update()
+check(win.map_key == "apps" and [b.name for b in win.map_blocks] == [f"Example New {i}" for i in range(3)],
+      f"a block click opens it with the phone's newest figures ({len(win.map_blocks)} apps)")      # noqa: F821
+sm.view(win, was_ov, "apps")                                        # an inner level, drawn with the old figures
+app.update()
+crumb = [w for w in win.content.winfo_children()[1].winfo_children() if isinstance(w, tk.Label)
+         and w.cget("text") == "iPhone"]                                                           # noqa: F821
+crumb[0].event_generate("<Button-1>")
+app.update()
+top_apps = next((b.size for b in win.map_blocks if b.name == "Apps"), None)
+win.map_open("Apps")
+app.update()
+check(win.map_key == "apps" and top_apps == 6 * G and [b.name for b in win.map_blocks] == [f"Example New {i}" for i in range(3)],
+      f"the path and the blocks follow the phone's newest figures, not the ones the map opened with ({top_apps})")  # noqa: F821
+win.overview = was_ov
 # back to Storage
 win.content.winfo_children()[0].winfo_children()[0].command()                     # ‹ Storage
 app.update()
