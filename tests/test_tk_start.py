@@ -18,14 +18,13 @@ def check(cond, what):
 PROBE = r'''
 import json, sys
 out = {"argv": sys.argv, "path0": sys.path[0], "name": __name__, "file": __file__,
-       "main": sys.modules["__main__"].__dict__.get("MARK")}
+       "main": sys.modules["__main__"].__dict__ is globals()}
 if sys.platform == "darwin":
     from Foundation import NSUserDefaults
     d = NSUserDefaults.standardUserDefaults()
     out["ignore"] = bool(d.boolForKey_("ApplePersistenceIgnoreState"))
     out["kept"] = d.persistentDomainForName_("org.python.python") or {}
     out["kept"] = "ApplePersistenceIgnoreState" in out["kept"]
-MARK = 1
 print("PROBE " + json.dumps(out))
 if "--fail" in sys.argv:
     raise SystemExit(3)
@@ -47,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix="pk_tkstart_") as tmp:
     code_w, wrapped, err = run("a", "--b")
     check(code_w == 0 and wrapped is not None, f"a script started through _tk_start.py runs ({err[-300:]!r})")
     if wrapped and direct:
-        for k in ("argv", "path0", "name", "file"):
+        for k in ("argv", "path0", "name", "file", "main"):
             check(wrapped[k] == direct[k], f"  its {k} is what `python <script>` gives it ({wrapped[k]!r})")
     check(run("--fail")[0] == 3, "  its exit code comes back")
     c, _o, e = run("--raise")

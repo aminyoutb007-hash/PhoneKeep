@@ -16,5 +16,6 @@ if sys.platform == "darwin":
 
 sys.argv = sys.argv[1:]                    # the script as it was given, then its own arguments
 script = os.path.abspath(sys.argv[0])      # __file__ and sys.path[0] as Python gives them
-sys.path[0] = os.path.dirname(os.path.realpath(script))
+# (resolved on Mac and Linux; on Windows as given, e.g. a short C:\Users\RUNNER~1 path stays short)
+sys.path[0] = os.path.dirname(script if sys.platform == "win32" else os.path.realpath(script))
 runpy.run_path(script, run_name="__main__")
