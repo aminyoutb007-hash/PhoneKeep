@@ -159,15 +159,17 @@ d5.close()
 import types
 d6 = phone.BackupData(fake, None)
 apps6 = d6.get("apps")
+# one count query: the home screen's count keeps no app's whole file list
+kept = [k for k in d6.ctx._files if k.startswith("AppDomain-")]
 want = {a: len(d6.ctx.files("AppDomain-" + a)) for a in real_apps(d6.ctx)}
 d6.ctx.files = lambda *a, **k: (_ for _ in ()).throw(AssertionError("read on the Tk thread"))
 drawn = {}
 stub = types.SimpleNamespace(view_sub=types.SimpleNamespace(configure=lambda **k: None),
                              table_view=lambda key, cols, rows, *a, **k: drawn.update(rows=rows), data=d6)
 phone.PhoneWindow.v_apps(stub, "apps", apps6)
-check(len(apps6) > 0 and dict(apps6) == want and d6.count("apps") == f"{len(want):,}"
+check(len(apps6) > 0 and dict(apps6) == want and not kept and d6.count("apps") == f"{len(want):,}"
       and drawn.get("rows") == [[a, f"{n:,} files in backup"] for a, n in apps6],
-      f"the Apps table's file counts come with the list, read under the lock; drawing it reads nothing "
+      f"the Apps table's file counts come with the list, in one query under the lock; drawing it reads nothing "
       f"({len(apps6)} invented apps)")
 d6.close()
 

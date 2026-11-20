@@ -250,8 +250,10 @@ class BackupData:
                 v = sx.load_call_recordings(c)
             elif key == "safari":
                 v = sx.load_safari(c)
-            elif key == "apps":                 # with each app's file count, read here under the lock
-                v = [(a, len(c.files("AppDomain-" + a))) for a in sx.load_apps(c)]
+            elif key == "apps":                 # with each app's file count, read here under the lock, in one query
+                n = dict(self.reader.db.execute("SELECT domain, COUNT(*) FROM Files WHERE flags=1 "
+                                                "AND domain LIKE 'AppDomain-%' GROUP BY domain"))
+                v = [(a, n.get("AppDomain-" + a, 0)) for a in sx.load_apps(c)]
             elif key == "allfiles":
                 v = self.reader.domains()
             else:
