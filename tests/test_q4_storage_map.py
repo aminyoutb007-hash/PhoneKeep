@@ -207,9 +207,9 @@ def click_path(text):
     a moment to show, and a click on one that isn't shown yet is lost); then the map that click opens."""
     crumb = [w for w in win.content.winfo_children()[1].winfo_children() if isinstance(w, tk.Label)
              and w.cget("text") == text]                                                           # noqa: F821
-    pump(app, lambda: crumb[0].winfo_viewable(), 5)                                                # noqa: F821
+    pump(app, lambda: crumb[0].winfo_viewable(), 5, f"the path's {text} link on screen")         # noqa: F821
     crumb[0].event_generate("<Button-1>")
-    pump(app, lambda: win.map_key == "top", 5)                                                     # noqa: F821
+    pump(app, lambda: win.map_key == "top", 5, f"the map its {text} link opens")                  # noqa: F821
 
 
 click_path("iPhone")
@@ -333,7 +333,7 @@ check(win.map_key == "apps" and [b.name for b in win.map_blocks] == [f"Example N
 sm.view(win, was_ov, "apps")                                        # an inner level, drawn with the old figures
 click_path("iPhone")
 top_apps = next((b.size for b in win.map_blocks if b.name == "Apps"), None)
-if win.map_key == "top":
+if top_apps is not None:                        # the top level was drawn to the end, Apps block and all
     win.map_open("Apps")
     app.update()
 check(win.map_key == "apps" and top_apps == 6 * G and [b.name for b in win.map_blocks] == [f"Example New {i}" for i in range(3)],
