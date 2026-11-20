@@ -129,6 +129,31 @@ check(psrc.copy(pitems[1].id, out / "b") is False and psrc.read(pitems[1].id) is
       "  after closing, saving or reading a photo says no without touching the backup")
 shutil.rmtree(out, ignore_errors=True)
 
+# two callers at once make the photo list once: two lists would copy the Photos library into the same folder,
+# one deleting the other's -wal/-shm while it reads them (#131 follow-up)
+import photos as ph
+d5 = phone.BackupData(fake, None)
+real_items, made = ph.BackupPhotoSource.items, []
+
+
+def slow_items(self):
+    made.append(1)
+    time.sleep(0.5)
+    return real_items(self)
+
+
+ph.BackupPhotoSource.items = slow_items
+got = []
+both = [threading.Thread(target=lambda: got.append(d5.get("photos")), daemon=True) for _ in range(2)]
+for t in both:
+    t.start()
+for t in both:
+    t.join(10)
+ph.BackupPhotoSource.items = real_items
+check(len(made) == 1 and len(got) == 2 and got[0] is got[1],
+      f"two callers at once make the backup's photo list once and share it ({len(made)} made, {len(got)} got)")
+d5.close()
+
 d2 = phone.BackupData(fake, None)
 d2.close()
 check(d2.closed.is_set(), "with nothing reading, closing lets go at once")

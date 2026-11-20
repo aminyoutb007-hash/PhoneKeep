@@ -203,6 +203,7 @@ class BackupData:
         self.lock = threading.Lock()
         self.closed = threading.Event()     # set once the backup's files have been let go
         self._closing = False
+        self._photos_lock = threading.Lock()   # one photo list at a time: they'd share library/Photos.sqlite
         # chat thumbnails, the large view and Save all (M6) read under the same lock, never a closed backup
         self.preview = sx.ChatPreview(self.ctx, self.lock, lambda: self._closing)
         self.contacts = []
@@ -260,18 +261,20 @@ class BackupData:
 
     def _photos(self):
         """The backup's photos: (source, items). The source reads the backup under this lock and never once it's
-        closed; its list is made outside the lock, since making it reads the Photos library through that lock."""
+        closed; its list is made outside the lock, since making it reads the Photos library through that lock.
+        A second caller waits for the first one's list instead of copying the library into the same folder."""
         import photos as ph
-        with self.lock:
-            if "photos" in self.cache:
-                return self.cache["photos"]
-            if self._closing:
-                raise wv.PhoneKeepError("This backup was closed.")
-            src = ph.BackupPhotoSource(self.reader, Path(self.reader._tmp.name) / "photos", self.lock,
-                                       lambda: self._closing)
-        items = src.items()
-        with self.lock:
-            return self.cache.setdefault("photos", (src, items))
+        with self._photos_lock:
+            with self.lock:
+                if "photos" in self.cache:
+                    return self.cache["photos"]
+                if self._closing:
+                    raise wv.PhoneKeepError("This backup was closed.")
+                src = ph.BackupPhotoSource(self.reader, Path(self.reader._tmp.name) / "photos", self.lock,
+                                           lambda: self._closing)
+            items = src.items()
+            with self.lock:
+                return self.cache.setdefault("photos", (src, items))
 
     def count(self, key: str) -> str:
         if key == "contacts":                     # the photos wait until Contacts is opened
