@@ -57,9 +57,10 @@ person; an email address matches as written (FaceTime and iMessage use them); a 
 one-to-one chat matches by its number or address; a group chat is listed when the person wrote in it, with their own
 messages counted. A click opens the chat, call or voicemail in its own view. The other way round: a one-to-one chat's
 header, Calls and Voicemail have *Contact card*. A number two contacts share opens neither card (whose it is can't be
-told). In a group chat, the People window has *Contact card* for the chosen person, found by the number their
+told), and PhoneKeep says that, not "isn't in Contacts". In a group chat, the People window has *Contact card* for the chosen person, found by the number their
 messages came from. Newer WhatsApp hides group members' numbers behind ids of its own (…@lid); WhatsApp's own
-LID.sqlite in the backup says which number each belongs to, and PhoneKeep reads it.
+LID.sqlite in the backup says which number each belongs to, and PhoneKeep reads it. The main window's "Choose the chats to export"
+has no phone window behind it, so its People window has no *Contact card*.
 
 ## Q4. Storage map
 

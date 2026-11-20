@@ -94,6 +94,12 @@ def person_for(people: list, addr: Optional[str]) -> Optional[int]:
     return found[0] if len(found) == 1 else None
 
 
+def contacts_with(people: list, addr: Optional[str]) -> int:
+    """How many contacts have that number or address (person_for finds one only when this is 1)."""
+    k = key_of(addr)
+    return sum(1 for p in people or () if k in keys_of(p)) if k else 0
+
+
 def find_all(get, keys: set[str]) -> dict:
     """get(key) -> what the phone window loads for that app (BackupData.get). Returns {"chats", "calls",
     "voicemail", "missing", "unread"}: what's with them in each, newest first; the apps this backup doesn't have

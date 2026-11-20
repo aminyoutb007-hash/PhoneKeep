@@ -1415,13 +1415,22 @@ class PhoneWindow(tk.Toplevel):
         import search
         return lambda: self.open_hit(search.Hit("contacts", "", "", ref=i), "")
 
+    def card_missing(self, addr) -> str:
+        """Q3: why card_for(addr) found no card, as the end of a sentence about the number."""
+        import people as pp
+        data = self.data
+        n = pp.contacts_with(data.contacts if data is not None else [], addr)
+        if n > 1:
+            return f"is on {n:,} contacts in the iPhone, so PhoneKeep can't tell whose card it is"
+        return "isn't in the iPhone's Contacts"
+
     def open_card_for(self, addr, what: str = "") -> None:
         if addr is None:
             self.banner(f"Click a {what} first, then Contact card", color=theme.ACCENT_PALE)
             return
         go = self.card_for(addr)
         if go is None:
-            self.banner("This number or address isn't in the iPhone's Contacts", color=theme.ACCENT_PALE)
+            self.banner(f"This number or address {self.card_missing(addr)}", color=theme.ACCENT_PALE)
         else:
             go()
 
@@ -1851,6 +1860,7 @@ class PhoneWindow(tk.Toplevel):
                                      f" · backup of {self.data.info.get('date') or '?'}")
         panel = ui.ChatPanel(self.content, lists, self.data.preview, select_all=False, preview_limit=600)
         panel.card_for = self.card_for                              # Q3: "Contact card" on a one-to-one chat
+        panel.card_why = self.card_missing                          #     and why there's none (People window)
         panel.pack(fill="both", expand=True)
         self.find_hook = (key, panel.q, lambda ref: panel.show_chat(key, ref[0], ref[1]))
 

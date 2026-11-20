@@ -748,6 +748,7 @@ class ChatPanel(tk.Frame):
         self.people_btn = RoundButton(head, "People", self.open_people, "secondary", 120, 30, 12, bg=CARD)
         # Q3: a one-to-one chat with someone in Contacts opens their card; card_for(jid) -> open it, or None
         self.card_for = None
+        self.card_why = None                # card_why(addr) -> why card_for found none ("isn't in the iPhone's Contacts")
         self.card_btn = RoundButton(head, "Contact card", None, "secondary", 130, 30, 12, bg=CARD)
         self.pv_sub = tk.Label(right, text="Click a chat on the left to see its latest messages.",
                                bg=CARD, fg=MUTED, font=font(11), anchor="w")
@@ -1386,16 +1387,19 @@ class ChatPanel(tk.Frame):
             p = people[int(p_iid[1:])] if p_iid else None
             if p is None:
                 return
-            fn = self.card_for(p["addr"]) if self.card_for and p.get("addr") else None
+            fn = self.card_for(p["addr"]) if p.get("addr") else None
             if fn is None:
-                w.note.configure(text=f"{p['name']}: " + ("that's you." if p["name"] == "You" else
-                                 "not in the iPhone's Contacts." if p.get("addr") else
-                                 "the app didn't keep their number, so their card can't be found."))
+                w.note.configure(text=f"{p['name']}: " + (
+                    "that's you." if p["name"] == "You" else
+                    "the app didn't keep their number, so their card can't be found." if not p.get("addr") else
+                    f"their number {self.card_why(p['addr'])}." if self.card_why else
+                    "not in the iPhone's Contacts."))
                 return
             w.destroy()
             fn()
-        w.card = card
-        RoundButton(bar, "Contact card", card, "secondary", 130, 34, 12, bg=BG).pack(side="left")
+        w.card = card if self.card_for else None    # no phone window behind it (the export chooser): no cards
+        if self.card_for:
+            RoundButton(bar, "Contact card", card, "secondary", 130, 34, 12, bg=BG).pack(side="left")
         RoundButton(bar, "Done", w.destroy, "primary", 90, 34, 12, bg=BG).pack(side="right")
         RoundButton(bar, "Everyone", lambda: self.set_people(key, cid, set()), "secondary", 110, 34, 12,
                     bg=BG).pack(side="right", padx=6)
