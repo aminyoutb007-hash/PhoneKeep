@@ -18,6 +18,7 @@ STEPS = [
     ("WhatsApp Business backup", "make_biz.py", False),
     ("Rich photo backup (months, Live Photo, video, thumbnails)", "make_rich.py", False),
     ("Security: script injection, path escapes, spreadsheet formulas", "test_security.py", False),
+    ("Tests start past macOS's 'reopen windows?' wait after a killed test (_tk_start.py)", "test_tk_start.py", False),
     ("Phone window with a simulated iPhone", "test_phone_window.py", True),   # needs a display
     ("S1: encryption by default, keychain, no password on command lines or in logs", "test_s1_encryption.py", True),
     ("S2: app lock with Touch ID / the computer password / Windows Hello", "test_s2_app_lock.py", True),
@@ -108,6 +109,8 @@ failed = []
 for name, script, needs_display in STEPS:
     print(f"\n=== {name} ({script})", flush=True)
     cmd = [sys.executable, "-X", "faulthandler", str(HERE / script)]
+    if sys.platform == "darwin":                # past macOS's "reopen windows?" wait after a killed test (_tk_start.py)
+        cmd[3:3] = [str(HERE / "_tk_start.py")]
     if needs_display:
         if XVFB is None:
             print("skipped: no display (install xvfb to run it on Linux)", flush=True)

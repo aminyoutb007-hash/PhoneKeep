@@ -79,7 +79,8 @@ def check(cond, what):
 
 
 def run(mode):
-    p = subprocess.run([sys.executable, __file__, mode], capture_output=True, text=True, timeout=120)
+    start = [str(Path(__file__).with_name("_tk_start.py"))]   # as run_all starts a test: past a killed test (macOS)
+    p = subprocess.run([sys.executable, *start, __file__, mode], capture_output=True, text=True, timeout=120)
     line = next((l for l in p.stdout.splitlines() if l.startswith("RESULT")), "")
     if not line:
         print(p.stdout[-2000:], p.stderr[-3000:], sep="\n")
