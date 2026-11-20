@@ -70,7 +70,9 @@ cam = {"Media/DCIM/100APPLE/IMG_0600.HEIC": ("f" * 40, 0, 4_000_000),
        "Media/DCIM/100APPLE/IMG_0600.AAE": ("4" * 40, 0, 1_000),
        "Media/PhotoData/CPLAssets/group1/0A1B.MOV": ("5" * 40, 0, 90_000_000),  # downloaded again from iCloud
        "Media/PhotoData/CPLAssets/group1/0A1C.HEIC": ("6" * 40, 0, 5_000_000),  # a Live Photo kept there
-       "Media/PhotoData/CPLAssets/group1/0A1C.MOV": ("9" * 40, 0, 2_500_000)}
+       "Media/PhotoData/CPLAssets/group1/0A1C.MOV": ("9" * 40, 0, 2_500_000),
+       "Media/PhotoData/CPLAssets/group2/0B2D.JPG": ("a" * 40, 0, 6_000_000),   # not a library row: not deleted
+       "Media/PhotoData/CPLAssets/group2/0B2E.MOV": ("b" * 40, 0, 8_000_000)}   # not listed: not a map video
 when = _dt.datetime(2026, 1, 1)
 its = [_ph.PhotoItem("DCIM/100APPLE/IMG_0600.HEIC", "IMG_0600.HEIC", 4_000_000, when, False,
                      live_video="DCIM/100APPLE/IMG_0600.MOV"),
@@ -82,9 +84,10 @@ in_trash = {"DCIM/100APPLE/IMG_0602.MOV", "DCIM/100APPLE/IMG_0603.HEIC"}
 fm = lambda d, p: {k: v for k, v in cam.items() if k.startswith(p)} if d == "CameraRollDomain" else {}
 in_lib = sm.media_sizes(fm, its, in_trash)
 check([v[:2] for v in in_lib["videos"]] == [("IMG_0700.MOV", 90_000_000), ("IMG_0601.MOV", 70_000_000)]   # noqa: F821
-      and in_lib["photos"] == {"video": 160_000_000, "photo": 14_500_000, "other": 1_000, "deleted": 23_000_000},
+      and in_lib["photos"] == {"video": 160_000_000, "photo": 20_500_000, "other": 8_001_000, "deleted": 23_000_000},
       f"with the library: Recently Deleted is what it has there (a Live Photo with its moving part); a Live Photo in "
-      f"PhotoData/CPLAssets is paired; the videos are Photos', named as in Photos ({in_lib['photos']})")
+      f"PhotoData/CPLAssets is paired, and a file there that isn't in Photos' list isn't deleted either; the videos "
+      f"are Photos', named as in Photos, and a video it doesn't list is another file ({in_lib['photos']})")
 # no library (Photos.sqlite missing or unreadable): nothing is called deleted, every camera file still counts
 no_lib = sm.media_sizes(fm, [i for i in its if i.id.startswith("DCIM/")], None)
 check(no_lib["photos"]["deleted"] == 0 and sum(no_lib["photos"].values()) == sum(v[2] for v in cam.values()),  # noqa: F821

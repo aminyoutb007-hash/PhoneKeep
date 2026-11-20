@@ -98,8 +98,9 @@ def media_sizes(file_meta: Callable[[str, str], dict], items: Optional[list] = N
     The camera roll is DCIM and the originals iCloud Photos downloaded again (photos.CAMERA_FOLDERS). A Live Photo's
     moving part (a .MOV beside a still of the same name) counts with its photo, as in Photos and clean-up.
     trashed: the camera files the Photos library has in Recently Deleted (they still take space until the iPhone
-    empties it); None without the library. items: the photos as Photos lists them, for the videos' names (an
-    original from iCloud is kept under a name of its own)."""
+    empties it); None without the library. items: the photos as Photos lists them: the videos are the ones it lists
+    (so a click always finds them in Photo clean-up), named as Photos names them (an original from iCloud is kept
+    under a name of its own); a video file it doesn't list counts as other files."""
     import photos as ph
     photos = {"video": 0, "photo": 0, "other": 0, "deleted": 0}
     camera = {}
@@ -117,6 +118,8 @@ def media_sizes(file_meta: Callable[[str, str], dict], items: Optional[list] = N
             k = "deleted"               # in Recently Deleted, a Live Photo's moving part with its photo
         elif live:
             k = "photo"                 # a Live Photo's moving part: part of its photo, as in Photos and clean-up
+        elif k == "video" and items is not None and rel not in names:
+            k = "other"                 # a video file Photos doesn't list: not one the map can send to clean-up
         photos[k] += size or 0
         if k == "video":
             videos.append((names.get(rel, PurePosixPath(rel).name), size or 0, mtime))
