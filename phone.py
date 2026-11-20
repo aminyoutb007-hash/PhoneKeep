@@ -250,8 +250,8 @@ class BackupData:
                 v = sx.load_call_recordings(c)
             elif key == "safari":
                 v = sx.load_safari(c)
-            elif key == "apps":
-                v = sx.load_apps(c)
+            elif key == "apps":                 # with each app's file count, read here under the lock
+                v = [(a, len(c.files("AppDomain-" + a))) for a in sx.load_apps(c)]
             elif key == "allfiles":
                 v = self.reader.domains()
             else:
@@ -2211,7 +2211,7 @@ class PhoneWindow(tk.Toplevel):
 
     def v_apps(self, key, apps):
         self.view_sub.configure(text=f"{len(apps):,} apps")
-        rows = [[a, f"{len(self.data.ctx.files('AppDomain-' + a)):,} files in backup"] for a in apps]
+        rows = [[a, f"{n:,} files in backup"] for a, n in apps]
         self.table_view(key, ["App ID", "Data in backup"], rows, [380, 200])
 
     # all files (B5) -------------------------------------------------------------------
