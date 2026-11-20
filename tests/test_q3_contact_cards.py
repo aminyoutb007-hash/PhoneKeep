@@ -81,6 +81,9 @@ people_list = [sam, {"phones": [("mobile", "+44 7700 900222")], "emails": []},
 check(pp.person_for(people_list, "447700900222@s.whatsapp.net") == 1 and pp.person_for(people_list, "x@y.z") is None
       and pp.person_for(people_list, "02079460001") is None,
       "the contact with a number: found; unknown: none; two contacts with it: none (whose card is unclear)")
+check(pp.contacts_with(people_list, "02079460001") == 2 and pp.contacts_with(people_list, "+447700900222") == 1
+      and pp.contacts_with(people_list, "+447700900999") == 0 and pp.contacts_with(people_list, "") == 0,
+      "how many contacts have a number: 2 (shared), 1, 0, and 0 for no number")
 
 
 def boom(key):
@@ -294,14 +297,34 @@ def chat_panel():
 check(pump(lambda: win.current == "messages" and chat_panel() is not None and chat_panel().shown_chat is not None
            and chat_panel().shown_chat[1] == cv.with_items[grp_row][1][0], 30), "his Messages group opens")
 panel = chat_panel()
+# a panel with no phone window behind it (the main window's export chooser) can't open cards: no button there
+had, panel.card_for = panel.card_for, None
+panel.open_people()
+check(panel.people_win.card is None and not any(getattr(c, "text", None) == "Contact card"
+                                                for c in panel.people_win.winfo_children()[-1].winfo_children()),
+      "  a People window with no phone window behind it has no Contact card button")
+panel.people_win.destroy()
+panel.card_for = had
 panel.open_people()
 pw = panel.people_win
+check(any(getattr(c, "text", None) == "Contact card" for c in pw.winfo_children()[-1].winfo_children()),
+      "  (and with one, the same place has it)")
 check(pw is not None and pw.winfo_exists(), "  its People window opens")
 names = {panel.people_tree.item(i, "text"): i for i in panel.people_tree.get_children()}
 karim_row = next((i for n, i in names.items() if "Karim" in n), None)
 check(karim_row is not None, f"  Karim is in it ({sorted(names)})")
-old = win.contacts_view
 panel.people_tree.focus(karim_row)
+# while a second (invented) contact has his number too, PhoneKeep can't tell whose card it is, and says that
+karim = next(c for c in win.data.contacts if c.get("name") == "Karim B")
+twin = dict(karim, name="Kim Twin")
+win.data.contacts.append(twin)
+pw.card()
+check(pw.winfo_exists() and "is on 2 contacts" in pw.note.cget("text") and "can't tell whose card" in pw.note.cget("text"),
+      f"  a number two contacts share: the window says so and stays open ({pw.note.cget('text')!r})")
+win.open_card_for("+447700900456", "voicemail")
+check("is on 2 contacts" in win.bar_text.cget("text"), f"  and so does a table's Contact card ({win.bar_text.cget('text')!r})")
+win.data.contacts.remove(twin)
+old = win.contacts_view
 pw.card()
 check(pump(lambda: win.current == "contacts" and win.contacts_view is not old
            and win.contacts_view.current is not None, 30)
