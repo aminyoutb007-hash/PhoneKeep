@@ -20,11 +20,11 @@ import json, sys
 out = {"argv": sys.argv, "path0": sys.path[0], "name": __name__, "file": __file__,
        "main": sys.modules["__main__"].__dict__ is globals()}
 if sys.platform == "darwin":
-    from Foundation import NSUserDefaults
+    from Foundation import NSBundle, NSUserDefaults
     d = NSUserDefaults.standardUserDefaults()
     out["ignore"] = bool(d.boolForKey_("ApplePersistenceIgnoreState"))
-    out["kept"] = d.persistentDomainForName_("org.python.python") or {}
-    out["kept"] = "ApplePersistenceIgnoreState" in out["kept"]
+    out["domain"] = NSBundle.mainBundle().bundleIdentifier() or "org.python.python"   # this process's own settings
+    out["kept"] = "ApplePersistenceIgnoreState" in (d.persistentDomainForName_(out["domain"]) or {})
 print("PROBE " + json.dumps(out))
 if "--fail" in sys.argv:
     raise SystemExit(3)
@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix="pk_tkstart_") as tmp:
     if sys.platform == "darwin" and wrapped:
         check(wrapped.get("ignore") is True and direct.get("ignore") is False,
               "on a Mac it switches off the 'reopen windows?' prompt for that process only")
-        check(wrapped.get("kept") is False, "  without writing it to the Mac's settings")
+        check(wrapped.get("kept") is False, f"  without writing it to the Mac's settings ({wrapped.get('domain')})")
 
 src = (HERE / "run_all.py").read_text(encoding="utf-8")
 check('"_tk_start.py"' in src and 'sys.platform == "darwin"' in src, "run_all starts each test through it on a Mac")
