@@ -200,10 +200,19 @@ check(not texts_fit(), f"  names fit inside their blocks ({texts_fit() or 'all f
 win.map_open("IMG_0003.MOV")
 check(opened == ["videos"], f"a click on a video opens Photo clean-up on Large videos ({opened})")    # noqa: F821
 # back up by the path
-crumb = [w for w in win.content.winfo_children()[1].winfo_children() if isinstance(w, tk.Label)
-         and w.cget("text") == "iPhone"]                                                           # noqa: F821
-crumb[0].event_generate("<Button-1>")
-app.update()
+
+
+def click_path(text):
+    """A click on that link in the path at the top, once it's on screen (on a busy machine the new labels can take
+    a moment to show, and a click on one that isn't shown yet is lost); then the map that click opens."""
+    crumb = [w for w in win.content.winfo_children()[1].winfo_children() if isinstance(w, tk.Label)
+             and w.cget("text") == text]                                                           # noqa: F821
+    pump(app, lambda: crumb[0].winfo_viewable(), 5)                                                # noqa: F821
+    crumb[0].event_generate("<Button-1>")
+    pump(app, lambda: win.map_key == "top", 5)                                                     # noqa: F821
+
+
+click_path("iPhone")
 check(win.map_key == "top", "the path at the top goes back up (iPhone)")                           # noqa: F821
 win.map_open("Apps")
 app.update()
@@ -322,16 +331,14 @@ app.update()
 check(win.map_key == "apps" and [b.name for b in win.map_blocks] == [f"Example New {i}" for i in range(3)],
       f"a block click opens it with the phone's newest figures ({len(win.map_blocks)} apps)")      # noqa: F821
 sm.view(win, was_ov, "apps")                                        # an inner level, drawn with the old figures
-app.update()
-crumb = [w for w in win.content.winfo_children()[1].winfo_children() if isinstance(w, tk.Label)
-         and w.cget("text") == "iPhone"]                                                           # noqa: F821
-crumb[0].event_generate("<Button-1>")
-app.update()
+click_path("iPhone")
 top_apps = next((b.size for b in win.map_blocks if b.name == "Apps"), None)
-win.map_open("Apps")
-app.update()
+if win.map_key == "top":
+    win.map_open("Apps")
+    app.update()
 check(win.map_key == "apps" and top_apps == 6 * G and [b.name for b in win.map_blocks] == [f"Example New {i}" for i in range(3)],
-      f"the path and the blocks follow the phone's newest figures, not the ones the map opened with ({top_apps})")  # noqa: F821
+      f"the path and the blocks follow the phone's newest figures, not the ones the map opened with ({top_apps}; "
+      f"at {win.map_key}: {', '.join(b.name for b in win.map_blocks[:4])})")                       # noqa: F821
 win.overview = was_ov
 # back to Storage
 win.content.winfo_children()[0].winfo_children()[0].command()                     # ‹ Storage
