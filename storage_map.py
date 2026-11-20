@@ -97,7 +97,8 @@ def media_sizes(file_meta: Callable[[str, str], dict]) -> dict:
     photos = {"video": 0, "photo": 0, "other": 0}
     videos = []
     camera = file_meta("CameraRollDomain", "Media/DCIM/")
-    stills = {_stem(rel) for rel in camera if _kind(rel) == "photo"}
+    import photos as ph
+    stills = {_stem(rel) for rel in camera if PurePosixPath(rel).suffix.lower() in ph.IMG_EXT}   # as photos.py pairs
     for rel, (_fid, mtime, size) in camera.items():
         k = _kind(rel)
         if k == "video" and rel.lower().endswith(".mov") and _stem(rel) in stills:

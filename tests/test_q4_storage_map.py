@@ -48,10 +48,12 @@ check(sm.squarify([0, 0], 0, 0, 100, 100) == [(0, 0, 0.0, 0.0)] * 2 and sm.squar
 # a Live Photo's moving part (a .MOV next to its still) is part of the photo, as in Photos and clean-up
 live = {"Media/DCIM/100APPLE/IMG_0500.HEIC": ("a" * 40, 0, 3_000_000),
         "Media/DCIM/100APPLE/IMG_0500.MOV": ("b" * 40, 0, 2_000_000),
-        "Media/DCIM/100APPLE/IMG_0501.MOV": ("c" * 40, 0, 50_000_000)}
+        "Media/DCIM/100APPLE/IMG_0501.MOV": ("c" * 40, 0, 50_000_000),
+        "Media/DCIM/100APPLE/IMG_0502.BMP": ("d" * 40, 0, 1_000_000),      # a still photos.py pairs, as the map must
+        "Media/DCIM/100APPLE/IMG_0502.MOV": ("e" * 40, 0, 1_000_000)}
 ms = sm.media_sizes(lambda d, p: live if d == "CameraRollDomain" else {})
 check([v[0] for v in ms["videos"]] == ["IMG_0501.MOV"]                                          # noqa: F821
-      and ms["photos"] == {"video": 50_000_000, "photo": 5_000_000, "other": 0},
+      and ms["photos"] == {"video": 50_000_000, "photo": 6_000_000, "other": 1_000_000},
       f"a Live Photo's .MOV counts with its photo, not as a video ({ms['photos']})")
 
 # -- an invented phone and backup ---------------------------------------------------------------------------------------
