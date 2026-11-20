@@ -308,9 +308,12 @@ class BackupPhotoSource(PhotoSource):
             return True
         full = self.cache / "full" / item_id
         dest.parent.mkdir(parents=True, exist_ok=True)
-        if full.exists():
-            shutil.copy2(full, dest)
-            return True
+        with self._reader_lock:              # the cached copy lives in the backup's temp folder, gone once it's closed
+            if self._closed():
+                return False
+            if full.exists():
+                shutil.copy2(full, dest)
+                return True
         return self._extract("Media/" + item_id, dest)
 
 

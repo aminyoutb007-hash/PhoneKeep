@@ -129,9 +129,40 @@ check(psrc.copy(pitems[1].id, out / "b") is False and psrc.read(pitems[1].id) is
       "  after closing, saving or reading a photo says no without touching the backup")
 shutil.rmtree(out, ignore_errors=True)
 
+# a photo already copied out of the backup (a thumbnail made it) is saved from the backup's temp folder: closing
+# while that copy runs lets it finish too, instead of deleting the folder under it (FileNotFoundError; #131 note)
+import photos as ph
+d7 = phone.BackupData(fake, None)
+psrc7, pitems7 = d7.get("photos")
+full = psrc7.cache / "full" / pitems7[0].id
+full.parent.mkdir(parents=True, exist_ok=True)
+full.write_bytes(b"invented photo")
+real_copy2, in_copy, during7 = ph.shutil.copy2, threading.Event(), {}
+
+
+def slow_copy2(a, b, *r, **k):
+    in_copy.set()
+    time.sleep(1.0)
+    during7["closed_meanwhile"] = d7.closed.is_set()
+    return real_copy2(a, b, *r, **k)
+
+
+ph.shutil.copy2 = slow_copy2
+saved7 = {}
+t = threading.Thread(target=lambda: saved7.update(ok=psrc7.copy(pitems7[0].id, out / "c")), daemon=True)
+t.start()
+check(in_copy.wait(5), "  the cached photo's copy starts")
+d7.close()
+t.join(10)
+ph.shutil.copy2 = real_copy2
+check(saved7.get("ok") is True and during7.get("closed_meanwhile") is False
+      and (out / "c").read_bytes() == b"invented photo",
+      f"closing while a photo is saved from the backup's temp folder: it's saved, the folder stays until then ({saved7})")
+check(d7.closed.wait(5) and psrc7.copy(pitems7[1].id, out / "d") is False, "  then saving another says no")
+shutil.rmtree(out, ignore_errors=True)
+
 # two callers at once make the photo list once: two lists would copy the Photos library into the same folder,
 # one deleting the other's -wal/-shm while it reads them (#131 follow-up)
-import photos as ph
 d5 = phone.BackupData(fake, None)
 real_items, made = ph.BackupPhotoSource.items, []
 
