@@ -90,42 +90,36 @@ def _stem(rel: str) -> tuple:
     return str(p.parent), p.stem.upper()
 
 
-def media_sizes(file_meta: Callable[[str, str], dict], items: Optional[list] = None) -> dict:
+def media_sizes(file_meta: Callable[[str, str], dict], items: Optional[list] = None,
+                trashed: Optional[set] = None) -> dict:
     """From the backup's file list (BackupData.file_meta): what Photos and Messages hold, by kind.
     {"photos": {"video": n, "photo": n, "other": n, "deleted": n}, "videos": [(name, size, mtime)] biggest first,
      "messages": {"video": n, "photo": n, "other": n, "history": n}}
-    items: the photos as Photos lists them (BackupData.get("photos")), so the map's videos are the ones Photo
-    clean-up shows; a photo or video file Photos leaves out is in Recently Deleted (it still takes space until the
-    iPhone empties it). Without them, from the file list alone."""
+    The camera roll is DCIM and the originals iCloud Photos downloaded again (photos.CAMERA_FOLDERS). A Live Photo's
+    moving part (a .MOV beside a still of the same name) counts with its photo, as in Photos and clean-up.
+    trashed: the camera files the Photos library has in Recently Deleted (they still take space until the iPhone
+    empties it); None without the library. items: the photos as Photos lists them, for the videos' names (an
+    original from iCloud is kept under a name of its own)."""
     import photos as ph
     photos = {"video": 0, "photo": 0, "other": 0, "deleted": 0}
     camera = {}
     for folder in ph.CAMERA_FOLDERS:
         camera.update(file_meta("CameraRollDomain", folder))
-    if items is not None:
-        listed = {}
-        for i in items:
-            listed[i.id] = "video" if i.video else "photo"
-            if getattr(i, "live_video", None):
-                listed[i.live_video] = "photo"     # a Live Photo's moving part: part of its photo
-        for rel, (_fid, _mtime, size) in camera.items():
-            k = listed.get(rel[len("Media/"):])
-            if k is None:
-                ext = PurePosixPath(rel).suffix.lower()
-                k = "deleted" if ext in ph.IMG_EXT | ph.VID_EXT else "other"
-            photos[k] += size or 0
-        videos = [(i.name, camera["Media/" + i.id][2] or 0, camera["Media/" + i.id][1]) for i in items
-                  if i.video and "Media/" + i.id in camera]
-    else:
-        videos = []
-        stills = {_stem(rel) for rel in camera if PurePosixPath(rel).suffix.lower() in ph.IMG_EXT}  # as photos.py
-        for rel, (_fid, mtime, size) in camera.items():
-            k = _kind(rel)
-            if k == "video" and rel.lower().endswith(".mov") and _stem(rel) in stills:
-                k = "photo"             # a Live Photo's moving part: part of its photo, as in Photos and clean-up
-            photos[k] += size or 0
-            if k == "video":
-                videos.append((PurePosixPath(rel).name, size or 0, mtime))
+    stills = {_stem(rel) for rel in camera if PurePosixPath(rel).suffix.lower() in ph.IMG_EXT}   # as photos.py pairs
+    gone = {"Media/" + t for t in (trashed or ())}
+    gone_stems = {_stem(rel) for rel in gone}
+    names = {"Media/" + i.id: i.name for i in (items or ())}
+    videos = []
+    for rel, (_fid, mtime, size) in camera.items():
+        k = _kind(rel)
+        live = k == "video" and rel.lower().endswith(".mov") and _stem(rel) in stills
+        if rel in gone or (live and _stem(rel) in gone_stems):
+            k = "deleted"               # in Recently Deleted, a Live Photo's moving part with its photo
+        elif live:
+            k = "photo"                 # a Live Photo's moving part: part of its photo, as in Photos and clean-up
+        photos[k] += size or 0
+        if k == "video":
+            videos.append((names.get(rel, PurePosixPath(rel).name), size or 0, mtime))
     videos.sort(key=lambda v: -v[1])
     msgs = {"video": 0, "photo": 0, "other": 0, "history": 0}
     for rel, (_fid, _m, size) in file_meta("MediaDomain", "Library/SMS/Attachments/").items():
@@ -380,11 +374,13 @@ def _read_media(win, ov, key):
         if win.current == "storagemap" and win.overview is not None:
             view(win, win.overview, getattr(win, "map_key", "top"))
     def read():
-        items = None
+        items = trashed = None
         if callable(getattr(data, "get", None)):
             try:
-                items = data.get("photos")[1]     # the videos Photo clean-up shows (and the library's Recently Deleted)
+                src, items = data.get("photos")     # the Photos library: what's in Recently Deleted, the videos' names
+                lib = src.library()
+                trashed = None if lib is None else {k for k, a in lib.assets.items() if a.trashed}
             except Exception:
-                items = None                      # no library: from the file list alone
-        return media_sizes(data.file_meta, items)
+                items = trashed = None              # no library: from the file list alone
+        return media_sizes(data.file_meta, items, trashed)
     win.backup_runner.submit(read, ok, err)
