@@ -385,6 +385,9 @@ def delete_snapshot(backup_dir: Path, udid: str, sid: str, to_trash: bool = True
     else:
         shutil.rmtree(sdir, ignore_errors=True)
     _files_cache.pop(sdir, None)
+    if not sdir.exists():
+        import tamper
+        tamper.forget(sdir)                  # S8: its seal leaves the record with it
     c = _choices(backup_dir, udid)
     if c.pop(sid, None) is not None:
         _save_choices(backup_dir, udid, c)

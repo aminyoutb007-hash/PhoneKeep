@@ -4,7 +4,8 @@ Each snapshot gets a seal when it's made (seal.json next to its files.json): the
 four manifest files, and the size of every store blob it uses. Blobs are already named by their SHA-256 (B3), so
 the seal adds no new hashing at backup time. Two things make a seal hard to replace:
 - PhoneKeep's own folder (not the backup folder) keeps a record, seals.json, of every seal it made: the hash of
-  the seal. A seal that was deleted or rewritten no longer matches it. The menu bar helper writes this record too;
+  the seal. A seal that was deleted or rewritten no longer matches it. The menu bar helper writes this record too,
+  and a snapshot PhoneKeep deletes leaves it;
 - the seal is signed (HMAC-SHA256) with a key PhoneKeep keeps in the computer's keychain, with the key's id, so
   a backup taken to another computer can still be checked against its signature when the record isn't there.
 The menu bar helper never reads the keychain (a background keychain prompt on a Mac would be confusing): its seal
@@ -152,8 +153,20 @@ def _record_to_update(end: float) -> Optional[dict]:
 
 
 def _note(sdir: Path, seal: dict) -> None:
-    """Add a seal to the record. One writer at a time: a thread lock here, a lock file across processes (the
-    window and the menu bar helper), and each write through its own temporary file."""
+    """Add a seal to the record."""
+    _change_record(lambda rec: rec.__setitem__(_seal_id(sdir), _body_hash(seal)) or True)
+
+
+def forget(sdir: Path) -> None:
+    """Drop a snapshot PhoneKeep deleted from the record (it only grew). Only for PhoneKeep's own deletes: a
+    snapshot that is just missing (its drive unplugged, B4) keeps its entry, or it couldn't be checked later."""
+    _change_record(lambda rec: rec.pop(_seal_id(sdir), None) is not None)
+
+
+def _change_record(change: Callable[[dict], bool]) -> None:
+    """Change the record with `change` (True: it changed, write it). One writer at a time: a thread lock here, a
+    lock file across processes (the window and the menu bar helper), and each write through its own temporary
+    file."""
     f = _record_file()
     lock = f.with_suffix(".lock")
     with _record_lock:
@@ -180,9 +193,8 @@ def _note(sdir: Path, seal: dict) -> None:
                 return
         try:
             rec = _record_to_update(end)
-            if rec is None:
-                return                               # the record couldn't be read: leave it as it is
-            rec[_seal_id(sdir)] = _body_hash(seal)
+            if rec is None or not change(rec):
+                return                               # the record couldn't be read (leave it as it is), or no change
             tmp = f.with_name(f"seals.{os.getpid()}.{threading.get_ident()}.tmp")
             tmp.write_text(json.dumps(rec, sort_keys=True), encoding="utf-8")
             while True:                              # Windows: a reader may have it open for a moment

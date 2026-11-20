@@ -456,5 +456,26 @@ check(pump(lambda: json.loads((Path(sw.path) / tamper.SEAL).read_text(encoding="
       "the helper's unsigned seal is signed when a window opens the snapshot")
 w.destroy()
 
+# the record loses a snapshot's entry when PhoneKeep deletes the snapshot (Delete… or the automatic clean-up), and
+# only then: a snapshot that is just missing (its drive unplugged) keeps it (it used to grow for ever)
+gone = [snapshot("00008030-S8GONE", MADE + dt.timedelta(hours=h)) for h in range(5)]
+ids_gone = [tamper._seal_id(Path(g.path)) for g in gone]
+check(all(i in tamper._record() for i in ids_gone), "five more snapshots, all in the record")
+sn.delete_snapshot(W / "Backups", "00008030-S8GONE", gone[0].id, to_trash=False)
+removed = sn.prune(W / "Backups", "00008030-S8GONE", keep=3)
+rec3 = tamper._record()
+check(ids_gone[0] not in rec3 and all(tamper._seal_id(Path(sn.snapshots_dir(W / "Backups", "00008030-S8GONE") / r))
+                                      not in rec3 for r in removed) and len(removed) == 1
+      and all(i in rec3 for i in ids_gone if i.split("/")[1] not in removed + [gone[0].id]),
+      f"a deleted snapshot and one the clean-up removed leave the record; the other three stay ({len(removed)} removed)")
+away = Path(gone[-1].path)
+away.rename(away.with_name("elsewhere"))
+check(ids_gone[-1] in tamper._record(), "  a snapshot that is just missing keeps its entry")
+away.with_name("elsewhere").rename(away)
+before_bytes = (W / "seals.json").read_bytes()
+tamper.forget(W / "Backups" / "00008030-S8GONE" / "snapshots" / "never-made")
+check((W / "seals.json").read_bytes() == before_bytes and not (W / "seals.lock").exists(),
+      "  forgetting one that isn't there writes nothing")
+
 print("\nS8 TESTS:", "PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures))
 sys.exit(1 if failures else 0)
