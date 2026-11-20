@@ -197,9 +197,23 @@ t = tree_in(win.content)
 chosen = [t.item(i, "values") for i in t.selection()] if t is not None else []
 check(len(chosen) == 1 and chosen[0][1] == "Missed", f"  with that call chosen ({chosen})")
 
-# ... and from a call, the person's card
+
+def button(w, text):
+    """The table's own RoundButton with that label (its foot row), so a test presses what the user presses."""
+    for c in w.winfo_children():
+        if getattr(c, "text", None) == text:
+            return c
+        b = button(c, text)
+        if b is not None:
+            return b
+    return None
+
+
+# ... and from a call, the person's card: the Calls table's own Contact card button, on the chosen row
 old = win.contacts_view
-win.open_card_for(chosen[0][3], "call")
+btn = button(win.content, "Contact card")
+check(btn is not None, "  the Calls table has a Contact card button")
+btn.command()
 check(pump(lambda: win.current == "contacts" and win.contacts_view is not old
            and win.contacts_view.current is not None, 30)
       and win.contacts_view.current["name"] == "Karim B", "the call's Contact card opens Karim's card")
@@ -217,7 +231,9 @@ t = tree_in(win.content)
 chosen = [t.item(i, "values") for i in t.selection()] if t is not None else []
 check(len(chosen) == 1 and chosen[0][2] == "+447700900456", f"  with that voicemail chosen ({chosen})")
 old = win.contacts_view
-win.open_card_for(chosen[0][2], "voicemail")
+btn = button(win.content, "Contact card")
+check(btn is not None, "  the Voicemail table has a Contact card button")
+btn.command()                                  # the Voicemail table's own button, on the chosen row
 check(pump(lambda: win.current == "contacts" and win.contacts_view is not old
            and win.contacts_view.current is not None, 30)
       and win.contacts_view.current["name"] == "Karim B", "  its Contact card opens Karim's card")
