@@ -23,6 +23,7 @@ listed here.
 | [ansilogs](https://github.com/doronz88/ansilogs) | MIT |
 | [anyio](https://github.com/agronholm/anyio) | MIT |
 | [apple-compress](https://github.com/m1stadev/apple-compress) | MIT ¹ |
+| [apple-symbols](https://github.com/doronz88/apple-symbols) | MIT |
 | [arabic-reshaper](https://github.com/mpcabd/python-arabic-reshaper/) | MIT |
 | [arrow](https://github.com/arrow-py/arrow) | Apache-2.0 |
 | [ASGIMiddlewareStaticFile](https://github.com/rexzhang/asgi-middleware-static-file) | MIT ¹ |
