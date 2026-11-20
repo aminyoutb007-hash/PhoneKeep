@@ -21,7 +21,7 @@ import shutil
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from reconnect import Disconnected, NotConnected, is_dropped, retry_once
 
@@ -204,9 +204,14 @@ def edits_folder(item: PhotoItem) -> str:
 class BackupPhotoSource(PhotoSource):
     label = "this backup"
 
-    def __init__(self, reader, cache_dir: Path):
+    def __init__(self, reader, cache_dir: Path, lock=None, closed: Optional[Callable[[], bool]] = None):
+        """lock / closed: the phone window passes its backup's lock and "is it closed?" (as for ChatPreview), so a
+        thumbnail or a save in the background never reads a backup that is being closed; the reader isn't shared
+        with the window's other workers outside that lock either."""
         super().__init__(cache_dir)
         self.reader = reader
+        self._reader_lock = lock or self._lock
+        self._closed = closed or (lambda: False)
         self.meta = reader.file_meta("CameraRollDomain", "Media/")  # rel -> (fileID, mtime, size)
         self._in_folder: Optional[dict] = None
 
@@ -257,7 +262,9 @@ class BackupPhotoSource(PhotoSource):
         m = self.meta.get(rel)
         if not m:
             return False
-        with self._lock:
+        with self._reader_lock:
+            if self._closed():
+                return False
             ok = self.reader.extract("CameraRollDomain", rel, m[0], dest)
         if ok and m[1]:
             os.utime(dest, (m[1], m[1]))
@@ -267,7 +274,9 @@ class BackupPhotoSource(PhotoSource):
         m = self.meta.get("Media/" + item_id)
         if not m:
             return None
-        with self._lock:
+        with self._reader_lock:
+            if self._closed():
+                return None
             return self.reader.read_bytes("CameraRollDomain", "Media/" + item_id, m[0])
 
     def part_size(self, item_id: str) -> int:
