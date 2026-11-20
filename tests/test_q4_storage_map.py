@@ -53,8 +53,87 @@ live = {"Media/DCIM/100APPLE/IMG_0500.HEIC": ("a" * 40, 0, 3_000_000),
         "Media/DCIM/100APPLE/IMG_0502.MOV": ("e" * 40, 0, 1_000_000)}
 ms = sm.media_sizes(lambda d, p: live if d == "CameraRollDomain" else {})
 check([v[0] for v in ms["videos"]] == ["IMG_0501.MOV"]                                          # noqa: F821
-      and ms["photos"] == {"video": 50_000_000, "photo": 6_000_000, "other": 1_000_000},
+      and ms["photos"] == {"video": 50_000_000, "photo": 6_000_000, "other": 1_000_000, "deleted": 0},
       f"a Live Photo's .MOV counts with its photo, not as a video ({ms['photos']})")
+
+# with the Photos library: what's in its Recently Deleted shows as that (a Live Photo's moving part with its
+# photo), the originals iCloud Photos downloaded again (PhotoData/CPLAssets) count too, a Live Photo kept there is
+# paired as in DCIM, and the videos are named as Photos names them
+import datetime as _dt
+import photos as _ph
+cam = {"Media/DCIM/100APPLE/IMG_0600.HEIC": ("f" * 40, 0, 4_000_000),
+       "Media/DCIM/100APPLE/IMG_0600.MOV": ("1" * 40, 0, 3_000_000),           # its Live Photo's moving part
+       "Media/DCIM/100APPLE/IMG_0601.MOV": ("2" * 40, 0, 70_000_000),
+       "Media/DCIM/100APPLE/IMG_0602.MOV": ("3" * 40, 0, 20_000_000),          # in Recently Deleted
+       "Media/DCIM/100APPLE/IMG_0603.HEIC": ("7" * 40, 0, 2_000_000),          # a Live Photo in Recently Deleted
+       "Media/DCIM/100APPLE/IMG_0603.MOV": ("8" * 40, 0, 1_000_000),
+       "Media/DCIM/100APPLE/IMG_0600.AAE": ("4" * 40, 0, 1_000),
+       "Media/PhotoData/CPLAssets/group1/0A1B.MOV": ("5" * 40, 0, 90_000_000),  # downloaded again from iCloud
+       "Media/PhotoData/CPLAssets/group1/0A1C.HEIC": ("6" * 40, 0, 5_000_000),  # a Live Photo kept there
+       "Media/PhotoData/CPLAssets/group1/0A1C.MOV": ("9" * 40, 0, 2_500_000),
+       "Media/PhotoData/CPLAssets/group2/0B2D.JPG": ("a" * 40, 0, 6_000_000),   # not a library row: not deleted
+       "Media/PhotoData/CPLAssets/group2/0B2E.MOV": ("b" * 40, 0, 8_000_000)}   # not listed: not a map video
+when = _dt.datetime(2026, 1, 1)
+its = [_ph.PhotoItem("DCIM/100APPLE/IMG_0600.HEIC", "IMG_0600.HEIC", 4_000_000, when, False,
+                     live_video="DCIM/100APPLE/IMG_0600.MOV"),
+       _ph.PhotoItem("DCIM/100APPLE/IMG_0601.MOV", "IMG_0601.MOV", 70_000_000, when, True),
+       _ph.PhotoItem("PhotoData/CPLAssets/group1/0A1B.MOV", "IMG_0700.MOV", 90_000_000, when, True),
+       _ph.PhotoItem("PhotoData/CPLAssets/group1/0A1C.HEIC", "IMG_0701.HEIC", 5_000_000, when, False),
+       _ph.PhotoItem("DCIM/100APPLE/IMG_0703.MOV", "IMG_0703.MOV", 0, when, True, cloud_only=True)]   # iCloud only
+in_trash = {"DCIM/100APPLE/IMG_0602.MOV", "DCIM/100APPLE/IMG_0603.HEIC"}
+fm = lambda d, p: {k: v for k, v in cam.items() if k.startswith(p)} if d == "CameraRollDomain" else {}
+in_lib = sm.media_sizes(fm, its, in_trash)
+check([v[:2] for v in in_lib["videos"]] == [("IMG_0700.MOV", 90_000_000), ("IMG_0601.MOV", 70_000_000)]   # noqa: F821
+      and in_lib["photos"] == {"video": 160_000_000, "photo": 20_500_000, "other": 8_001_000, "deleted": 23_000_000},
+      f"with the library: Recently Deleted is what it has there (a Live Photo with its moving part); a Live Photo in "
+      f"PhotoData/CPLAssets is paired, and a file there that isn't in Photos' list isn't deleted either; the videos "
+      f"are Photos', named as in Photos, and a video it doesn't list is another file ({in_lib['photos']})")
+# no library (Photos.sqlite missing or unreadable): nothing is called deleted, every camera file still counts
+no_lib = sm.media_sizes(fm, [i for i in its if i.id.startswith("DCIM/")], None)
+check(no_lib["photos"]["deleted"] == 0 and sum(no_lib["photos"].values()) == sum(v[2] for v in cam.values()),  # noqa: F821
+      f"  without the library nothing is called Recently Deleted, and every camera file still counts, PhotoData/"
+      f"CPLAssets too ({no_lib['photos']})")
+# the window's read (_read_media) hands the library's Recently Deleted to the map: with an invented source whose
+# library has one trashed video, its size reaches win.map_media; with no library, nothing is deleted
+import types as _types
+
+
+class _Src:
+    def __init__(self, lib):
+        self.lib = lib
+
+    def library(self):
+        return self.lib
+
+
+class _Data:
+    def __init__(self, lib):
+        self.src = _Src(lib)
+
+    def file_meta(self, d, p=""):
+        return fm(d, p)
+
+    def get(self, key):
+        assert key == "photos"
+        return self.src, its
+
+
+_Lib = _types.SimpleNamespace
+for lib, want in ((_Lib(assets={"DCIM/100APPLE/IMG_0602.MOV": _Lib(trashed=True),
+                                "DCIM/100APPLE/IMG_0601.MOV": _Lib(trashed=False)}), 20_000_000), (None, 0)):
+    _w = _types.SimpleNamespace(data=_Data(lib), current="elsewhere", overview=None,
+                                backup_runner=_types.SimpleNamespace(submit=lambda fn, ok, err: ok(fn())))
+    sm._read_media(_w, None, "photos")
+    got = getattr(_w, "map_media", (None, {}))[1]
+    check(got.get("photos", {}).get("deleted") == want                                                # noqa: F821
+          and [v[0] for v in got.get("videos", [])][:2] == ["IMG_0700.MOV", "IMG_0601.MOV"],
+          f"  the window's read hands the library's Recently Deleted to the map "
+          f"({'one trashed video' if lib else 'no library'}: {got.get('photos', {}).get('deleted')}), with Photos' videos")
+
+_r = type("R", (), {"file_meta": lambda self, d, p="": {k: v for k, v in cam.items() if k.startswith(p)}
+                    if d == "CameraRollDomain" else {}})()
+check(phone.PhoneWindow._backup_sizes(_r)[0] == sum(v[2] for v in cam.values()),                      # noqa: F821
+      "  and the Storage screen's Photos (V3) counts PhotoData/CPLAssets as well, so the map's levels agree")
 
 # -- an invented phone and backup ---------------------------------------------------------------------------------------
 names = [(f"Example App {i:02d}", f"com.example.app{i:02d}") for i in range(23)]                    # invented
@@ -236,7 +315,7 @@ app.update()
 mb = {b.name: b.size for b in win.map_blocks}
 check(mb == {"Videos sent and received": 400 * M, "Photos sent and received": 250 * M, "Other attachments": 50 * M,
              "The messages themselves": 300 * M}, f"Messages opens: its attachments by kind and its history")  # noqa: F821
-check(reads["n"] == 3, f"the backup's file list was read once for this backup ({reads['n']} reads: 3 folders)")  # noqa: F821
+check(reads["n"] == 4, f"the backup's file list was read once for this backup ({reads['n']} reads: 4 folders)")  # noqa: F821
 # another backup: it's read again; the map says so while it's read
 win.data = FakeBackup()
 sm.view(win, win.overview, "top")

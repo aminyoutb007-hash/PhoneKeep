@@ -211,15 +211,27 @@ try:
         top_ok = (win.current == "storagemap" and win.overview.total
                   and (drawn < win.overview.total and "can't be estimated" in win.map_note.cget("text") if unknown
                        else drawn == win.overview.total))
-        dcim = win.data.file_meta("CameraRollDomain", "Media/DCIM/")
-        own_all = sum((m[2] or 0) for m in dcim.values())
-        # the camera roll's videos as Photos lists them (photos.py, not the map's own code), on the phone and in DCIM
-        # as the map reads: a Live Photo's moving part isn't one, nor is a video only in iCloud
+        cam = {}
+        for f in ("Media/DCIM/", "Media/PhotoData/CPLAssets/"):
+            cam.update(win.data.file_meta("CameraRollDomain", f))
+        own_all = sum((m[2] or 0) for m in cam.values())
+        # Recently Deleted, straight from the Photos library (not the map's code): the camera files it marks as
+        # trashed, with a trashed Live Photo's .MOV (same folder and name)
+        q4_lib = win.data.get("photos")[0].library()
+        q4_trash = {"Media/" + k for k, a in (q4_lib.assets.items() if q4_lib else ()) if a.trashed}
+        q4_trash_stems = {r.rsplit(".", 1)[0].upper() for r in q4_trash}
+        own_deleted = sum((m[2] or 0) for r, m in cam.items()
+                          if r in q4_trash or (r.lower().endswith(".mov") and r.rsplit(".", 1)[0].upper() in q4_trash_stems))
+        # the camera roll's videos as Photos lists them (photos.py, not the map's own code), on the phone: a Live
+        # Photo's moving part isn't one, nor is a video only in iCloud or in Recently Deleted
         own_vids = sorted(((i.size or 0) for i in win.data.get("photos")[1]
-                           if i.video and i.id.startswith("DCIM/") and not getattr(i, "cloud_only", False)),
-                          reverse=True)
+                           if i.video and not getattr(i, "cloud_only", False)), reverse=True)
         q4_photos = storage_map.levels(win.overview, [], win.map_media[1])
         photo_sum = sum(b.size for b in q4_photos["photos"][1])
+        map_deleted = sum(b.size for b in q4_photos["photos"][1] if b.name == "Recently Deleted")
+        check(q4_lib is not None and map_deleted == own_deleted,
+              "Q4: Photos' Recently Deleted block is what the Photos library has there "
+              + ("(none now)" if not own_deleted else "(sizes match)"))
         check(top_ok and photo_sum == own_all,
               f"Q4: the storage map adds up to the whole iPhone" + (" less System (can't be estimated, said)" if unknown
                                                                      else "")
