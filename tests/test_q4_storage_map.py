@@ -93,6 +93,43 @@ no_lib = sm.media_sizes(fm, [i for i in its if i.id.startswith("DCIM/")], None)
 check(no_lib["photos"]["deleted"] == 0 and sum(no_lib["photos"].values()) == sum(v[2] for v in cam.values()),  # noqa: F821
       f"  without the library nothing is called Recently Deleted, and every camera file still counts, PhotoData/"
       f"CPLAssets too ({no_lib['photos']})")
+# the window's read (_read_media) hands the library's Recently Deleted to the map: with an invented source whose
+# library has one trashed video, its size reaches win.map_media; with no library, nothing is deleted
+import types as _types
+
+
+class _Src:
+    def __init__(self, lib):
+        self.lib = lib
+
+    def library(self):
+        return self.lib
+
+
+class _Data:
+    def __init__(self, lib):
+        self.src = _Src(lib)
+
+    def file_meta(self, d, p=""):
+        return fm(d, p)
+
+    def get(self, key):
+        assert key == "photos"
+        return self.src, its
+
+
+_Lib = _types.SimpleNamespace
+for lib, want in ((_Lib(assets={"DCIM/100APPLE/IMG_0602.MOV": _Lib(trashed=True),
+                                "DCIM/100APPLE/IMG_0601.MOV": _Lib(trashed=False)}), 20_000_000), (None, 0)):
+    _w = _types.SimpleNamespace(data=_Data(lib), current="elsewhere", overview=None,
+                                backup_runner=_types.SimpleNamespace(submit=lambda fn, ok, err: ok(fn())))
+    sm._read_media(_w, None, "photos")
+    got = getattr(_w, "map_media", (None, {}))[1]
+    check(got.get("photos", {}).get("deleted") == want                                                # noqa: F821
+          and [v[0] for v in got.get("videos", [])][:2] == ["IMG_0700.MOV", "IMG_0601.MOV"],
+          f"  the window's read hands the library's Recently Deleted to the map "
+          f"({'one trashed video' if lib else 'no library'}: {got.get('photos', {}).get('deleted')}), with Photos' videos")
+
 _r = type("R", (), {"file_meta": lambda self, d, p="": {k: v for k, v in cam.items() if k.startswith(p)}
                     if d == "CameraRollDomain" else {}})()
 check(phone.PhoneWindow._backup_sizes(_r)[0] == sum(v[2] for v in cam.values()),                      # noqa: F821
