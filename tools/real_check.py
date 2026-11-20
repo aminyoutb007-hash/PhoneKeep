@@ -1327,53 +1327,58 @@ try:
 
     # -- Q2: chats as on the phone: link cards and voice notes (counts only) ------------------------------------
     import voicenote
-    con = ctx.db(sx.HOME, "Library/SMS/sms.db")
-    kept = 0
-    if con is not None:
-        if {"payload_data", "balloon_bundle_id"} <= {r[1] for r in con.execute("PRAGMA table_info(message)")}:
-            kept = con.execute("SELECT COUNT(*) FROM message WHERE payload_data IS NOT NULL "
-                               "AND balloon_bundle_id LIKE '%URLBalloonProvider%'").fetchone()[0]
-        con.close()
-    sms_msgs = [m for c in sx.load_messages(ctx) for m in c["messages"]]
-    cards = [m["link"] for m in sms_msgs if m.get("link")]
-    check(len(cards) <= kept and (len(cards) >= kept * 0.9 if kept else True)
-          and all(x.get("title") or x.get("url") for x in cards),
-          f"Q2 Messages: {len(cards)} of the {kept} link previews Messages kept make a card (title or link each)")
-    ctx.cache["messages"] = [{"id": 0, "messages": sms_msgs}]
-    pv = sx.ChatPreview(ctx)
-    voice = [m for m in sms_msgs if m.get("type") == "audio" and pv.media_source("messages", m)]
-    shaped = [pv.voice_note("messages", m) for m in voice[:40]]
-    check(all(shaped), f"Q2 Messages: each voice note in the backup gives a length and a waveform "
-                       f"({sum(1 for s in shaped if s)} of {len(shaped)} read)")
-    for key, label, business in (("whatsapp", "WhatsApp", False), ("whatsappbusiness", "WhatsApp Business", True)):
-        try:
-            loaded = wv.load_whatsapp(win.data.reader, business, True, ctx.name_for, lambda m: None)
-        except wv.PhoneKeepError:
-            note(f"Q2: no {label} in the backup")
-            continue
-        con = ctx.db(loaded["domain"], "ChatStorage.sqlite")
-        if con is None or "ZWAMESSAGEDATAITEM" not in {r[0] for r in con.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'")}:
-            note(f"Q2: {label}'s database has no link previews table; not tested on real data")
-            continue
-        msgs = {m["id"]: m for c in loaded["chats"] for m in c["messages"]}
-        want = {pk_ for (pk_,) in con.execute(
-            "SELECT DISTINCT ZMESSAGE FROM ZWAMESSAGEDATAITEM WHERE (ZTITLE IS NOT NULL AND ZTITLE != '') "
-            "OR (ZMATCHEDTEXT IS NOT NULL AND ZMATCHEDTEXT != '') OR (ZCONTENT1 IS NOT NULL AND ZCONTENT1 != '')")
-            if pk_ in msgs}
-        got = {i for i, m in msgs.items() if m.get("link")}
-        length = dict(con.execute("SELECT m.Z_PK, i.ZMOVIEDURATION FROM ZWAMESSAGE m JOIN ZWAMEDIAITEM i "
-                                  "ON i.Z_PK = m.ZMEDIAITEM WHERE m.ZMESSAGETYPE = 3 AND i.ZMOVIEDURATION > 0"))
-        con.close()
-        ctx.cache[key] = loaded
-        audio = [m for i, m in msgs.items() if i in length and pv.media_source(key, m)][:40]
-        close = 0
-        for m in audio:
-            s = pv.voice_note(key, m)
-            close += bool(s and abs(s[0] - length[m["id"]]) <= 1.0)
-        check(got == want and close == len(audio),
-              f"Q2 {label}: every message WhatsApp kept a link preview for has its card ({len(got)} of {len(want)}); "
-              f"{close} of {len(audio)} voice notes give a waveform and the length WhatsApp shows (within 1 s)")
+    # the window's own workers read this backup too: read it under its lock, as the app does (BackupData.get)
+    with win.data.lock:
+        con = ctx.db(sx.HOME, "Library/SMS/sms.db")
+        kept = 0
+        if con is not None:
+            if {"payload_data", "balloon_bundle_id"} <= {r[1] for r in con.execute("PRAGMA table_info(message)")}:
+                kept = con.execute("SELECT COUNT(*) FROM message WHERE payload_data IS NOT NULL "
+                                   "AND balloon_bundle_id LIKE '%URLBalloonProvider%'").fetchone()[0]
+            con.close()
+        sms_msgs = [m for c in sx.load_messages(ctx) for m in c["messages"]]
+        cards = [m["link"] for m in sms_msgs if m.get("link")]
+        check(len(cards) <= kept and (len(cards) >= kept * 0.9 if kept else True)
+              and all(x.get("title") or x.get("url") for x in cards),
+              f"Q2 Messages: {len(cards)} of the {kept} link previews Messages kept make a card (title or link each)")
+        ctx.cache["messages"] = [{"id": 0, "messages": sms_msgs}]
+        pv = sx.ChatPreview(ctx)
+        voice = [m for m in sms_msgs if m.get("type") == "audio" and pv.media_source("messages", m)]
+        shaped = [pv.voice_note("messages", m) for m in voice[:40]]
+        check(all(shaped), f"Q2 Messages: each voice note in the backup gives a length and a waveform "
+                           f"({sum(1 for s in shaped if s)} of {len(shaped)} read)")
+        for key, label, business in (("whatsapp", "WhatsApp", False), ("whatsappbusiness", "WhatsApp Business", True)):
+            try:
+                loaded = wv.load_whatsapp(win.data.reader, business, True, ctx.name_for, lambda m: None)
+            except wv.PhoneKeepError:
+                note(f"Q2: no {label} in the backup")
+                continue
+            con = ctx.db(loaded["domain"], "ChatStorage.sqlite")
+            if con is None or "ZWAMESSAGEDATAITEM" not in {r[0] for r in con.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'")}:
+                if con is not None:
+                    con.close()
+                note(f"Q2: {label}'s database has no link previews table; not tested on real data")
+                continue
+            msgs = {m["id"]: m for c in loaded["chats"] for m in c["messages"]}
+            want = {pk_ for (pk_,) in con.execute(
+                "SELECT DISTINCT ZMESSAGE FROM ZWAMESSAGEDATAITEM WHERE (ZTITLE IS NOT NULL AND ZTITLE != '') "
+                "OR (ZMATCHEDTEXT IS NOT NULL AND ZMATCHEDTEXT != '') OR (ZCONTENT1 IS NOT NULL AND ZCONTENT1 != '')")
+                if pk_ in msgs}
+            got = {i for i, m in msgs.items() if m.get("link")}
+            length = dict(con.execute("SELECT m.Z_PK, i.ZMOVIEDURATION FROM ZWAMESSAGE m JOIN ZWAMEDIAITEM i "
+                                      "ON i.Z_PK = m.ZMEDIAITEM WHERE m.ZMESSAGETYPE = 3 AND i.ZMOVIEDURATION > 0"))
+            con.close()
+            ctx.cache[key] = loaded
+            audio = [m for i, m in msgs.items() if i in length and pv.media_source(key, m)][:40]
+            close = 0
+            for m in audio:
+                s = pv.voice_note(key, m)
+                close += bool(s and abs(s[0] - length[m["id"]]) <= 1.0)
+            check(got == want and close == len(audio),
+                  f"Q2 {label}: every message WhatsApp kept a link preview for has its card "
+                  f"({len(got)} of {len(want)}); "
+                  f"{close} of {len(audio)} voice notes give a waveform and the length WhatsApp shows (within 1 s)")
     # -- Q5: the timeline slider on the real snapshots (read-only: seals are off here) --------------------------
     if not getattr(win, "snap_slider", None):
         note("Q5: fewer than two snapshots of this iPhone; the slider not tested on real data")
