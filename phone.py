@@ -213,6 +213,8 @@ class BackupData:
         self.cache: dict = {}
 
     def get(self, key: str):
+        if key == "photos":
+            return self._photos()
         with self.lock:
             if key in self.cache:
                 return self.cache[key]
@@ -251,14 +253,25 @@ class BackupData:
                 v = sx.load_apps(c)
             elif key == "allfiles":
                 v = self.reader.domains()
-            elif key == "photos":
-                import photos as ph
-                src = ph.BackupPhotoSource(self.reader, Path(self.reader._tmp.name) / "photos")
-                v = (src, src.items())
             else:
                 raise wv.PhoneKeepError("Not in backups.")
             self.cache[key] = v
             return v
+
+    def _photos(self):
+        """The backup's photos: (source, items). The source reads the backup under this lock and never once it's
+        closed; its list is made outside the lock, since making it reads the Photos library through that lock."""
+        import photos as ph
+        with self.lock:
+            if "photos" in self.cache:
+                return self.cache["photos"]
+            if self._closing:
+                raise wv.PhoneKeepError("This backup was closed.")
+            src = ph.BackupPhotoSource(self.reader, Path(self.reader._tmp.name) / "photos", self.lock,
+                                       lambda: self._closing)
+        items = src.items()
+        with self.lock:
+            return self.cache.setdefault("photos", (src, items))
 
     def count(self, key: str) -> str:
         if key == "contacts":                     # the photos wait until Contacts is opened

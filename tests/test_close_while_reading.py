@@ -7,7 +7,9 @@ Now closing waits for the read: checked with the tests' invented backup and a re
 - the read finishes with its answer; the files are let go right after it (`closed`);
 - with nothing reading, closing lets go at once;
 - after closing, a new read (a section, a file, the file list behind the V3 sizes and Save everything's
-  estimate) says the backup was closed instead of touching it.
+  estimate) says the backup was closed instead of touching it;
+- the photos read from the backup use the same lock: closing while a photo is saved waits for it, and afterwards
+  the photo source never touches the backup.
 """
 import os, shutil, subprocess, sys, threading, time
 from pathlib import Path
@@ -87,6 +89,45 @@ src = (HERE.parent / "phone.py").read_text(encoding="utf-8")
 check("data.reader" not in src.split("class PhoneWindow")[1].split("def _open_backup")[0]
       and "estimate_sizes(data, data.path)" in src, "the sizes and the estimate go through BackupData, not its reader")
 d3.close()
+
+# the photos read from the backup (P1) go through the same lock: a photo being saved when the window closes finishes
+# first, and once it's closed the photo source never touches the backup (5.2.6 follow-up: it used a lock of its own)
+d4 = phone.BackupData(fake, None)
+psrc, pitems = d4.get("photos")
+check(len(pitems) > 0 and d4.count("photos") == f"{len(pitems):,}" and d4.get("photos")[0] is psrc,
+      f"the backup's photos open, once ({len(pitems)} invented photos)")
+real_extract = psrc.reader.extract
+in_extract, during = threading.Event(), {}
+
+
+def slow_extract(*a, **k):
+    in_extract.set()
+    time.sleep(1.0)
+    during["closed_meanwhile"] = d4.closed.is_set()
+    return real_extract(*a, **k)
+
+
+psrc.reader.extract = slow_extract
+out = HERE / "work" / "close-photo"
+shutil.rmtree(out, ignore_errors=True)
+saved = {}
+t = threading.Thread(target=lambda: saved.update(ok=psrc.copy(pitems[0].id, out / "a")), daemon=True)
+t.start()
+in_extract.wait(5)
+t0 = time.perf_counter()
+d4.close()
+took = time.perf_counter() - t0
+t.join(10)
+check(took < 0.2 and saved.get("ok") is True and during.get("closed_meanwhile") is False,
+      f"closing while a photo is saved: no wait, the photo is saved, and the backup stays open until then "
+      f"({took:.2f} s, {saved})")
+check(d4.closed.wait(5), "  then the backup's files are let go")
+touched = []
+psrc.reader.extract = lambda *a, **k: touched.append(1) or False
+psrc.reader.read_bytes = lambda *a, **k: touched.append(1)
+check(psrc.copy(pitems[1].id, out / "b") is False and psrc.read(pitems[1].id) is None and not touched,
+      "  after closing, saving or reading a photo says no without touching the backup")
+shutil.rmtree(out, ignore_errors=True)
 
 d2 = phone.BackupData(fake, None)
 d2.close()
