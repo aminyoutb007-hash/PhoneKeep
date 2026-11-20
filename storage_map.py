@@ -58,8 +58,11 @@ def squarify(sizes: list[float], x: float, y: float, w: float, h: float) -> list
             row.append(areas[j])
             j += 1
         s = sum(row)
+        # the last row fills what's left exactly: after many tiny blocks the strip left is so thin that s / h is
+        # off by rounding (0.01 px past the map's edge)
+        last = j >= len(areas)
         if w >= h:                                  # a column on the left
-            cw = s / h if h else 0
+            cw = w if last else (s / h if h else 0)
             yy = y
             for a in row:
                 rh = a / cw if cw else 0
@@ -67,7 +70,7 @@ def squarify(sizes: list[float], x: float, y: float, w: float, h: float) -> list
                 yy += rh
             x, w = x + cw, w - cw
         else:                                       # a row along the top
-            rh = s / w if w else 0
+            rh = h if last else (s / w if w else 0)
             xx = x
             for a in row:
                 rw = a / rh if rh else 0
