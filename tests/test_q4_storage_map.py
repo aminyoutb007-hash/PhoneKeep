@@ -53,8 +53,41 @@ live = {"Media/DCIM/100APPLE/IMG_0500.HEIC": ("a" * 40, 0, 3_000_000),
         "Media/DCIM/100APPLE/IMG_0502.MOV": ("e" * 40, 0, 1_000_000)}
 ms = sm.media_sizes(lambda d, p: live if d == "CameraRollDomain" else {})
 check([v[0] for v in ms["videos"]] == ["IMG_0501.MOV"]                                          # noqa: F821
-      and ms["photos"] == {"video": 50_000_000, "photo": 6_000_000, "other": 1_000_000},
+      and ms["photos"] == {"video": 50_000_000, "photo": 6_000_000, "other": 1_000_000, "deleted": 0},
       f"a Live Photo's .MOV counts with its photo, not as a video ({ms['photos']})")
+
+# with Photos' own list: the videos are the ones Photos (and so Photo clean-up) lists, the originals iCloud Photos
+# downloaded again (PhotoData/CPLAssets) count too, and a camera file Photos leaves out is in Recently Deleted
+import datetime as _dt
+import photos as _ph
+cam = {"Media/DCIM/100APPLE/IMG_0600.HEIC": ("f" * 40, 0, 4_000_000),
+       "Media/DCIM/100APPLE/IMG_0600.MOV": ("1" * 40, 0, 3_000_000),           # its Live Photo's moving part
+       "Media/DCIM/100APPLE/IMG_0601.MOV": ("2" * 40, 0, 70_000_000),
+       "Media/DCIM/100APPLE/IMG_0602.MOV": ("3" * 40, 0, 20_000_000),          # in Recently Deleted
+       "Media/DCIM/100APPLE/IMG_0600.AAE": ("4" * 40, 0, 1_000),
+       "Media/PhotoData/CPLAssets/group1/0A1B.MOV": ("5" * 40, 0, 90_000_000),  # downloaded again from iCloud
+       "Media/PhotoData/CPLAssets/group1/0A1C.JPG": ("6" * 40, 0, 5_000_000)}
+when = _dt.datetime(2026, 1, 1)
+its = [_ph.PhotoItem("DCIM/100APPLE/IMG_0600.HEIC", "IMG_0600.HEIC", 4_000_000, when, False,
+                     live_video="DCIM/100APPLE/IMG_0600.MOV"),
+       _ph.PhotoItem("DCIM/100APPLE/IMG_0601.MOV", "IMG_0601.MOV", 70_000_000, when, True),
+       _ph.PhotoItem("PhotoData/CPLAssets/group1/0A1B.MOV", "IMG_0700.MOV", 90_000_000, when, True),
+       _ph.PhotoItem("PhotoData/CPLAssets/group1/0A1C.JPG", "IMG_0701.JPG", 5_000_000, when, False),
+       _ph.PhotoItem("DCIM/100APPLE/IMG_0703.MOV", "IMG_0703.MOV", 0, when, True, cloud_only=True)]   # iCloud only
+in_lib = sm.media_sizes(lambda d, p: {k: v for k, v in cam.items() if k.startswith(p)} if d == "CameraRollDomain"
+                        else {}, its)
+check([v[:2] for v in in_lib["videos"]] == [("IMG_0700.MOV", 90_000_000), ("IMG_0601.MOV", 70_000_000)]   # noqa: F821
+      and in_lib["photos"] == {"video": 160_000_000, "photo": 12_000_000, "other": 1_000, "deleted": 20_000_000},
+      f"with Photos' list: its videos only, biggest first (one from PhotoData/CPLAssets), a Live Photo's part with "
+      f"its photo, a deleted video in Recently Deleted, an iCloud-only one not at all ({in_lib['photos']})")
+no_lib = sm.media_sizes(lambda d, p: {k: v for k, v in cam.items() if k.startswith(p)} if d == "CameraRollDomain"
+                        else {})
+check(sum(no_lib["photos"].values()) == sum(v[2] for v in cam.values()),                                # noqa: F821
+      "  without the library, every camera file still counts, PhotoData/CPLAssets too")
+_r = type("R", (), {"file_meta": lambda self, d, p="": {k: v for k, v in cam.items() if k.startswith(p)}
+                    if d == "CameraRollDomain" else {}})()
+check(phone.PhoneWindow._backup_sizes(_r)[0] == sum(v[2] for v in cam.values()),                      # noqa: F821
+      "  and the Storage screen's Photos (V3) counts PhotoData/CPLAssets as well, so the map's levels agree")
 
 # -- an invented phone and backup ---------------------------------------------------------------------------------------
 names = [(f"Example App {i:02d}", f"com.example.app{i:02d}") for i in range(23)]                    # invented
@@ -236,7 +269,7 @@ app.update()
 mb = {b.name: b.size for b in win.map_blocks}
 check(mb == {"Videos sent and received": 400 * M, "Photos sent and received": 250 * M, "Other attachments": 50 * M,
              "The messages themselves": 300 * M}, f"Messages opens: its attachments by kind and its history")  # noqa: F821
-check(reads["n"] == 3, f"the backup's file list was read once for this backup ({reads['n']} reads: 3 folders)")  # noqa: F821
+check(reads["n"] == 4, f"the backup's file list was read once for this backup ({reads['n']} reads: 4 folders)")  # noqa: F821
 # another backup: it's read again; the map says so while it's read
 win.data = FakeBackup()
 sm.view(win, win.overview, "top")

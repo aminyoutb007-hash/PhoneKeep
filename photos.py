@@ -27,6 +27,9 @@ from reconnect import Disconnected, NotConnected, is_dropped, retry_once
 
 IMG_EXT = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".dng", ".tif", ".tiff", ".bmp"}
 VID_EXT = {".mov", ".mp4", ".m4v", ".3gp", ".avi"}
+# where a backup keeps the camera roll's own files: DCIM, and with iCloud Photos the originals it downloaded again
+# (from another device, or after "Optimise iPhone Storage"), which the Photos library lists from PhotoData/CPLAssets
+CAMERA_FOLDERS = ("Media/DCIM/", "Media/PhotoData/CPLAssets/")
 THUMB_PX = 240
 
 try:

@@ -1114,7 +1114,8 @@ class PhoneWindow(tk.Toplevel):
     def _backup_sizes(r):
         """V3: what Photos and Messages take, from the backup `r` (BackupData) (an estimate: iCloud-only photos
         aren't in it)."""
-        photos = sum((m[2] or 0) for rel, m in r.file_meta("CameraRollDomain", "Media/DCIM/").items())
+        import photos as ph
+        photos = sum((m[2] or 0) for f in ph.CAMERA_FOLDERS for m in r.file_meta("CameraRollDomain", f).values())
         msgs = sum((m[2] or 0) for m in r.file_meta("HomeDomain", "Library/SMS/").values())
         msgs += sum((m[2] or 0) for m in r.file_meta("MediaDomain", "Library/SMS/Attachments/").values())
         return photos, msgs

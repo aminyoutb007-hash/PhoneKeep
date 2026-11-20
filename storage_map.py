@@ -90,22 +90,42 @@ def _stem(rel: str) -> tuple:
     return str(p.parent), p.stem.upper()
 
 
-def media_sizes(file_meta: Callable[[str, str], dict]) -> dict:
+def media_sizes(file_meta: Callable[[str, str], dict], items: Optional[list] = None) -> dict:
     """From the backup's file list (BackupData.file_meta): what Photos and Messages hold, by kind.
-    {"photos": {"video": n, "photo": n, "other": n}, "videos": [(name, size, mtime)] biggest first,
-     "messages": {"video": n, "photo": n, "other": n, "history": n}}"""
-    photos = {"video": 0, "photo": 0, "other": 0}
-    videos = []
-    camera = file_meta("CameraRollDomain", "Media/DCIM/")
+    {"photos": {"video": n, "photo": n, "other": n, "deleted": n}, "videos": [(name, size, mtime)] biggest first,
+     "messages": {"video": n, "photo": n, "other": n, "history": n}}
+    items: the photos as Photos lists them (BackupData.get("photos")), so the map's videos are the ones Photo
+    clean-up shows; a photo or video file Photos leaves out is in Recently Deleted (it still takes space until the
+    iPhone empties it). Without them, from the file list alone."""
     import photos as ph
-    stills = {_stem(rel) for rel in camera if PurePosixPath(rel).suffix.lower() in ph.IMG_EXT}   # as photos.py pairs
-    for rel, (_fid, mtime, size) in camera.items():
-        k = _kind(rel)
-        if k == "video" and rel.lower().endswith(".mov") and _stem(rel) in stills:
-            k = "photo"                 # a Live Photo's moving part: part of its photo, as in Photos and clean-up
-        photos[k] += size or 0
-        if k == "video":
-            videos.append((PurePosixPath(rel).name, size or 0, mtime))
+    photos = {"video": 0, "photo": 0, "other": 0, "deleted": 0}
+    camera = {}
+    for folder in ph.CAMERA_FOLDERS:
+        camera.update(file_meta("CameraRollDomain", folder))
+    if items is not None:
+        listed = {}
+        for i in items:
+            listed[i.id] = "video" if i.video else "photo"
+            if getattr(i, "live_video", None):
+                listed[i.live_video] = "photo"     # a Live Photo's moving part: part of its photo
+        for rel, (_fid, _mtime, size) in camera.items():
+            k = listed.get(rel[len("Media/"):])
+            if k is None:
+                ext = PurePosixPath(rel).suffix.lower()
+                k = "deleted" if ext in ph.IMG_EXT | ph.VID_EXT else "other"
+            photos[k] += size or 0
+        videos = [(i.name, camera["Media/" + i.id][2] or 0, camera["Media/" + i.id][1]) for i in items
+                  if i.video and "Media/" + i.id in camera]
+    else:
+        videos = []
+        stills = {_stem(rel) for rel in camera if PurePosixPath(rel).suffix.lower() in ph.IMG_EXT}  # as photos.py
+        for rel, (_fid, mtime, size) in camera.items():
+            k = _kind(rel)
+            if k == "video" and rel.lower().endswith(".mov") and _stem(rel) in stills:
+                k = "photo"             # a Live Photo's moving part: part of its photo, as in Photos and clean-up
+            photos[k] += size or 0
+            if k == "video":
+                videos.append((PurePosixPath(rel).name, size or 0, mtime))
     videos.sort(key=lambda v: -v[1])
     msgs = {"video": 0, "photo": 0, "other": 0, "history": 0}
     for rel, (_fid, _m, size) in file_meta("MediaDomain", "Library/SMS/Attachments/").items():
@@ -147,11 +167,12 @@ def levels(ov: di.Overview, cats: list, media: Optional[dict]) -> dict[str, tupl
 
     if media:
         p = media["photos"]
-        shade = lambda i: theme.storage_shade(col["Photos"], i, 3)
+        shade = lambda i: theme.storage_shade(col["Photos"], i, 4)
         vids = media["videos"]
         pb = [Block("Videos", p["video"], shade(0), f"{len(vids)} videos", open="videos" if vids else None),
               Block("Photos", p["photo"], shade(1)),
-              Block("Edits and other files", p["other"], shade(2))]
+              Block("Edits and other files", p["other"], shade(2)),
+              Block("Recently Deleted", p.get("deleted", 0), shade(3), "until the iPhone empties it")]
         out["photos"] = ("Photos", sorted((b for b in pb if b.size), key=lambda b: -b.size))
         big = vids[:MOST_VIDEOS]
         vb = [Block(name, size, theme.storage_shade(col["Photos"], i, len(big) + 1), _date(mtime), open="cleanup")
@@ -175,7 +196,8 @@ PATH = {"top": (), "photos": ("top",), "apps": ("top",), "messages": ("top",), "
 NOTES = {
     "top": "Free and the total are exact, from the iPhone. The rest are estimates, as on the Storage screen. "
            "Click a block with › to see what's in it.",
-    "photos": "From the newest backup: photos kept only in iCloud aren't counted.",
+    "photos": "From the newest backup: photos kept only in iCloud aren't counted. Recently Deleted still takes "
+              "space until the iPhone empties it.",
     "videos": "The largest videos first. Click one to review them in Photo clean-up, where they can be saved "
               "to this computer.",
     "apps": "Each app with its documents and data, as the iPhone reports it.",
@@ -357,4 +379,12 @@ def _read_media(win, ov, key):
                                 "can't be shown. Open the map again from Storage to try again.")
         if win.current == "storagemap" and win.overview is not None:
             view(win, win.overview, getattr(win, "map_key", "top"))
-    win.backup_runner.submit(lambda: media_sizes(data.file_meta), ok, err)
+    def read():
+        items = None
+        if callable(getattr(data, "get", None)):
+            try:
+                items = data.get("photos")[1]     # the videos Photo clean-up shows (and the library's Recently Deleted)
+            except Exception:
+                items = None                      # no library: from the file list alone
+        return media_sizes(data.file_meta, items)
+    win.backup_runner.submit(read, ok, err)
