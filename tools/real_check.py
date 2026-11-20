@@ -213,8 +213,8 @@ try:
                        else drawn == win.overview.total))
         dcim = win.data.file_meta("CameraRollDomain", "Media/DCIM/")
         own_all = sum((m[2] or 0) for m in dcim.values())
-        own_vids = sorted(((m[2] or 0) for rel, m in dcim.items()
-                           if rel.lower().endswith((".mov", ".mp4", ".m4v", ".3gp", ".avi"))), reverse=True)
+        # the videos as Photos lists them (photos.py, not the map's own code): a Live Photo's moving part isn't one
+        own_vids = sorted(((i.size or 0) for i in win.data.get("photos")[1] if i.video), reverse=True)
         q4_photos = storage_map.levels(win.overview, [], win.map_media[1])
         photo_sum = sum(b.size for b in q4_photos["photos"][1])
         check(top_ok and photo_sum == own_all,

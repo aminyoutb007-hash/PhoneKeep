@@ -45,6 +45,15 @@ for BW, BH in ((800, 400), (300, 600), (640, 360)):
 check(sm.squarify([0, 0], 0, 0, 100, 100) == [(0, 0, 0.0, 0.0)] * 2 and sm.squarify([], 0, 0, 10, 10) == [],   # noqa: F821
       "nothing to show: no blocks, no error")
 
+# a Live Photo's moving part (a .MOV next to its still) is part of the photo, as in Photos and clean-up
+live = {"Media/DCIM/100APPLE/IMG_0500.HEIC": ("a" * 40, 0, 3_000_000),
+        "Media/DCIM/100APPLE/IMG_0500.MOV": ("b" * 40, 0, 2_000_000),
+        "Media/DCIM/100APPLE/IMG_0501.MOV": ("c" * 40, 0, 50_000_000)}
+ms = sm.media_sizes(lambda d, p: live if d == "CameraRollDomain" else {})
+check([v[0] for v in ms["videos"]] == ["IMG_0501.MOV"]                                          # noqa: F821
+      and ms["photos"] == {"video": 50_000_000, "photo": 5_000_000, "other": 0},
+      f"a Live Photo's .MOV counts with its photo, not as a video ({ms['photos']})")
+
 # -- an invented phone and backup ---------------------------------------------------------------------------------------
 names = [(f"Example App {i:02d}", f"com.example.app{i:02d}") for i in range(23)]                    # invented
 apps = [di.AppSize(b, n, (30 - i) * G // 10, G // 20) for i, (n, b) in enumerate(names)]

@@ -84,14 +84,24 @@ def _kind(rel: str) -> str:
     return "video" if ext in VIDEO_EXT else "photo" if ext in PHOTO_EXT else "other"
 
 
+def _stem(rel: str) -> tuple:
+    """A camera file's folder and name without its extension, as photos.py pairs a Live Photo's .MOV with its still."""
+    p = PurePosixPath(rel)
+    return str(p.parent), p.stem.upper()
+
+
 def media_sizes(file_meta: Callable[[str, str], dict]) -> dict:
     """From the backup's file list (BackupData.file_meta): what Photos and Messages hold, by kind.
     {"photos": {"video": n, "photo": n, "other": n}, "videos": [(name, size, mtime)] biggest first,
      "messages": {"video": n, "photo": n, "other": n, "history": n}}"""
     photos = {"video": 0, "photo": 0, "other": 0}
     videos = []
-    for rel, (_fid, mtime, size) in file_meta("CameraRollDomain", "Media/DCIM/").items():
+    camera = file_meta("CameraRollDomain", "Media/DCIM/")
+    stills = {_stem(rel) for rel in camera if _kind(rel) == "photo"}
+    for rel, (_fid, mtime, size) in camera.items():
         k = _kind(rel)
+        if k == "video" and rel.lower().endswith(".mov") and _stem(rel) in stills:
+            k = "photo"                 # a Live Photo's moving part: part of its photo, as in Photos and clean-up
         photos[k] += size or 0
         if k == "video":
             videos.append((PurePosixPath(rel).name, size or 0, mtime))

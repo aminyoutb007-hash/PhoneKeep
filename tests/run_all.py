@@ -81,6 +81,7 @@ STEPS = [
     ("Backup timeline (Q5): the slider changes the open screen to the snapshot it stops on within 2 seconds, with the badge", "test_q5_timeline.py", True),
     ("Contact cards (Q3): a person's card lists their chats in all three messaging apps, their calls and voicemails; a click opens one; a chat, call or voicemail opens their card", "test_q3_contact_cards.py", True),
     ("Storage map (Q4): blocks as big as the space each takes; Photos › Videos › the largest videos, Apps, Messages", "test_q4_storage_map.py", True),
+    ("Storage map (Q4) end to end: a click on a video opens Photo clean-up on Large videos, with that video in it", "test_q4_videos_cleanup.py", True),
 ]
 # On Linux (no desktop) the window tests run under a virtual display if xvfb-run is installed.
 XVFB = [] if sys.platform in ("darwin", "win32") else (["xvfb-run", "-a"] if shutil.which("xvfb-run") else None)
