@@ -340,15 +340,17 @@ import ui
 grp_id = panel.shown_chat[1]                       # the Messages group opened above
 picker = ui.ChatPicker(win, {"messages": ("Messages", [_sx._chat_summary(c) for c in win.data.get("messages")])},
                        win.data.preview)
-pump(lambda: picker.winfo_viewable(), 10)
-picker.panel.show_chat("messages", grp_id)
-pump(lambda: picker.panel.shown_chat == ("messages", grp_id) and picker.panel.people_btn.winfo_ismapped(), 10)
+hide(picker)                                       # the phone window is hidden too; the chooser doesn't need showing
+picker.panel.show_chat("messages", grp_id)         # draws the chat and its People button at once
+win.update()
+check(picker.panel.shown_chat == ("messages", grp_id) and picker.panel.people_btn.winfo_manager() == "pack",
+      "the export chooser shows the Messages group, with its People button")
 picker.panel.people_btn.command()
 ppw = picker.panel.people_win
-pump(lambda: ppw is not None and ppw.winfo_exists(), 10)
-in_ppl = [picker.panel.people_tree.item(i, "text") for i in picker.panel.people_tree.get_children()] if ppw else []
-check(ppw is not None and any("Karim" in n for n in in_ppl) and ppw.card is None and not buttons(ppw, "Contact card"),
-      f"the export chooser's People window lists the group's people ({len(in_ppl)}) with no Contact card button")
+check(ppw is not None and ppw.winfo_exists(), "  People opens its People window")
+in_ppl = [picker.panel.people_tree.item(i, "text") for i in picker.panel.people_tree.get_children()]
+check(any("Karim" in n for n in in_ppl) and ppw.card is None and not buttons(ppw, "Contact card"),
+      f"  it lists the group's people ({len(in_ppl)}) with no Contact card button")
 picker._cancel()
 check(picker.result is None and not picker.winfo_exists(), "  and Cancel closes the chooser with nothing chosen")
 
