@@ -212,13 +212,15 @@ def view(win, ov: di.Overview, key: str = "top", again: bool = False):
                        font=font(13, "bold" if here else "normal"), cursor="" if here else "hand2")
         lab.pack(side="left")
         if not here:
-            lab.bind("<Button-1>", lambda e, k=k: view(win, ov, k))
+            lab.bind("<Button-1>", lambda e, k=k: view(win, win.overview or ov, k))
         win.map_crumbs.append(lab.cget("text"))
 
     note = NOTES.get(key, "")
     if key == "top" and any(n is None for _c, n, _e in cats):
         note += (f" {di.SYSTEM_UNKNOWN} can't be estimated on this iPhone (the app sizes it reports overlap with "
                  "it), so it isn't on the map and the blocks add up to less than the whole iPhone.")
+    if key in ("top", "apps") and ov.apps_updating:
+        note += " The iPhone is still sending app sizes, so Apps and Other change as they come in."
     if key == "top" and failed:
         note += f" {failed}"
     elif key == "top" and media is None and getattr(win, "data", None) is not None:
@@ -244,7 +246,7 @@ def view(win, ov: di.Overview, key: str = "top", again: bool = False):
             import checkup_ui
             checkup_ui.open_cleanup(win, "videos")
         elif b.open:
-            view(win, ov, b.open)
+            view(win, win.overview or ov, b.open)
 
     win.map_open = lambda name: act(next(b for b in blocks if b.name == name))
 
