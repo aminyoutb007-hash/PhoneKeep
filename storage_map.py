@@ -220,7 +220,7 @@ def view(win, ov: di.Overview, key: str = "top", again: bool = False):
         note += (f" {di.SYSTEM_UNKNOWN} can't be estimated on this iPhone (the app sizes it reports overlap with "
                  "it), so it isn't on the map and the blocks add up to less than the whole iPhone.")
     if key in ("top", "apps") and ov.apps_updating:
-        note += " The iPhone is still sending app sizes, so Apps and Other change as they come in."
+        note += " The iPhone is still sending app sizes, so Apps, System and Other change as they come in."
     if key == "top" and failed:
         note += f" {failed}"
     elif key == "top" and media is None and getattr(win, "data", None) is not None:
