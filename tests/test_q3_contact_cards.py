@@ -333,6 +333,25 @@ check(pump(lambda: win.current == "contacts" and win.contacts_view is not old
       and win.contacts_view.current["name"] == "Karim B" and not pw.winfo_exists(),
       "  Contact card on him opens his card (and the People window closes)")
 
+# the main window's export chooser (a real ui.ChatPicker, as app.py opens it, on this backup's Messages and its chat
+# preview): its People window has no Contact card button, since no phone window is behind it to open one
+import sections as _sx
+import ui
+grp_id = panel.shown_chat[1]                       # the Messages group opened above
+picker = ui.ChatPicker(win, {"messages": ("Messages", [_sx._chat_summary(c) for c in win.data.get("messages")])},
+                       win.data.preview)
+pump(lambda: picker.winfo_viewable(), 10)
+picker.panel.show_chat("messages", grp_id)
+pump(lambda: picker.panel.shown_chat == ("messages", grp_id) and picker.panel.people_btn.winfo_ismapped(), 10)
+picker.panel.people_btn.command()
+ppw = picker.panel.people_win
+pump(lambda: ppw is not None and ppw.winfo_exists(), 10)
+in_ppl = [picker.panel.people_tree.item(i, "text") for i in picker.panel.people_tree.get_children()] if ppw else []
+check(ppw is not None and any("Karim" in n for n in in_ppl) and ppw.card is None and not buttons(ppw, "Contact card"),
+      f"the export chooser's People window lists the group's people ({len(in_ppl)}) with no Contact card button")
+picker._cancel()
+check(picker.result is None and not picker.winfo_exists(), "  and Cancel closes the chooser with nothing chosen")
+
 # arrowing down the list: only the card on screen is looked for, not every one passed on the way
 cv = win.contacts_view
 calls_made = []
