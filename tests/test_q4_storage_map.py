@@ -44,6 +44,41 @@ for BW, BH in ((800, 400), (300, 600), (640, 360)):
           f"{BW}x{BH}: each block's area in proportion, inside, no overlaps, the big ones near square (worst {worst:.1f})")
 check(sm.squarify([0, 0], 0, 0, 100, 100) == [(0, 0, 0.0, 0.0)] * 2 and sm.squarify([], 0, 0, 10, 10) == [],   # noqa: F821
       "nothing to show: no blocks, no error")
+# many tiny blocks beside huge ones (a 1 TB library next to 1-byte files), zeros among them, sizes not in order,
+# and boxes from a phone-sized map down to 1 x 1: every block gets its share, nothing negative, outside or overlapping
+tiny_cases = {"one huge, 300 of 1": [10 ** 12] + [1] * 300,
+              "zeros among them": [10 ** 12, 0, 5, 0, 1],
+              "halving 60 times": [2 ** (60 - i) for i in range(60)],
+              "300 equal tiny ones": [1] * 300,
+              "not in order": [1, 10 ** 9, 3, 10 ** 6, 2]}
+tiny_bad = []
+
+
+def _overlap(a, b):
+    return max(0.0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0])) * max(0.0, min(a[1] + a[3], b[1] + b[3])
+                                                                       - max(a[1], b[1]))
+
+
+for label, sizes in tiny_cases.items():
+    for BW, BH in ((800, 360), (300, 600), (1, 1)):
+        rects = sm.squarify(sizes, 0, 0, BW, BH)
+        tot, box = sum(sizes), BW * BH
+        share = [box * s_ / tot for s_ in sizes]
+        eps = 1e-9 * max(BW, BH)                              # rounding, scaled to the box
+        why = ("count" if len(rects) != len(sizes) else
+               "negative or NaN" if any(not (rw >= 0 and rh >= 0) for x, y, rw, rh in rects) else
+               "outside" if any(x < -eps or y < -eps or x + rw > BW + eps or y + rh > BH + eps
+                                for x, y, rw, rh in rects) else
+               # each block's area is its own share (to rounding), however small, and together they fill the box
+               "area" if any(abs(rw * rh - e) > 1e-6 * e + 1e-12 * box for e, (x, y, rw, rh) in zip(share, rects))
+               or abs(sum(rw * rh for x, y, rw, rh in rects) - box) > 1e-9 * box else
+               # no two blocks share more than rounding of the smaller one's area
+               "overlap" if any(_overlap(a, b) > 1e-6 * min(a[2] * a[3], b[2] * b[3]) + 1e-12 * box
+                                for i, a in enumerate(rects) for b in rects[i + 1:]) else "")
+        if why:
+            tiny_bad.append(f"{label} in {BW}x{BH}: {why}")
+check(not tiny_bad, "tiny blocks: each has its share, none negative, outside or overlapping, in any box"     # noqa: F821
+      + (f" ({'; '.join(tiny_bad)})" if tiny_bad else ""))
 
 # a Live Photo's moving part (a .MOV next to its still) is part of the photo, as in Photos and clean-up
 live = {"Media/DCIM/100APPLE/IMG_0500.HEIC": ("a" * 40, 0, 3_000_000),
