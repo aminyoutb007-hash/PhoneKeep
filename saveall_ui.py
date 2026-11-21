@@ -25,9 +25,20 @@ FORMATS = [("web", "Web page"), ("pdf", "PDF"), ("excel", "Excel"), ("csv", "CSV
 SMALL = 2 * 1000 ** 2       # what a kind without media roughly takes once saved (tables and text)
 
 
-def estimate_sizes(reader, backup_path: Path) -> dict[str, int]:
+def photo_bytes(source, items) -> int:
+    """What Save everything copies of the photos (sections.sec_photos): each listed photo's or video's file and its
+    Live Photo video, where the backup has them. The list leaves out Recently Deleted and takes in the originals
+    iCloud Photos downloaded again (PhotoData/CPLAssets); an iCloud-only photo has no file here, so it adds 0."""
+    return sum(source.part_size(i.id) + (source.part_size(i.live_video) if i.live_video else 0) for i in items)
+
+
+def estimate_sizes(reader, backup_path: Path, photos: Optional[Callable[[], tuple]] = None) -> dict[str, int]:
     """Roughly what each kind takes when saved with its media, from the backup's own file list. `reader`: anything
-    with file_meta(domain, prefix); the phone window gives its BackupData, whose file_meta holds its lock."""
+    with file_meta(domain, prefix); the phone window gives its BackupData, whose file_meta holds its lock.
+    photos(): the backup's (photo source, photo list), as BackupData.get("photos") gives them: Photos are counted
+    from that list, the one Save everything copies. Making it reads the Photos library, so this runs off the Tk
+    thread (the sheet says "Working out the size…" meanwhile). Without it, or if it fails, the camera folders'
+    files are counted as they are."""
     def total(domain, prefix=""):
         try:
             return sum((m[2] or 0) for m in reader.file_meta(domain, prefix).values())
@@ -37,7 +48,10 @@ def estimate_sizes(reader, backup_path: Path) -> dict[str, int]:
     out["messages"] = total(sx.HOME, "Library/SMS/") + total(sx.MEDIA, "Library/SMS/Attachments/")
     for key, domain in (("whatsapp", getattr(wv, "WA_DOMAIN", "")), ("whatsappbusiness", getattr(wv, "WA_BUSINESS_DOMAIN", ""))):
         out[key] = total(domain) if domain else SMALL
-    out["photos"] = total("CameraRollDomain", "Media/DCIM/")
+    try:
+        out["photos"] = photo_bytes(*photos())
+    except Exception:
+        out["photos"] = total("CameraRollDomain", "Media/DCIM/") + total("CameraRollDomain", "Media/PhotoData/CPLAssets/")
     out["voicememos"] = max(SMALL, total(sx.MEDIA, "Recordings/"))
     out["voicemail"] = max(SMALL, total(sx.HOME, "Library/Voicemail/"))
     try:
