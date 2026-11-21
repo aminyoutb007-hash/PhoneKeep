@@ -80,6 +80,22 @@ for label, sizes in tiny_cases.items():
 check(not tiny_bad, "tiny blocks: each has its share, none negative, outside or overlapping, in any box"     # noqa: F821
       + (f" ({'; '.join(tiny_bad)})" if tiny_bad else ""))
 
+# the rows end on the box's own edges (to rounding), wherever the box is and however far apart the sizes are:
+# worked out from what was left, sizes 10^9 apart came out short of the edge or past it (by up to 0.01 px)
+import random as _random
+edge_bad = []
+for t in range(300):
+    _r = _random.Random(t)
+    sizes = sorted((_r.random() ** 6 * 10 ** _r.randint(0, 9) for _ in range(_r.randint(1, 60))), reverse=True)
+    X, Y, BW, BH = _r.uniform(0, 3), _r.uniform(0, 3), _r.uniform(50, 900), _r.uniform(50, 700)
+    eps = 1e-9 * max(BW, BH)
+    rects = sm.squarify(sizes, X, Y, BW, BH)
+    if (abs(max(x + rw for x, y, rw, rh in rects) - (X + BW)) > eps or abs(max(y + rh for x, y, rw, rh in rects) - (Y + BH)) > eps
+            or any(x + rw > X + BW + eps or y + rh > Y + BH + eps or rw < 0 or rh < 0 for x, y, rw, rh in rects)):
+        edge_bad.append(t)
+check(not edge_bad, f"the map reaches its right and bottom edges exactly and never goes past them (300 invented maps; "
+                    f"off in {len(edge_bad)}: {edge_bad[:5]})")                                # noqa: F821
+
 # a Live Photo's moving part (a .MOV next to its still) is part of the photo, as in Photos and clean-up; with no
 # library the file name pairs them (one still of that name)
 live = {"Media/DCIM/100APPLE/IMG_0500.HEIC": ("a" * 40, 0, 3_000_000),
@@ -502,6 +518,28 @@ check(win.map_key == "apps" and top_apps == 6 * G and [b.name for b in win.map_b
       f"the path and the blocks follow the phone's newest figures, not the ones the map opened with ({top_apps}; "
       f"at {win.map_key}: {', '.join(b.name for b in win.map_blocks[:4])})")                       # noqa: F821
 win.overview = was_ov
+# a block under 2 px across is drawn at its true size: with the 2 px gap it came out about 2 px wide, over its
+# neighbours. Photos with an invented 1-byte Recently Deleted: every block's drawing (outline too) stays in its place.
+win.map_media = (win.data, {"photos": {"video": 40 * G, "photo": 20 * G, "other": 3 * G, "deleted": 1},
+                            "videos": [("IMG_0001.MOV", 40 * G, 0)],
+                            "messages": {"video": 0, "photo": 0, "other": 0, "history": 1000 * M}})
+sm.view(win, win.overview, "photos")
+settle()                                                                                           # noqa: F821
+spill = []
+for i, (name, x, y, rw, rh) in enumerate(win.map_rects):
+    for item in win.map_canvas.find_withtag(f"b{i}"):
+        if win.map_canvas.type(item) != "rectangle":
+            continue
+        x0, y0, x1, y1 = win.map_canvas.coords(item)
+        half = float(win.map_canvas.itemcget(item, "width")) / 2 if win.map_canvas.itemcget(item, "outline") else 0
+        if (min(x0, x1) - half < x - 1e-6 or max(x0, x1) + half > x + rw + 1e-6
+                or min(y0, y1) - half < y - 1e-6 or max(y0, y1) + half > y + rh + 1e-6):
+            spill.append(f"{name} ({rw:.3g} x {rh:.3g} px)")
+tiny = [r for r in win.map_rects if r[0] == "Recently Deleted"]
+check(tiny and min(tiny[0][3], tiny[0][4]) < 2 and not spill,
+      f"a block under 2 px is drawn at its true size, and no block's drawing goes outside its place "
+      f"({', '.join(spill) or 'none does'})")                                                     # noqa: F821
+win.map_media = None
 # back to Storage
 win.content.winfo_children()[0].winfo_children()[0].command()                     # ‹ Storage
 app.update()
