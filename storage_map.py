@@ -42,6 +42,7 @@ def squarify(sizes: list[float], x: float, y: float, w: float, h: float) -> list
     scale = w * h / total
     areas = [s * scale for s in sizes]
     out: list[tuple[float, float, float, float]] = []
+    right, bottom = x + w, y + h                    # the box's own edges: every row ends exactly on them
     i = 0
 
     def worst(row, side):
@@ -51,6 +52,7 @@ def squarify(sizes: list[float], x: float, y: float, w: float, h: float) -> list
         return max(max(side * side * r / (s * s), (s * s) / (side * side * r)) if r > 0 else float("inf")
                    for r in row)
     while i < len(areas):
+        w, h = right - x, bottom - y
         side = min(w, h)
         row = [areas[i]]
         j = i + 1
@@ -58,25 +60,26 @@ def squarify(sizes: list[float], x: float, y: float, w: float, h: float) -> list
             row.append(areas[j])
             j += 1
         s = sum(row)
-        # the last row fills what's left exactly: after many tiny blocks the strip left is so thin that s / h is
-        # off by rounding (0.01 px past the map's edge)
+        # The last row fills what's left; each row's blocks share its length in proportion and the last one ends on
+        # the box's edge. Worked out from what's left (s / h, a / cw), many tiny blocks or sizes far apart came out
+        # off by rounding: past the edge, or short of it.
         last = j >= len(areas)
         if w >= h:                                  # a column on the left
-            cw = w if last else (s / h if h else 0)
+            cw = w if last else min(w, s / h if h else 0)
             yy = y
-            for a in row:
-                rh = a / cw if cw else 0
-                out.append((x, yy, cw, rh))
-                yy += rh
-            x, w = x + cw, w - cw
+            for n, a in enumerate(row):
+                end = bottom if n == len(row) - 1 else yy + (h * a / s if s else 0)
+                out.append((x, yy, cw, end - yy))
+                yy = end
+            x = right if last else x + cw
         else:                                       # a row along the top
-            rh = h if last else (s / w if w else 0)
+            rh = h if last else min(h, s / w if w else 0)
             xx = x
-            for a in row:
-                rw = a / rh if rh else 0
-                out.append((xx, y, rw, rh))
-                xx += rw
-            y, h = y + rh, h - rh
+            for n, a in enumerate(row):
+                end = right if n == len(row) - 1 else xx + (w * a / s if s else 0)
+                out.append((xx, y, end - xx, rh))
+                xx = end
+            y = bottom if last else y + rh
         i = j
     return out
 
@@ -347,9 +350,13 @@ def view(win, ov: di.Overview, key: str = "top", again: bool = False):
         win.map_rects = []
         for i, (b, (x, y, rw, rh)) in enumerate(zip(blocks, rects)):
             tag = f"b{i}"
-            # a 2 px gap of the card's colour between blocks
-            canvas.create_rectangle(x + 1, y + 1, x + rw - 1, y + rh - 1, fill=b.colour, outline=CARD, width=2,
-                                    tags=(tag,))
+            # a 2 px gap of the card's colour between blocks; a block under 2 px across has no room for it and is
+            # drawn at its true size (with the gap it came out about 2 px wide, over its neighbours)
+            if rw >= 2 and rh >= 2:
+                canvas.create_rectangle(x + 1, y + 1, x + rw - 1, y + rh - 1, fill=b.colour, outline=CARD, width=2,
+                                        tags=(tag,))
+            else:
+                canvas.create_rectangle(x, y, x + rw, y + rh, fill=b.colour, outline="", width=0, tags=(tag,))
             ink = theme.ink_on(b.colour)
             name = fit(b.name + ("  ›" if b.open and b.open != "cleanup" else ""), bold, rw - 16) if rh > 30 else ""
             if name:
