@@ -216,12 +216,15 @@ try:
             cam.update(win.data.file_meta("CameraRollDomain", f))
         own_all = sum((m[2] or 0) for m in cam.values())
         # Recently Deleted, straight from the Photos library (not the map's code): the camera files it marks as
-        # trashed, with a trashed Live Photo's .MOV (same folder and name)
+        # trashed, with the .MOV kept with a trashed Live Photo's file (same folder and base name; not an asset itself)
         q4_lib = win.data.get("photos")[0].library()
-        q4_trash = {"Media/" + k for k, a in (q4_lib.assets.items() if q4_lib else ()) if a.trashed}
-        q4_trash_stems = {r.rsplit(".", 1)[0].upper() for r in q4_trash}
+        q4_assets = q4_lib.assets if q4_lib else {}
+        q4_trash = {"Media/" + k for k, a in q4_assets.items() if a.trashed}
+        q4_trash_live = {("Media/" + k).rsplit(".", 1)[0].upper() for k, a in q4_assets.items()
+                         if a.trashed and a.live and not a.video}
         own_deleted = sum((m[2] or 0) for r, m in cam.items()
-                          if r in q4_trash or (r.lower().endswith(".mov") and r.rsplit(".", 1)[0].upper() in q4_trash_stems))
+                          if r in q4_trash or (r.lower().endswith(".mov") and r[len("Media/"):] not in q4_assets
+                                               and r.rsplit(".", 1)[0].upper() in q4_trash_live))
         # the camera roll's videos as Photos lists them (photos.py, not the map's own code), on the phone: a Live
         # Photo's moving part isn't one, nor is a video only in iCloud or in Recently Deleted
         own_vids = sorted(((i.size or 0) for i in win.data.get("photos")[1]
