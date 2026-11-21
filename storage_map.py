@@ -88,18 +88,50 @@ def _kind(rel: str) -> str:
 
 
 def _stem(rel: str) -> tuple:
-    """A camera file's folder and name without its extension, as photos.py pairs a Live Photo's .MOV with its still."""
+    """A camera file's folder and name without its extension (any case)."""
     p = PurePosixPath(rel)
     return str(p.parent), p.stem.upper()
 
 
+def live_parts(camera, assets: Optional[dict] = None) -> dict:
+    """Which camera files (rel, "Media/...") are a Live Photo's moving part: {its .MOV: its still}.
+    Paired as Photos pairs them, from its library (assets: library.Library.assets, "DCIM/.../IMG_0001.HEIC" ->
+    Attrs): a Live Photo's record names its photo's file, and its moving part is the .MOV kept with that file (same
+    folder and base name; in PhotoData/CPLAssets that name is the asset's own, not the one it was taken with). The
+    still needn't be in the backup. A .MOV the library has as an asset of its own is a video, never a moving part,
+    and a still it records as not a Live Photo has none. Only for a .MOV the library doesn't account for (or with
+    no library) the file name is a last resort: paired when exactly one still in its folder has its base name."""
+    import photos as ph
+    movs = {_stem(rel): rel for rel in camera if rel.lower().endswith(".mov")}
+    out = {}
+    recorded = set()                             # stills and .MOVs the library has a record of
+    for key, a in (assets or {}).items():
+        rel, video = "Media/" + key, getattr(a, "video", False)
+        recorded.add(rel if video else _stem(rel))
+        if getattr(a, "live", False) and not video:
+            mov = movs.get(_stem(rel))
+            if mov is not None and mov[len("Media/"):] not in assets:
+                out[mov] = rel
+    stills: dict = {}
+    for rel in camera:
+        if PurePosixPath(rel).suffix.lower() in ph.IMG_EXT:
+            stills.setdefault(_stem(rel), []).append(rel)
+    for st, mov in movs.items():
+        if mov in out or mov in recorded or st in recorded:
+            continue
+        if len(stills.get(st, ())) == 1:          # the name alone: only when it can't be two photos
+            out[mov] = stills[st][0]
+    return out
+
+
 def media_sizes(file_meta: Callable[[str, str], dict], items: Optional[list] = None,
-                trashed: Optional[set] = None) -> dict:
+                trashed: Optional[set] = None, assets: Optional[dict] = None) -> dict:
     """From the backup's file list (BackupData.file_meta): what Photos and Messages hold, by kind.
     {"photos": {"video": n, "photo": n, "other": n, "deleted": n}, "videos": [(name, size, mtime)] biggest first,
      "messages": {"video": n, "photo": n, "other": n, "history": n}}
     The camera roll is DCIM and the originals iCloud Photos downloaded again (photos.CAMERA_FOLDERS). A Live Photo's
-    moving part (a .MOV beside a still of the same name) counts with its photo, as in Photos and clean-up.
+    moving part counts with its photo, as in Photos and clean-up; which .MOV that is comes from the Photos library
+    (assets, see live_parts), the file name only as a last resort.
     trashed: the camera files the Photos library has in Recently Deleted (they still take space until the iPhone
     empties it); None without the library. items: the photos as Photos lists them: the videos are the ones it lists
     (so a click always finds them in Photo clean-up), named as Photos names them (an original from iCloud is kept
@@ -109,17 +141,16 @@ def media_sizes(file_meta: Callable[[str, str], dict], items: Optional[list] = N
     camera = {}
     for folder in ph.CAMERA_FOLDERS:
         camera.update(file_meta("CameraRollDomain", folder))
-    stills = {_stem(rel) for rel in camera if PurePosixPath(rel).suffix.lower() in ph.IMG_EXT}   # as photos.py pairs
+    paired = live_parts(camera, assets)
     gone = {"Media/" + t for t in (trashed or ())}
-    gone_stems = {_stem(rel) for rel in gone}
     names = {"Media/" + i.id: i.name for i in (items or ())}
     videos = []
     for rel, (_fid, mtime, size) in camera.items():
         k = _kind(rel)
-        live = k == "video" and rel.lower().endswith(".mov") and _stem(rel) in stills
-        if rel in gone or (live and _stem(rel) in gone_stems):
+        still = paired.get(rel)
+        if rel in gone or (still is not None and still in gone):
             k = "deleted"               # in Recently Deleted, a Live Photo's moving part with its photo
-        elif live:
+        elif still is not None:
             k = "photo"                 # a Live Photo's moving part: part of its photo, as in Photos and clean-up
         elif k == "video" and items is not None and rel not in names:
             k = "other"                 # a video file Photos doesn't list: not one the map can send to clean-up
@@ -380,13 +411,14 @@ def _read_media(win, ov, key):
         if win.current == "storagemap" and win.overview is not None:
             view(win, win.overview, getattr(win, "map_key", "top"))
     def read():
-        items = trashed = None
+        items = trashed = assets = None
         if callable(getattr(data, "get", None)):
             try:
                 src, items = data.get("photos")     # the Photos library: what's in Recently Deleted, the videos' names
                 lib = src.library()
+                assets = None if lib is None else lib.assets      # and which .MOV is a Live Photo's
                 trashed = None if lib is None else {k for k, a in lib.assets.items() if a.trashed}
             except Exception:
-                items = trashed = None              # no library: from the file list alone
-        return media_sizes(data.file_meta, items, trashed)
+                items = trashed = assets = None     # no library: from the file list alone
+        return media_sizes(data.file_meta, items, trashed, assets)
     win.backup_runner.submit(read, ok, err)

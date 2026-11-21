@@ -80,7 +80,8 @@ for label, sizes in tiny_cases.items():
 check(not tiny_bad, "tiny blocks: each has its share, none negative, outside or overlapping, in any box"     # noqa: F821
       + (f" ({'; '.join(tiny_bad)})" if tiny_bad else ""))
 
-# a Live Photo's moving part (a .MOV next to its still) is part of the photo, as in Photos and clean-up
+# a Live Photo's moving part (a .MOV next to its still) is part of the photo, as in Photos and clean-up; with no
+# library the file name pairs them (one still of that name)
 live = {"Media/DCIM/100APPLE/IMG_0500.HEIC": ("a" * 40, 0, 3_000_000),
         "Media/DCIM/100APPLE/IMG_0500.MOV": ("b" * 40, 0, 2_000_000),
         "Media/DCIM/100APPLE/IMG_0501.MOV": ("c" * 40, 0, 50_000_000),
@@ -123,6 +124,42 @@ check([v[:2] for v in in_lib["videos"]] == [("IMG_0700.MOV", 90_000_000), ("IMG_
       f"with the library: Recently Deleted is what it has there (a Live Photo with its moving part); a Live Photo in "
       f"PhotoData/CPLAssets is paired, and a file there that isn't in Photos' list isn't deleted either; the videos "
       f"are Photos', named as in Photos, and a video it doesn't list is another file ({in_lib['photos']})")
+# Live Photos paired as Photos pairs them, from its library's records, not by file name. Two different photos
+# share a base name in one folder: IMG_0900.HEIC is a Live Photo, IMG_0900.JPG another photo, in Recently
+# Deleted; the .MOV is the Live Photo's, so it stays with that photo (by name it would be two candidates, or follow
+# the deleted one). IMG_0910.MOV is a video of its own in the library beside a still of that name (not a Live
+# Photo): a video, not a moving part. An iCloud original's Live Photo whose photo isn't in the backup still owns its
+# .MOV. With no library, a .MOV beside two stills of its name is paired with neither.
+import library as _lb
+pair = {"Media/DCIM/100APPLE/IMG_0900.HEIC": ("c1" * 20, 0, 4_000_000),
+        "Media/DCIM/100APPLE/IMG_0900.JPG": ("c2" * 20, 0, 1_500_000),
+        "Media/DCIM/100APPLE/IMG_0900.MOV": ("c3" * 20, 0, 3_000_000),
+        "Media/DCIM/100APPLE/IMG_0910.JPG": ("c4" * 20, 0, 2_000_000),
+        "Media/DCIM/100APPLE/IMG_0910.MOV": ("c5" * 20, 0, 40_000_000),
+        "Media/PhotoData/CPLAssets/group3/0C3D.MOV": ("c6" * 20, 0, 2_500_000)}
+lib_assets = {"DCIM/100APPLE/IMG_0900.HEIC": _lb.Attrs(live=True),
+              "DCIM/100APPLE/IMG_0900.JPG": _lb.Attrs(trashed=True),
+              "DCIM/100APPLE/IMG_0910.JPG": _lb.Attrs(),
+              "DCIM/100APPLE/IMG_0910.MOV": _lb.Attrs(video=True),
+              "PhotoData/CPLAssets/group3/0C3D.HEIC": _lb.Attrs(live=True)}       # its photo is only in iCloud
+pair_its = [_ph.PhotoItem("DCIM/100APPLE/IMG_0900.HEIC", "IMG_0900.HEIC", 4_000_000, when, False),
+            _ph.PhotoItem("DCIM/100APPLE/IMG_0910.JPG", "IMG_0910.JPG", 2_000_000, when, False),
+            _ph.PhotoItem("DCIM/100APPLE/IMG_0910.MOV", "IMG_0910.MOV", 40_000_000, when, True)]
+pfm = lambda d, p: {k: v for k, v in pair.items() if k.startswith(p)} if d == "CameraRollDomain" else {}
+by_lib = sm.media_sizes(pfm, pair_its, {k for k, a in lib_assets.items() if a.trashed}, lib_assets)
+check(sm.live_parts(pair, lib_assets) == {"Media/DCIM/100APPLE/IMG_0900.MOV": "Media/DCIM/100APPLE/IMG_0900.HEIC",
+                                          "Media/PhotoData/CPLAssets/group3/0C3D.MOV":
+                                              "Media/PhotoData/CPLAssets/group3/0C3D.HEIC"}
+      and by_lib["photos"] == {"video": 40_000_000, "photo": 11_500_000, "other": 0, "deleted": 1_500_000}
+      and [v[0] for v in by_lib["videos"]] == ["IMG_0910.MOV"],
+      f"Live Photos paired from the library's records: of two photos sharing a name, the .MOV stays with the Live "
+      f"Photo (not the deleted one); a video of its own beside a still of its name stays a video; an iCloud "
+      f"original's .MOV goes with its Live Photo though its photo isn't here ({by_lib['photos']})")
+by_name = sm.live_parts(pair)
+check("Media/DCIM/100APPLE/IMG_0900.MOV" not in by_name
+      and by_name.get("Media/DCIM/100APPLE/IMG_0910.MOV") == "Media/DCIM/100APPLE/IMG_0910.JPG",
+      "  without the library the name is the last resort: paired only when exactly one still has it")
+
 # no library (Photos.sqlite missing or unreadable): nothing is called deleted, every camera file still counts
 no_lib = sm.media_sizes(fm, [i for i in its if i.id.startswith("DCIM/")], None)
 check(no_lib["photos"]["deleted"] == 0 and sum(no_lib["photos"].values()) == sum(v[2] for v in cam.values()),  # noqa: F821
