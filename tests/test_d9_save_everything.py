@@ -128,10 +128,59 @@ st = json.loads((out / "assets" / "sections.json").read_text(encoding="utf-8"))
 check(st["calls"]["count"] == 3 and "Only" not in (out / "index.html").read_text(encoding="utf-8"),
       "the chat chooser's own dates don't filter calls (as before)")
 
+# -- the size estimate counts what Save everything copies of the photos ---------------------------------------------
+# A copy of the stand-in backup with a Photos library: one more photo in DCIM that is in Recently Deleted (not
+# copied), and one original iCloud Photos downloaded again into PhotoData/CPLAssets (copied). The camera folder
+# alone gives a wrong total both ways; the estimate must equal the bytes the save writes.
+import hashlib, plistlib, sqlite3
+import saveall_ui
+import photos as ph
+eb = W / "estimate" / fake.name
+shutil.copytree(fake, eb)
+man = sqlite3.connect(eb / "Manifest.db")
+
+
+def put(rel, data):
+    fid = hashlib.sha1(f"CameraRollDomain-{rel}".encode()).hexdigest()
+    (eb / fid[:2]).mkdir(exist_ok=True)
+    (eb / fid[:2] / fid).write_bytes(data)
+    blob = plistlib.dumps({"$objects": ["$null", {"LastModified": 1748768400, "Size": len(data)}]}, fmt=plistlib.FMT_BINARY)
+    man.execute("INSERT INTO Files VALUES (?,?,?,1,?)", (fid, "CameraRollDomain", rel, blob))
+
+
+lib = W / "Photos.sqlite"
+lc = sqlite3.connect(lib)
+lc.execute("CREATE TABLE ZASSET (Z_PK INTEGER PRIMARY KEY, ZDIRECTORY TEXT, ZFILENAME TEXT, ZTRASHEDSTATE INT, ZKIND INT)")
+lc.executemany("INSERT INTO ZASSET VALUES (?,?,?,?,?)",
+               [(1, "DCIM/100APPLE", "IMG_0100.JPG", 0, 0), (2, "DCIM/100APPLE", "IMG_0101.JPG", 0, 0),
+                (3, "DCIM/100APPLE", "IMG_0102.MOV", 0, 1), (4, "DCIM/100APPLE", "IMG_0103.JPG", 1, 0),
+                (5, "PhotoData/CPLAssets/group7", "5E6F-0000-EXAMPLE.JPG", 0, 0)])
+lc.commit()
+lc.close()
+put("Media/PhotoData/Photos.sqlite", lib.read_bytes())
+put("Media/DCIM/100APPLE/IMG_0103.JPG", b"\xff\xd8" + b"d" * 300_000)               # in Recently Deleted
+put("Media/PhotoData/CPLAssets/group7/5E6F-0000-EXAMPLE.JPG", b"\xff\xd8" + b"c" * 700_000)
+man.commit()
+man.close()
+er = wv.BackupReader(eb, None, lambda m: None)
+try:
+    esrc = ph.BackupPhotoSource(er, Path(er._tmp.name) / "photos")
+    est = saveall_ui.estimate_sizes(er, eb, lambda: (esrc, esrc.items()))
+    old = sum((m[2] or 0) for m in er.file_meta("CameraRollDomain", "Media/DCIM/").values())
+    no_list = saveall_ui.estimate_sizes(er, eb)
+finally:
+    er.close()
+sx.export_all(eb, W / "estimate-out", None, ["photos"], log=lambda m: None)
+copied = sum(f.stat().st_size for f in (W / "estimate-out" / "Photos" / "Originals").rglob("*") if f.is_file())
+check(copied > 700_000 and est["photos"] == copied,
+      f"the photos' estimate is what Save everything copies ({est['photos']:,} = {copied:,} bytes): the original in "
+      f"PhotoData/CPLAssets counts, the photo in Recently Deleted and the edit file (.AAE) don't")
+check(old != copied, f"(the camera folder alone gives another total: {old:,} bytes)")
+check(no_list["photos"] > 0, "without the photo list the camera folders' files are counted as they are")
+
 # -- the sheet ------------------------------------------------------------------------------------------------------
 try:
     import tkinter as tk
-    import saveall_ui
     root = tk.Tk()
     root.withdraw()
     r = wv.BackupReader(fake, None, lambda m: None)
@@ -174,6 +223,8 @@ except tk.TclError as ex:
 
 src = (HERE.parent / "phone.py").read_text(encoding="utf-8")
 check("Save everything…" in src and "all_dates=True" in src, "the phone window has Save everything…")
+check('estimate_sizes(data, data.path, lambda: data.get("photos"))' in src,
+      "the phone window's sheet counts the photos from the backup's photo list (worked out off the Tk thread)")
 
 print("\nD9 TESTS: " + ("PASS" if not failures else f"FAIL ({len(failures)}): " + "; ".join(failures)))
 sys.exit(1 if failures else 0)

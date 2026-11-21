@@ -82,12 +82,14 @@ except wv.PhoneKeepError:
 sx.load_apps = real_apps
 
 d3 = phone.BackupData(fake, None)
-check(phone.PhoneWindow._backup_sizes(d3)[0] > 0 and saveall_ui.estimate_sizes(d3, fake)["photos"] > 0,
-      "an open backup still gives the V3 sizes and the estimate, through the locked file list")
+check(phone.PhoneWindow._backup_sizes(d3)[0] > 0 and saveall_ui.estimate_sizes(d3, fake)["photos"] > 0
+      and saveall_ui.estimate_sizes(d3, fake, lambda: d3.get("photos"))["photos"] > 0,
+      "an open backup still gives the V3 sizes and the estimate (photos from its photo list), through the locked "
+      "file list")
 # the file list waits for a read in progress (it used to query the database without the lock)
 src = (HERE.parent / "phone.py").read_text(encoding="utf-8")
 check("data.reader" not in src.split("class PhoneWindow")[1].split("def _open_backup")[0]
-      and "estimate_sizes(data, data.path)" in src, "the sizes and the estimate go through BackupData, not its reader")
+      and 'estimate_sizes(data, data.path, lambda: data.get("photos"))' in src, "the sizes and the estimate go through BackupData, not its reader")
 d3.close()
 
 # the photos read from the backup (P1) go through the same lock: a photo being saved when the window closes finishes

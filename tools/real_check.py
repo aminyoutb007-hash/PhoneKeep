@@ -16,8 +16,9 @@ What it does, all read-only for the phone:
     offered that's a favourite, in an album, hidden or only in iCloud; 3 of them saved and checked by checksum
     (its cache and record go to the temporary folder too, not next to the real backups);
   * All files: previews a PDF from the backup; Voice Memos / Music: copies one to play;
-  * Save everything: notes and calls of the last 30 days, and checks the contents page; D9: the last 30 days
-    mentioning "invoice" saves exactly the matching messages, notes and files (worked out from the backup on its own);
+  * Save everything: notes and calls of the last 30 days, and checks the contents page; its size estimate counts
+    the photos the save copies; D9: the last 30 days mentioning "invoice" saves exactly the matching messages,
+    notes and files (worked out from the backup on its own);
   * M4: every reply, reaction, edit and read time in Messages reaches the saved Excel file (counts only).
   * M5: a group chat saved for one person keeps only their messages, in Excel and PDF (counts only).
   * M6: a chat's Media tab shows every attachment sms.db has; one photo shown large; Save all saves the ones the
@@ -527,6 +528,22 @@ try:
     hub = dest / "index.html"
     check(hub.exists() and "<dt>Only</dt>" in hub.read_text(encoding="utf-8"),
           "Save everything (last 30 days) makes one folder whose contents page names the dates")
+
+    # -- Save everything's size estimate: Photos count the photo list the save copies --------------------------------
+    # The sheet works it out off the Tk thread, as the phone window does; worked out again here on its own, from the
+    # backup's file list and the photo list (Recently Deleted left out, PhotoData/CPLAssets in). Pass/fail only.
+    if win.data is not None:
+        data = win.data
+        dlg = saveall_ui.SaveEverythingDialog(win, win.counts, lambda: saveall_ui.estimate_sizes(data, data.path,
+                                                                                               lambda: data.get("photos")))
+        pump(app, lambda: bool(dlg.sizes), 300)
+        got = dlg.sizes.get("photos")
+        dlg.destroy()
+        meta = data.file_meta("CameraRollDomain", "Media/")
+        size = lambda pid: (meta.get("Media/" + pid) or (0, 0, 0))[2] or 0
+        want = sum(size(i.id) + (size(i.live_video) if i.live_video else 0) for i in data.get("photos")[1])
+        check(got is not None and got == want, "Save everything's estimate counts the photos the save copies "
+                                               "(Recently Deleted left out, iCloud Photos' downloaded originals in)")
 
     # -- D9: "Last 30 days, mentioning invoice" keeps only matching messages, notes and files ----------------------
     # Saved into this check's own temporary folder (removed at the end). What should be kept is worked out here on

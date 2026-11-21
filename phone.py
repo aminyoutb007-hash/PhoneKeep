@@ -1762,7 +1762,7 @@ class PhoneWindow(tk.Toplevel):
             return
         if choice is None:
             data = self.data
-            dlg = saveall_ui.SaveEverythingDialog(self, self.counts, lambda: saveall_ui.estimate_sizes(data, data.path))
+            dlg = saveall_ui.SaveEverythingDialog(self, self.counts, lambda: saveall_ui.estimate_sizes(data, data.path, lambda: data.get("photos")))
             self.save_all_dialog = dlg
             dlg.grab_set()
             self.wait_window(dlg)
