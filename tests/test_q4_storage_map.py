@@ -202,6 +202,16 @@ for lib, want in ((_Lib(assets={"DCIM/100APPLE/IMG_0602.MOV": _Lib(trashed=True)
           f"  the window's read hands the library's Recently Deleted to the map "
           f"({'one trashed video' if lib else 'no library'}: {got.get('photos', {}).get('deleted')}), with Photos' videos")
 
+# ...and the library's records, so the map pairs Live Photos from them: a library that records IMG_0600.HEIC as
+# not a Live Photo leaves its .MOV unpaired (by name it would be paired)
+lib = _Lib(assets={"DCIM/100APPLE/IMG_0600.HEIC": _lb.Attrs()})
+_w = _types.SimpleNamespace(data=_Data(lib), current="elsewhere", overview=None,
+                            backup_runner=_types.SimpleNamespace(submit=lambda fn, ok, err: ok(fn())))
+sm._read_media(_w, None, "photos")
+got = getattr(_w, "map_media", (None, {}))[1].get("photos")
+check(got == sm.media_sizes(fm, its, set(), lib.assets)["photos"] and got != sm.media_sizes(fm, its, set())["photos"],
+      f"  and hands the library's records on, so Live Photos are paired from them ({got})")        # noqa: F821
+
 _r = type("R", (), {"file_meta": lambda self, d, p="": {k: v for k, v in cam.items() if k.startswith(p)}
                     if d == "CameraRollDomain" else {}})()
 check(phone.PhoneWindow._backup_sizes(_r)[0] == sum(v[2] for v in cam.values()),                      # noqa: F821
@@ -364,14 +374,36 @@ check(opened == ["videos"], f"a click on a video opens Photo clean-up on Large v
 # back up by the path
 
 
-def click_path(text):
-    """A click on that link in the path at the top, once it's on screen (on a busy machine the new labels can take
-    a moment to show, and a click on one that isn't shown yet is lost); then the map that click opens."""
-    crumb = [w for w in win.content.winfo_children()[1].winfo_children() if isinstance(w, tk.Label)
-             and w.cget("text") == text]                                                           # noqa: F821
-    pump(app, lambda: crumb[0].winfo_viewable(), 5, f"the path's {text} link on screen")         # noqa: F821
-    crumb[0].event_generate("<Button-1>")
-    pump(app, lambda: win.map_key == "top", 5, f"the map its {text} link opens")                  # noqa: F821
+def click_path(text, within=60.0):
+    """A click on that link in the path at the top, then the map that click opens (the whole iPhone). Waits for
+    what it needs, not for a fixed time: for the link to be on screen (on a busy machine the new labels can take a
+    while to show), then for the map to open; a click that was lost (sent just as the link was drawn) is sent
+    again. Fails clearly if the map hasn't opened within `within` seconds."""
+    end = time.time() + within
+    seen = clicks = 0
+
+    def link():
+        try:
+            return next((w for w in win.content.winfo_children()[1].winfo_children() if isinstance(w, tk.Label)
+                         and w.cget("text") == text and w.winfo_viewable()), None)          # noqa: F821
+        except (IndexError, tk.TclError):                                                  # noqa: F821
+            return None
+    while time.time() < end and win.map_key != "top":
+        app.update()                                                                       # noqa: F821
+        w = link()
+        if w is None:
+            time.sleep(0.02)
+            continue
+        seen = 1
+        w.event_generate("<Button-1>")
+        clicks += 1
+        again = time.time() + 2                   # the map opens at once after a click that arrived
+        while time.time() < min(again, end) and win.map_key != "top":
+            app.update()                                                                   # noqa: F821
+            time.sleep(0.02)
+    if win.map_key != "top":
+        check(False, f"the path's {text} link " + (f"was clicked {clicks} times but the map didn't open" if seen
+                                                   else "never came on screen") + f" within {within:.0f} s")  # noqa: F821
 
 
 click_path("iPhone")
