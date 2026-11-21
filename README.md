@@ -53,6 +53,13 @@ Click **Open iPhone** (or the phone itself) in the main window. A window opens w
 
 Photos, Music, Books, App Files and the wallpaper are read **live from the iPhone**. Apple only lets computers read Messages, WhatsApp, calls, notes, voicemail, contacts, calendar and voice memos from a **backup**, so those show your latest backup; **Refresh from iPhone** quickly backs up just what changed. Everything you save goes to `PhoneKeep/Archive/From iPhone`. The phone window never writes to the phone. PhoneKeep changes the iPhone's settings only when you ask, and asks first: turning backup encryption on or off, changing the backup password, and turning on Wi-Fi backups in the first-run guide.
 
+## New in 5.2.8
+
+- Fix: the storage map's Photos count the photos and videos downloaded back from iCloud, and show Recently Deleted as its own block.
+- Fix: the map's videos are the ones the Photos app lists (a Live Photo's moving part is part of the photo).
+- Fix: saving a photo while its phone window closes finishes instead of failing.
+- Fix: the tamper check's record forgets snapshots PhoneKeep deletes.
+
 ## New in 5.2.7
 
 - Fix: the storage map redraws as the iPhone sends its app sizes.
