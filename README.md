@@ -56,7 +56,7 @@ Photos, Music, Books, App Files and the wallpaper are read **live from the iPhon
 ## New in 5.2.9
 
 - Fix: Save everything's size estimate counts the photos it really saves (with those downloaded back from iCloud, without Recently Deleted).
-- Fix: the storage map pairs Live Photos from the Photos library's records, not by file name.
+- Fix: the storage map pairs Live Photos from the Photos library's records, not by file name alone.
 - Fix: the storage map's blocks fit the map exactly; tiny blocks are drawn at their true size.
 
 ## New in 5.2.8
