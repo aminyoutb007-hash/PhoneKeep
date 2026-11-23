@@ -43,7 +43,7 @@ from typing import Callable, Optional
 from tables import csv_safe as _csv_safe
 
 APP_NAME = "PhoneKeep"
-VERSION = "5.2.8"
+VERSION = "5.2.9"
 LICENCE_LINE = "Free software under the GNU GPL v3 · Source: github.com/aminyoutb007-hash/PhoneKeep"
 
 try:
