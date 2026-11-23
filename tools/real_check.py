@@ -77,6 +77,23 @@ quicklook.play = lambda path: None                          # copy to play, but 
 phone.open_file = lambda path: None
 results: list[tuple[bool, str]] = []
 T0 = time.time()
+backups_tried: list[str] = []
+
+
+def no_backup(where, fail):
+    """This check never backs up the iPhone: a backup can turn on encryption on it, a phone action the owner didn't
+    choose. A click that lands on "Back up now" (or anything else that would start one) is refused and counted;
+    the last step checks that none was tried."""
+    def refuse(*args, **kwargs):
+        backups_tried.append(where)
+        print(f"     refused: {where} would have started a backup of the iPhone", flush=True)
+        if fail:
+            raise RuntimeError("real_check never backs up the iPhone")
+    return refuse
+
+
+wv.make_backup = no_backup("make_backup", True)            # every way to a backup ends here (window, main window, guide)
+phone.PhoneWindow.refresh = no_backup("the phone window's Back up now / Refresh", False)   # before any banner binds it
 
 
 def check(ok, what):
@@ -160,6 +177,7 @@ win = phone.PhoneWindow(app, dev, dev["UniqueDeviceID"])
 win.seal_backups = False    # S8: never write a seal into the real backups (the app seals them when the owner opens them)
 win.crashes_read = True     # the check-up reads crash reports into the phone's real folder: the H4 step reads them
                             # into the temporary folder instead
+win.refresh_btn.set_enabled(False)                           # and its Refresh button can't be pressed at all
 try:
     # -- 5.1.3: filled in fast (all but the app list), and the app list in two passes ---------------------------
     t_open = time.time()
@@ -1448,6 +1466,9 @@ finally:
     quicklook.cleanup()
     shutil.rmtree(WORK, ignore_errors=True)
 
+check(not backups_tried and not win.refreshing and not app.busy,
+      "no backup of the iPhone was started or tried during the check"
+      + (f" (tried: {', '.join(backups_tried)})" if backups_tried else ""))
 bad = [w for ok, w in results if not ok]
 print(f"\n{len(results) - len(bad)} of {len(results)} passed in {time.time() - T0:.0f} s"
       + ("" if not bad else ". FAILED: " + "; ".join(bad)))
